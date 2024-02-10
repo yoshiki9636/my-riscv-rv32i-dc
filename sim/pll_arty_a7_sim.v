@@ -3,22 +3,24 @@
  *   PLL Dummy Module for Verilog Simulation
  *    Verilog code
  * @auther		Yoshiki Kurokawa <yoshiki.k963@gmail.com>
- * @copylight	2021 Yoshiki Kurokawa
+ * @copylight	2024 Yoshiki Kurokawa
  * @license		https://opensource.org/licenses/MIT     MIT license
  * @version		0.1
  */
 
-module pll(
-	input refclk,
+module clk_wiz_0(
+	output clk_out1,
+	output clk_out2,
+	//output clk_out3,
 	input reset,
-	//output stdby,
-	output extlock,
-	output clk0_out
+	output locked,
+	input clk_in1
 
 	);
 
-//assign stdby = 1'b0;
-assign extlock = 1'b0;
-assign clk0_out = refclk;
+assign locked = 1'b1;
+assign clk_out1 = clk_in1;
+assign clk_out2 = clk_in1;
+//assign clk_out3 = clk_in1;
 
 endmodule
