@@ -138,7 +138,7 @@ wire cpu_start;
 wire quit_cmd;
 wire [31:0] pc_data;
 // bus i/f logic signals
-wire dcw_start_rq; // output
+//wire dcw_start_rq; // output
 //wire [31:0] dcw_in_addr; // output
 //wire [15:0] dcw_in_mask; // output
 //wire [127:0] dcw_in_data; // output
