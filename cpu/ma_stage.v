@@ -36,6 +36,11 @@ module ma_stage
 	input [DWIDTH-3:0] ram_wadr_all,
 	input [127:0] ram_wdata_all,
 	input ram_wen_all,
+	// dc controls
+    input dc_tag_hit_ma,
+    input dc_st_wt_ma,
+    output dc_cache_wr_ma,
+    //output dc_cache_clr_bits,
 	// to Memory
 	input [DWIDTH+1:2] d_ram_radr,
 	output [31:0] d_ram_rdata,
@@ -149,7 +154,10 @@ assign data_wadr_ma = d_ram_wen ? d_ram_wadr :
 					  dma_we_ma ? dataram_wadr_ma[DWIDTH+1:2] : rd_data_ma[DWIDTH+1:2];
 assign data_wdata_ma = d_ram_wen ? d_ram_wdata :
 					   dma_we_ma ? { 16'd0, dataram_wdata_ma } : st_wdata;
-assign data_we_ma = (d_ram_wen | dma_we_ma) ? 4'b1111 : st_we_mem;
+assign data_we_ma = ((d_ram_wen | dma_we_ma) ? 4'b1111 : st_we_mem) & { 4{ dc_tag_hit_ma | dc_st_wt_ma }};
+
+assign dc_cache_wr_ma = |data_we_ma;
+
 //assign sel_data_rd_ma = cmd_ld_ma; 
 assign dataram_rdata_wb = data_rdata_wb_mem[15:0];
 
@@ -169,9 +177,6 @@ data_ram #(.DWIDTH(DWIDTH)) data_ram (
 	.ram_wdata_all(ram_wdata_all),
 	.ram_wen_all(ram_wen_all)
 	);
-
-
-
 
 wire dma_io_ren_ma = cmd_ld_ma & (rd_data_ma[31:30] == 2'b11);
 
@@ -224,6 +229,4 @@ always @ ( posedge clk or negedge rst_n) begin
 end
 
 endmodule
-
-
 

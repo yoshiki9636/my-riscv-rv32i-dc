@@ -71,10 +71,12 @@ module ex_stage(
 	input [31:0] wbk_data_wb2,
 
 	// to MA
+	input dc_stall,
     output reg cmd_ld_ma,
     output reg cmd_st_ma,
 	output reg [4:0] rd_adr_ma,
 	output reg [31:0] rd_data_ma,
+	output [31:0] rd_data_ex,
 	output reg wbk_rd_reg_ma,
 	output reg [31:0] st_data_ma,
 	output reg [2:0] ldst_code_ma,
@@ -297,11 +299,23 @@ wire [31:0] alu_sel = alu_selector( alu_code,
 // Lui
 wire [31:0] lui_data = { lui_auipc_imm_ex, 12'd0 };
 
-wire [31:0] rd_data_ex = cmd_lui_ex ? lui_data :
-                         (cmd_jal_ex | cmd_jalr_ex) ? pcp4_ex :
-						 cmd_auipc_ex ? jump_adr :
-                         cmd_csr_ex ? csr_rd_data :
-                         alu_sel;
+wire [31:0] rd_data_ex_pre = cmd_lui_ex ? lui_data :
+                             (cmd_jal_ex | cmd_jalr_ex) ? pcp4_ex :
+						      cmd_auipc_ex ? jump_adr :
+                              cmd_csr_ex ? csr_rd_data :
+                              alu_sel;
+
+// roll back for dc_stall
+reg [31:0] rd_data_roll;
+
+always @ ( posedge clk or negedge rst_n) begin   
+	if (~rst_n)
+        rd_data_roll <= 32'd0;
+	else if (~dc_stall)
+        rd_data_roll <= rd_data_ex_pre;
+end
+
+assign rd_data_ex = dc_stall ? rd_data_roll : rd_data_ex_pre;
 
 // jamp/br
 

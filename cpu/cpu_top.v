@@ -47,6 +47,18 @@ module cpu_top
     output [19:2] ibus_wadr,
     output [15:0] ibus32_wdata,
 
+	output dcw_start_rq,
+	output [31:0] dcw_in_addr,
+	output [15:0] dcw_in_mask,
+	output [127:0] dcw_in_data,
+	input dcw_finish_wresp,
+	output dcr_start_rq,
+	output [31:0] dcr_rin_addr,
+	output rqfull_1,
+	input [127:0] rdat_m_data,
+	input rdat_m_valid,
+	input finish_mrd,
+
 	input interrupt_0
 
 	);
@@ -67,6 +79,7 @@ wire [2:0] ldst_code_ma;
 wire [31:0] inst_id;
 wire [31:0] ld_data_wb;
 wire [31:0] rd_data_ma;
+wire [31:0] rd_data_ex;
 wire [31:0] rd_data_wb;
 wire [31:0] rs1_data_ex;
 wire [31:0] rs2_data_ex;
@@ -133,6 +146,7 @@ wire rst_pipe_id;
 wire rst_pipe_ex;
 wire rst_pipe_ma;
 wire rst_pipe_wb;
+wire dc_stall;
 wire stall;
 wire stall_1shot;
 wire stall_dly;
@@ -161,16 +175,20 @@ wire [15:0] dataram_rdata_wb;
 wire [31:0] dma_io_rdata;
 
 // LSU
-wire [DWIDTH-3:0] ram_radr_all = { (DWIDTH-2){ 1'b0 }};
+wire dc_tag_hit_ma; // output
+wire dc_st_wt_ma; // output
+wire dc_cache_wr_ma; // input
+wire [DWIDTH-3:0] ram_radr_all;
 wire [127:0] ram_rdata_all;
-wire ram_ren_all = 1'b0;
-wire [DWIDTH-3:0] ram_wadr_all = { (DWIDTH-2){ 1'b0 }};
-wire [127:0] ram_wdata_all = 128'd0;
-wire ram_wen_all = 1'b0;
+wire ram_ren_all;
+wire [DWIDTH-3:0] ram_wadr_all;
+wire [127:0] ram_wdata_all;
+wire ram_wen_all;
 
 cpu_status cpu_status (
 	.clk(clk),
 	.rst_n(rst_n),
+	.dc_stall(dc_stall),
 	.cpu_start(cpu_start),
 	.quit_cmd(quit_cmd),
 	.stall(stall),
@@ -333,10 +351,12 @@ ex_stage ex_stage (
 	.nohit_rs2_ex(nohit_rs2_ex),
 	.wbk_data_wb(wbk_data_wb),
 	.wbk_data_wb2(wbk_data_wb2),
+	.dc_stall(dc_stall),
 	.cmd_ld_ma(cmd_ld_ma),
 	.cmd_st_ma(cmd_st_ma),
 	.rd_adr_ma(rd_adr_ma),
 	.rd_data_ma(rd_data_ma),
+	.rd_data_ex(rd_data_ex),
 	.wbk_rd_reg_ma(wbk_rd_reg_ma),
 	.st_data_ma(st_data_ma),
 	.ldst_code_ma(ldst_code_ma),
@@ -381,6 +401,9 @@ ma_stage #(.DWIDTH(DWIDTH)) ma_stage (
 	.ram_wadr_all(ram_wadr_all),
 	.ram_wdata_all(ram_wdata_all),
 	.ram_wen_all(ram_wen_all),
+	.dc_tag_hit_ma(dc_tag_hit_ma),
+	.dc_st_wt_ma(dc_st_wt_ma),
+	.dc_cache_wr_ma(dc_cache_wr_ma),
 	.d_ram_radr(d_ram_radr),
 	.d_ram_rdata(d_ram_rdata),
 	.d_ram_wadr(d_ram_wadr),
@@ -451,6 +474,37 @@ interrupter interrupter (
 	.interrupt_0(interrupt_0),
 	.csr_meie(csr_meie),
 	.g_interrupt(g_interrupt)
+	);
+
+lsu_stage lsu_stage (
+	.clk(clk),
+	.rst_n(rst_n),
+	.rd_data_ex(rd_data_ex),
+	.rd_data_ma(rd_data_ma),
+	.cmd_ld_ma(cmd_ld_ma),
+	.cmd_st_ma(cmd_st_ma),
+	.ram_radr_all(ram_radr_all),
+	.ram_rdata_all(ram_rdata_all),
+	.ram_ren_all(ram_ren_all),
+	.ram_wadr_all(ram_wadr_all),
+	.ram_wdata_all(ram_wdata_all),
+	.ram_wen_all(ram_wen_all),
+	.dc_tag_hit_ma(dc_tag_hit_ma),
+	.dc_st_wt_ma(dc_st_wt_ma),
+	.dc_cache_wr_ma(dc_cache_wr_ma),
+	.dc_cache_clr_bits(1'b0), // temp
+	.dc_stall(dc_stall),
+	.dcw_start_rq(dcw_start_rq),
+	.dcw_in_addr(dcw_in_addr),
+	.dcw_in_mask(dcw_in_mask),
+	.dcw_in_data(dcw_in_data),
+	.dcw_finish_wresp(dcw_finish_wresp),
+	.dcr_start_rq(dcr_start_rq),
+	.dcr_rin_addr(dcr_rin_addr),
+	.rqfull_1(rqfull_1),
+	.rdat_m_data(rdat_m_data),
+	.rdat_m_valid(rdat_m_valid),
+	.finish_mrd(finish_mrd)
 	);
 
 dma #(.DWIDTH(DWIDTH)) dma (

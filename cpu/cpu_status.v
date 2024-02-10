@@ -12,6 +12,8 @@ module cpu_status(
 	input clk,
 	input rst_n,
 
+	// D$ stall
+	input dc_stall,
 	// from control
 	input cpu_start,
 	input quit_cmd,
@@ -40,8 +42,9 @@ end
 //wire cpu_running = cpu_run_state; 
 
 // stall signal : currently controlled by outside
+// add lsu stall
 
-assign stall = ~cpu_run_state;
+assign stall = ~cpu_run_state | dc_stall;
 
 always @ (posedge clk or negedge rst_n) begin
     if (~rst_n)
