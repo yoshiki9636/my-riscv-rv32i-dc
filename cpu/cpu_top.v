@@ -139,6 +139,7 @@ wire inst_rs2_valid;
 wire jmp_condition_ex;
 wire ecall_condition_ex;
 wire jmp_purge_ma;
+wire jmp_purge_ex;
 wire nohit_rs1_ex;
 wire nohit_rs2_ex;
 wire rst_pipe;
@@ -149,6 +150,8 @@ wire rst_pipe_wb;
 wire dc_stall;
 wire stall;
 wire stall_1shot;
+wire stall_fin;
+wire stall_fin2;
 wire stall_dly;
 wire stall_ld;
 wire stall_ld_ex;
@@ -184,6 +187,7 @@ wire ram_ren_all;
 wire [DWIDTH-3:0] ram_wadr_all;
 wire [127:0] ram_wdata_all;
 wire ram_wen_all;
+wire dc_ld_issue_ma;
 
 cpu_status cpu_status (
 	.clk(clk),
@@ -193,6 +197,8 @@ cpu_status cpu_status (
 	.quit_cmd(quit_cmd),
 	.stall(stall),
 	.stall_1shot(stall_1shot),
+	.stall_fin(stall_fin),
+	.stall_fin2(stall_fin2),
 	.stall_dly(stall_dly),
 	.rst_pipe(rst_pipe),
 	.rst_pipe_id(rst_pipe_id),
@@ -228,6 +234,7 @@ if_stage if_stage (
 	.start_adr(start_adr),
 	.stall(stall),
 	.stall_1shot(stall_1shot),
+	.stall_fin(stall_fin),
 	.stall_dly(stall_dly),
 	.stall_ld(stall_ld),
 	.stall_ld_ex(stall_ld_ex),
@@ -282,6 +289,7 @@ id_stage id_stage (
 	.rd_adr_ex(rd_adr_ex),
 	.wbk_rd_reg_ex(wbk_rd_reg_ex),
 	.jmp_purge_ma(jmp_purge_ma),
+	.jmp_purge_ex(jmp_purge_ex),
 	.rd_adr_wb(rd_adr_wb),
 	.wbk_rd_reg_wb(wbk_rd_reg_wb),
 	.wbk_data_wb(wbk_data_wb),
@@ -375,6 +383,7 @@ ex_stage ex_stage (
     .csr_mtie(csr_mtie),
     .csr_msie(csr_msie),
 	.jmp_purge_ma(jmp_purge_ma),
+	.jmp_purge_ex(jmp_purge_ex),
 	.stall(stall),
 	.rst_pipe(rst_pipe_ex)
 	);
@@ -401,6 +410,7 @@ ma_stage #(.DWIDTH(DWIDTH)) ma_stage (
 	.ram_wadr_all(ram_wadr_all),
 	.ram_wdata_all(ram_wdata_all),
 	.ram_wen_all(ram_wen_all),
+	.dc_ld_issue_ma(dc_ld_issue_ma),
 	.dc_tag_hit_ma(dc_tag_hit_ma),
 	.dc_st_wt_ma(dc_st_wt_ma),
 	.dc_cache_wr_ma(dc_cache_wr_ma),
@@ -464,6 +474,7 @@ forwarding forwarding (
 	.nohit_rs2_ex(nohit_rs2_ex),
 	.stall_ld(stall_ld),
 	.stall_ld_ex(stall_ld_ex),
+	.stall_fin2(stall_fin2),
 	.stall(stall),
 	.rst_pipe(rst_pipe)
 	);
@@ -483,12 +494,14 @@ lsu_stage lsu_stage (
 	.rd_data_ma(rd_data_ma),
 	.cmd_ld_ma(cmd_ld_ma),
 	.cmd_st_ma(cmd_st_ma),
+	.jmp_purge_ma(jmp_purge_ma),
 	.ram_radr_all(ram_radr_all),
 	.ram_rdata_all(ram_rdata_all),
 	.ram_ren_all(ram_ren_all),
 	.ram_wadr_all(ram_wadr_all),
 	.ram_wdata_all(ram_wdata_all),
 	.ram_wen_all(ram_wen_all),
+	.dc_ld_issue_ma(dc_ld_issue_ma),
 	.dc_tag_hit_ma(dc_tag_hit_ma),
 	.dc_st_wt_ma(dc_st_wt_ma),
 	.dc_cache_wr_ma(dc_cache_wr_ma),

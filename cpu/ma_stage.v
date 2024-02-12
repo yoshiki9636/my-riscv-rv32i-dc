@@ -36,6 +36,7 @@ module ma_stage
 	input [DWIDTH-3:0] ram_wadr_all,
 	input [127:0] ram_wdata_all,
 	input ram_wen_all,
+	input dc_ld_issue_ma,
 	// dc controls
     input dc_tag_hit_ma,
     input dc_st_wt_ma,
@@ -154,7 +155,8 @@ assign data_wadr_ma = d_ram_wen ? d_ram_wadr :
 					  dma_we_ma ? dataram_wadr_ma[DWIDTH+1:2] : rd_data_ma[DWIDTH+1:2];
 assign data_wdata_ma = d_ram_wen ? d_ram_wdata :
 					   dma_we_ma ? { 16'd0, dataram_wdata_ma } : st_wdata;
-assign data_we_ma = ((d_ram_wen | dma_we_ma) ? 4'b1111 : st_we_mem) & { 4{ dc_tag_hit_ma | dc_st_wt_ma }};
+//assign data_we_ma = ((d_ram_wen | dma_we_ma) ? 4'b1111 : st_we_mem) & { 4{ dc_tag_hit_ma | dc_st_wt_ma }};
+assign data_we_ma = ((d_ram_wen | dma_we_ma) ? 4'b1111 : st_we_mem) & { 4{ dc_tag_hit_ma }};
 
 assign dc_cache_wr_ma = |data_we_ma;
 
@@ -199,7 +201,8 @@ always @ ( posedge clk or negedge rst_n) begin
         ld_data_roll <= data_rdata_wb;
 end
 
-assign ld_data_wb = stall_dly ? ld_data_roll : data_rdata_wb;
+//assign ld_data_wb = stall_dly ? ld_data_roll : data_rdata_wb;
+assign ld_data_wb = data_rdata_wb;
 assign d_ram_rdata = data_rdata_wb;
 
 // FF to WB
@@ -219,12 +222,14 @@ always @ ( posedge clk or negedge rst_n) begin
 		rd_data_wb <= 32'd0;
 		wbk_rd_reg_wb <= 1'b0;
 	end
-	else if (~stall) begin
+	//else if (~stall) begin
+	else begin
         cmd_ld_wb <= cmd_ld_ma;
 		ld_code_wb <= ldst_code_ma;
 		rd_adr_wb <= rd_adr_ma;
 		rd_data_wb <= rd_data_ma;
-		wbk_rd_reg_wb <= wbk_rd_reg_ma;
+		wbk_rd_reg_wb <= stall ? dc_ld_issue_ma : wbk_rd_reg_ma;
+		//wbk_rd_reg_wb <= ~stall & wbk_rd_reg_ma;
 	end
 end
 

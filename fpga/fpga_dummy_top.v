@@ -107,13 +107,12 @@ wire [127:0] app_rd_data; // input
 wire app_rd_data_end; // input
 wire app_rd_data_valid; // input
 
-
-wire [12:2] d_ram_radr;
-wire [12:2] d_ram_wadr;
+wire [12:2] d_ram_radr = 11'd0;
+wire [12:2] d_ram_wadr = 11'd0;
 wire [31:0] d_ram_rdata;
-wire [31:0] d_ram_wdata;
-wire d_ram_wen;
-wire d_read_sel;
+wire [31:0] d_ram_wdata = 12'd0;
+wire d_ram_wen = 1'b0;
+wire d_read_sel = 1'b0;
 
 wire [13:2] i_ram_radr;
 wire [13:2] i_ram_wadr;

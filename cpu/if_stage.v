@@ -14,7 +14,7 @@ module if_stage(
 	input rst_n,
 	// to ID stage
 	output [31:0] inst_id,
-	output reg [31:2] pc_id,
+	output [31:2] pc_id,
 	// from EX stage : jmp/br
 	input jmp_condition_ex,
 	input [31:2] jmp_adr_ex,
@@ -43,6 +43,7 @@ module if_stage(
 	input [31:2] start_adr,
 	input stall,
 	input stall_1shot,
+	input stall_fin,
 	input stall_dly,
 	input stall_ld,
 	input stall_ld_ex,
@@ -76,13 +77,29 @@ always @ (posedge clk or negedge rst_n) begin
 		pc_if <= pc_if + 30'd1;
 end
 
+reg [31:2] pc_id_pre;
+reg [31:2] pc_collision;
+reg use_collision;
+
 always @ (posedge clk or negedge rst_n) begin
 	if (~rst_n)
-		pc_id <= 30'd0;
+		pc_id_pre <= 30'd0;
+	else if (stall | stall_ld)
+		pc_id_pre <= pc_id_pre;	
 	else
-		pc_id <= pc_if;
+		pc_id_pre <= pc_if;
 end
 
+always @ (posedge clk or negedge rst_n) begin   
+	if (~rst_n)
+        pc_collision <= 32'd0;
+	else if (rst_pipe)
+        pc_collision <= 32'd0;	
+	else if (stall_1shot & stall_ld_ex )
+        pc_collision <= pc_id;
+end
+
+assign pc_id = use_collision ?  pc_collision : pc_id_pre;
 assign pc_data = {pc_if, 2'd0};
 
 // instruction RAM
@@ -105,6 +122,7 @@ inst_1r1w inst_1r1w (
 	);
 
 reg [31:0] inst_roll;
+reg [31:0] inst_collision;
 
 always @ (posedge clk or negedge rst_n) begin   
 	if (~rst_n)
@@ -115,7 +133,24 @@ always @ (posedge clk or negedge rst_n) begin
         inst_roll <= inst_rdata_id;
 end
 
-assign inst_id = (stall_dly | stall_ld_ex) ? inst_roll : inst_rdata_id;
+always @ (posedge clk or negedge rst_n) begin   
+	if (~rst_n)
+        inst_collision <= 32'd0;
+	else if (rst_pipe)
+        inst_collision <= 32'd0;	
+	else if (stall_1shot & stall_ld_ex )
+        inst_collision <= inst_roll;
+end
+
+always @ (posedge clk or negedge rst_n) begin   
+	if (~rst_n)
+        use_collision <= 1'b0;
+	else
+        use_collision <= stall_fin & stall_ld_ex;
+end
+
+assign inst_id = use_collision ?  inst_collision :
+                 (stall_dly | stall_ld_ex) ? inst_roll : inst_rdata_id;
 
 // post interrupt / ecall timing
 always @ (posedge clk or negedge rst_n) begin   

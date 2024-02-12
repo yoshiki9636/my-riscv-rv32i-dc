@@ -20,6 +20,8 @@ module cpu_status(
 	// to CPU
 	output stall,
 	output stall_1shot,
+	output stall_fin,
+	output stall_fin2,
 	output reg stall_dly,
 	output reg rst_pipe,
 	output reg rst_pipe_id,
@@ -43,17 +45,25 @@ end
 
 // stall signal : currently controlled by outside
 // add lsu stall
+reg stall_dly2;
 
 assign stall = ~cpu_run_state | dc_stall;
 
 always @ (posedge clk or negedge rst_n) begin
-    if (~rst_n)
+    if (~rst_n) begin
         stall_dly <= 1'b1 ;
-	else
+        stall_dly2 <= 1'b1 ;
+	end
+	else begin
 		stall_dly <= stall;
+		stall_dly2 <= stall_dly;
+	end
 end
 
 assign stall_1shot = stall & ~stall_dly;
+
+assign stall_fin = ~stall & stall_dly;
+assign stall_fin2 = ~stall_dly & stall_dly2;
 
 // pipeline reset signal
 

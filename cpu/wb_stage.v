@@ -100,7 +100,8 @@ always @ ( posedge clk or negedge rst_n) begin
         wbk_data_wb2 <= 32'd0;
 	else if (rst_pipe)
         wbk_data_wb2 <= 32'd0;
-	else if (~stall)
+	//else if (~stall)
+	else
 		wbk_data_wb2 <= wbk_data_wb;
 end
 

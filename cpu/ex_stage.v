@@ -98,6 +98,7 @@ module ex_stage(
     output csr_msie,
 	// to ID
 	output reg jmp_purge_ma,
+	output jmp_purge_ex,
 	// stall
 	input stall,
 	input rst_pipe
@@ -133,6 +134,8 @@ wire [31:0] jalr_ofs = {{ 20{ jalr_ofs_ex[11] }}, jalr_ofs_ex };
 // cmd_br_ex rs1:pc rs2:ofs
 wire [31:0] br_ofs = {{ 19{ br_ofs_ex[12] }}, br_ofs_ex, 1'b0 };
 
+wire cmd_ld_pur = cmd_ld_ex & ~jmp_purge_ma;
+//wire cmd_ld_pur = cmd_ld_ex;
 
 // forwarding selector
 
@@ -146,7 +149,7 @@ wire [31:0] rs2_fwd = hit_rs2_idex_ex ? rd_data_ma :
 
 wire [31:0] rs1_sel = ~nohit_rs1_ex ? rs1_fwd : rs1_data_ex;
 
-wire [31:0] rs2_sel = (cmd_ld_ex | cmd_alui_ex) ? ld_alui_ofs :
+wire [31:0] rs2_sel = (cmd_ld_pur | cmd_alui_ex) ? ld_alui_ofs :
 					  cmd_st_ex ? st_ofs :
 					  cmd_alui_shamt_ex ? shamt :
 					   ~nohit_rs2_ex ? rs2_fwd : rs2_data_ex;
@@ -256,7 +259,7 @@ exception exception (
 // ALU
 
 wire [2:0] alu_code = alu_code_ex & { 3{ ~(cmd_alu_ex & cmd_alui_ex & cmd_alui_shamt_ex) }};
-wire cmd_stld = cmd_st_ex | cmd_ld_ex;
+wire cmd_stld = cmd_st_ex | cmd_ld_pur;
 
 function [31:0] alu_selector;
 input [2:0] alu_code;
@@ -334,7 +337,7 @@ assign jmp_condition_ex = ~jmp_purge_ma & (
 assign ecall_condition_ex = ~jmp_purge_ma & (cmd_ecall_ex | illegal_ops_ex);
 
 // purge signal
-wire jmp_purge_ex = jmp_condition_ex | ecall_condition_ex;
+assign jmp_purge_ex = jmp_condition_ex | ecall_condition_ex;
 
 wire wbk_rd_reg_tmp = wbk_rd_reg_ex & ~jmp_purge_ma & ~illegal_ops_ex;
 wire cmd_st_tmp = cmd_st_ex & ~jmp_purge_ma;
@@ -343,34 +346,34 @@ wire cmd_st_tmp = cmd_st_ex & ~jmp_purge_ma;
 
 always @ ( posedge clk or negedge rst_n) begin   
 	if (~rst_n) begin
-        cmd_ld_ma <= 1'b0;
         cmd_st_ma <= 1'b0;
 		rd_adr_ma <= 5'd0;
 		rd_data_ma <= 32'd0;
-		wbk_rd_reg_ma <= 1'b0;
 		st_data_ma <= 32'd0;
 		ldst_code_ma <= 3'd0;
 		jmp_purge_ma <= 1'b0;
+        cmd_ld_ma <= 1'b0;
+		wbk_rd_reg_ma <= 1'b0;
 	end
 	else if (rst_pipe) begin
-        cmd_ld_ma <= 1'b0;
         cmd_st_ma <= 1'b0;
 		rd_adr_ma <= 5'd0;
 		rd_data_ma <= 32'd0;
-		wbk_rd_reg_ma <= 1'b0;
 		st_data_ma <= 32'd0;
 		ldst_code_ma <= 3'd0;
 		jmp_purge_ma <= 1'b0;
+        cmd_ld_ma <= 1'b0;
+		wbk_rd_reg_ma <= 1'b0;
 	end
 	else if (~stall) begin
-	    cmd_ld_ma <= cmd_ld_ex;
         cmd_st_ma <= cmd_st_tmp;
 		rd_adr_ma <= rd_adr_ex;
 		rd_data_ma <= rd_data_ex;
-		wbk_rd_reg_ma <= wbk_rd_reg_tmp;
 		st_data_ma <= st_data_ex;
 		ldst_code_ma <= alu_code_ex;
 		jmp_purge_ma <= jmp_purge_ex;
+	    cmd_ld_ma <= cmd_ld_pur;
+		wbk_rd_reg_ma <= wbk_rd_reg_tmp;
 	end
 end
 

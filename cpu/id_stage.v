@@ -61,6 +61,7 @@ module id_stage(
     output reg illegal_ops_ex,
 	// from EX
 	input jmp_purge_ma,
+	input jmp_purge_ex,
 	// from WB
 	input [4:0] rd_adr_wb,
 	input wbk_rd_reg_wb,
@@ -240,7 +241,7 @@ wire cmd_lui_id = dc_op1_01101 & dc_notc;
 wire cmd_auipc_id = dc_op1_00101 & dc_notc;
 wire [31:12] lui_auipc_imm_id = inst_imm_31_12;
 
-wire cmd_ld_id = dc_op1_00000 & dc_notc;
+wire cmd_ld_id = dc_op1_00000 & dc_notc & ~jmp_purge_ma;
 //wire [2:0] ld_bw_id = inst_op2;
 wire [11:0] ld_ofs_id = inst_ofs_11_0_l;
 

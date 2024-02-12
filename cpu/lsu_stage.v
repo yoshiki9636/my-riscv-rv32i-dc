@@ -18,6 +18,7 @@ module lsu_stage
 	input [31:0] rd_data_ma,
 	input cmd_ld_ma,
 	input cmd_st_ma,
+	input jmp_purge_ma,
 
     // to MA
     output [DWIDTH-3:0] ram_radr_all,
@@ -26,6 +27,7 @@ module lsu_stage
     output [DWIDTH-3:0] ram_wadr_all,
     output [127:0] ram_wdata_all,
     output ram_wen_all,
+    output dc_ld_issue_ma,
 	// DC controls
 	output dc_tag_hit_ma,
 	output dc_st_wt_ma,
@@ -114,6 +116,9 @@ wire dc_cache_dirty_ma = ent_dirty_bit_ma[dc_cache_dirty_adr] & dc_tag_misshit_m
 `define DCMS_MEMW 3'b001
 `define DCMS_MEMR 3'b010
 `define DCMS_DCWT 3'b011
+`define DCMS_DCW2 3'b100
+`define DCMS_DCW3 3'b101
+`define DCMS_LDRD 3'b110
 `define DCMS_DEFO 3'b111
 
 // Request channel manager state machine
@@ -151,7 +156,10 @@ begin
 				default: dc_miss_decode = `DCMS_DEFO;
     		endcase
 		end
-		`DCMS_DCWT: dc_miss_decode = `DCMS_IDLE;
+		`DCMS_DCWT: dc_miss_decode = `DCMS_DCW2;
+		`DCMS_DCW2: dc_miss_decode = `DCMS_DCW3;
+		`DCMS_DCW3: dc_miss_decode = `DCMS_LDRD;
+		`DCMS_LDRD: dc_miss_decode = `DCMS_IDLE;
 		`DCMS_DEFO: dc_miss_decode = `DCMS_DEFO;
 		default:     dc_miss_decode = `DCMS_DEFO;
    	endcase
@@ -183,6 +191,9 @@ assign dc_stall = (dc_miss_current != `DCMS_IDLE) | (dc_tag_misshit_ma | dc_tag_
 // store data write timing
 assign dc_st_wt_ma = (dc_miss_current != `DCMS_DCWT);
 
+// load issue timing
+assign dc_ld_issue_ma = (dc_miss_current == `DCMS_LDRD);
+
 // memory write bus i/f signals
 always @ (posedge clk or negedge rst_n) begin
     if (~rst_n)
@@ -192,7 +203,9 @@ always @ (posedge clk or negedge rst_n) begin
 end
 
 assign dcw_in_mask = 16'd0;
-assign dcw_in_addr = { rd_data_ma[31:28], dc_tag_adr_ma, rd_data_ma[12:0] }; 
+
+assign dcw_in_addr = { rd_data_ma[31:28], dc_tag_radr[27:13],  rd_data_ma[12:0] };
+
 assign dcw_in_data = ram_rdata_all;
 
 // memory read bus i/f signals
@@ -204,7 +217,8 @@ assign rqfull_1 = 1'b0;
 // to MA
 assign ram_wadr_all = current_radr_keeper[12:4];
 assign ram_wdata_all = rdat_m_data;
-assign ram_radr_all = current_radr_keeper[12:4];
+//assign ram_radr_all = current_radr_keeper[12:4];
+assign ram_radr_all = rd_data_ma[12:4];
 assign ram_wadr_all = current_radr_keeper[12:4];
 assign ram_wen_all = rdat_m_valid;
 assign ram_ren_all = (dc_miss_current == `DCMS_IDLE) & (dc_miss_next == `DCMS_MEMW);
