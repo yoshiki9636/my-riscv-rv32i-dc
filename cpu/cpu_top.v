@@ -153,6 +153,9 @@ wire stall_1shot;
 wire stall_fin;
 wire stall_fin2;
 wire stall_dly;
+wire stall_ex;
+wire stall_ma;
+wire stall_wb;
 wire stall_ld;
 wire stall_ld_ex;
 wire wbk_rd_reg_ex;
@@ -200,6 +203,9 @@ cpu_status cpu_status (
 	.stall_fin(stall_fin),
 	.stall_fin2(stall_fin2),
 	.stall_dly(stall_dly),
+	.stall_ex(stall_ex),
+	.stall_ma(stall_ma),
+	.stall_wb(stall_wb),
 	.rst_pipe(rst_pipe),
 	.rst_pipe_id(rst_pipe_id),
 	.rst_pipe_ex(rst_pipe_ex),
@@ -434,7 +440,8 @@ ma_stage #(.DWIDTH(DWIDTH)) ma_stage (
 	.stall(stall),
 	.stall_1shot(stall_1shot),
 	.stall_dly(stall_dly),
-	.rst_pipe(rst_pipe)
+	//.rst_pipe(rst_pipe)
+	.rst_pipe(rst_pipe_ma)
 	);
 
 wb_stage wb_stage (
@@ -476,6 +483,9 @@ forwarding forwarding (
 	.stall_ld_ex(stall_ld_ex),
 	.stall_fin2(stall_fin2),
 	.stall(stall),
+	.stall_ex(stall_ex),
+	.stall_ma(stall_ma),
+	.stall_wb(stall_wb),
 	.rst_pipe(rst_pipe)
 	);
 
