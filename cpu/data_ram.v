@@ -41,7 +41,7 @@ wire [31:0] ram_rdata3;
 wire [31:0] ram_wdata0 = ram_wen_all ? ram_wdata_all[31:0] : ram_wdata;
 wire [31:0] ram_wdata1 = ram_wen_all ? ram_wdata_all[63:32] : ram_wdata;
 wire [31:0] ram_wdata2 = ram_wen_all ? ram_wdata_all[95:64] : ram_wdata;
-wire [31:0] ram_wdata3 = ram_wen_all ? ram_wdata_all[127:95] : ram_wdata;
+wire [31:0] ram_wdata3 = ram_wen_all ? ram_wdata_all[127:96] : ram_wdata;
 
 reg [1:0] ram_rd_sel;
 always @ (posedge clk or negedge rst_n) begin

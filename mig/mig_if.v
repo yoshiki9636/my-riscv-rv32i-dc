@@ -47,13 +47,14 @@ module mig_if (
 reg req_rd_bwt_lat;
 always @ (posedge mclk or negedge mrst_n) begin
     if (~mrst_n)
-        req_rd_bwt_lat  <= 2'd0;
+        req_rd_bwt_lat  <= 1'd0;
     else if (req_rnext)
         req_rd_bwt_lat  <= req_rd_bwt;
 end
 
 // request
-assign app_addr = req_qraddr [27:0] ;
+//assign app_addr = req_qraddr [27:0] ;
+assign app_addr = {1'b0, req_qraddr[27:4], 3'b000} ;
 assign app_cmd = { 2'b00, req_rd_bwt };
 assign app_en = ~req_rqempty;
 
