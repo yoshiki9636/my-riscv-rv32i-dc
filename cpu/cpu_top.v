@@ -15,6 +15,7 @@ module cpu_top
 	input clk,
 	input rst_n,
 
+	input init_calib_complete,
 	input cpu_start,
 	input quit_cmd,
 	input [31:2] start_adr,
@@ -196,6 +197,7 @@ cpu_status cpu_status (
 	.clk(clk),
 	.rst_n(rst_n),
 	.dc_stall(dc_stall),
+	.init_calib_complete(init_calib_complete),
 	.cpu_start(cpu_start),
 	.quit_cmd(quit_cmd),
 	.stall(stall),

@@ -64,12 +64,14 @@ wire [31:2] jmp_adr = intr_ecall_exception ? csr_mtvec_ex :
                       cmd_mret_ex ? csr_mepc_ex :
                       cmd_sret_ex ? csr_sepc_ex : jmp_adr_ex;
 
+reg use_collision;
+reg after_collision;
 always @ (posedge clk or negedge rst_n) begin
 	if (~rst_n)
 		pc_if <= 30'd0;
 	else if (cpu_start)
 		pc_if <= start_adr;
-	else if (stall | stall_ld)
+	else if (stall | stall_ld | use_collision)
 		pc_if <= pc_if;	
 	else if (jmp_cond)
 		pc_if <= jmp_adr;
@@ -79,12 +81,11 @@ end
 
 reg [31:2] pc_id_pre;
 reg [31:2] pc_collision;
-reg use_collision;
 
 always @ (posedge clk or negedge rst_n) begin
 	if (~rst_n)
 		pc_id_pre <= 30'd0;
-	else if (stall | stall_ld)
+	else if (stall | stall_ld | use_collision)
 		pc_id_pre <= pc_id_pre;	
 	else
 		pc_id_pre <= pc_if;
@@ -92,9 +93,9 @@ end
 
 always @ (posedge clk or negedge rst_n) begin   
 	if (~rst_n)
-        pc_collision <= 32'd0;
+        pc_collision <= 30'd0;
 	else if (rst_pipe)
-        pc_collision <= 32'd0;	
+        pc_collision <= 30'd0;	
 	else if (stall_1shot & stall_ld_ex )
         pc_collision <= pc_id;
 end
@@ -129,7 +130,7 @@ always @ (posedge clk or negedge rst_n) begin
         inst_roll <= 32'd0;
 	else if (rst_pipe)
         inst_roll <= 32'd0;	
-	else if (stall_1shot | stall_ld)
+	else if (stall_1shot | stall_ld )
         inst_roll <= inst_rdata_id;
 end
 
@@ -145,12 +146,24 @@ end
 always @ (posedge clk or negedge rst_n) begin   
 	if (~rst_n)
         use_collision <= 1'b0;
-	else
-        use_collision <= stall_fin & stall_ld_ex;
+	else if (stall_fin)
+        use_collision <= 1'b0;
+	else if (stall_1shot & stall_ld_ex )
+        use_collision <= 1'b1;
 end
 
+always @ (posedge clk or negedge rst_n) begin   
+	if (~rst_n)
+        after_collision <= 1'b0;
+	else if (after_collision)
+        after_collision <= 1'b0;
+	else if (stall_fin & use_collision )
+        after_collision <= 1'b1;
+end
+
+
 assign inst_id = use_collision ?  inst_collision :
-                 (stall_dly | stall_ld_ex) ? inst_roll : inst_rdata_id;
+                 (stall_dly | stall_ld_ex | after_collision) ? inst_roll : inst_rdata_id;
 
 // post interrupt / ecall timing
 always @ (posedge clk or negedge rst_n) begin   

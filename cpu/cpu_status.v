@@ -15,6 +15,7 @@ module cpu_status(
 	// D$ stall
 	input dc_stall,
 	// from control
+	input init_calib_complete,
 	input cpu_start,
 	input quit_cmd,
 	// to CPU
@@ -34,14 +35,30 @@ module cpu_status(
 	);
 
 reg cpu_run_state;
+reg cpu_start_lat;
 
 always @ (posedge clk or negedge rst_n) begin
 	if (~rst_n)
 		cpu_run_state <= 1'b0;
 	else if (quit_cmd)
 		cpu_run_state <= 1'b0;	
+	else if (~init_calib_complete)
+		cpu_run_state <= 1'b0;	
 	else if (cpu_start)
 		cpu_run_state <= 1'b1;
+	else if (cpu_start_lat)
+		cpu_run_state <= 1'b1;
+end
+
+always @ (posedge clk or negedge rst_n) begin
+	if (~rst_n)
+		cpu_start_lat <= 1'b0;
+	else if (quit_cmd)
+		cpu_start_lat <= 1'b0;
+	else if (cpu_run_state)
+		cpu_start_lat <= 1'b0;
+	else if (~init_calib_complete & cpu_start)
+		cpu_start_lat <= 1'b1;
 end
 
 //wire cpu_running = cpu_run_state; 
@@ -69,9 +86,9 @@ always @ (posedge clk or negedge rst_n) begin
 	end
 end
 
-assign stall_ex = stall_dly2;
-assign stall_ma = stall_dly3;
-assign stall_wb = stall_dly4;
+assign stall_ex = stall_dly;
+assign stall_ma = stall_dly2;
+assign stall_wb = stall_dly3;
 
 assign stall_1shot = stall & ~stall_dly;
 

@@ -314,6 +314,8 @@ reg [31:0] rd_data_roll;
 always @ ( posedge clk or negedge rst_n) begin   
 	if (~rst_n)
         rd_data_roll <= 32'd0;
+	else if (rst_pipe)
+        rd_data_roll <= 32'd0;
 	else if (~dc_stall)
         rd_data_roll <= rd_data_ex_pre;
 end
