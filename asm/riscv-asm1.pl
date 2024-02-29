@@ -538,7 +538,8 @@ while(<>) {
 	$bit_pattern =~ s/(.....)(..)(.....)(.....)(...)(.....)(.....)(..)/$1 $2 $3 $4 $5 $6 $7 $8/;
 	# CR/comment
 	if ($v == 1) {
-		print " // $pcadr: $bit_pattern $_";
+		$pcadrsim = sprintf("%08x",$pc/4);
+		print " // $pcadr: $pcadrsim: $bit_pattern $_";
 	}
 	else {
 		print "\n";
