@@ -485,6 +485,7 @@ forwarding forwarding (
 	.stall_ld_ex(stall_ld_ex),
 	.stall_fin2(stall_fin2),
 	.stall(stall),
+	.stall_dly(stall_dly),
 	.stall_ex(stall_ex),
 	.stall_ma(stall_ma),
 	.stall_wb(stall_wb),

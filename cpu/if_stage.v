@@ -149,7 +149,7 @@ always @ (posedge clk or negedge rst_n) begin
 	else if (stall_fin)
         use_collision <= 1'b0;
 	else if (stall_1shot & stall_ld_ex )
-        use_collision <= 1'b1;
+        use_collision <= 1'b0;
 end
 
 always @ (posedge clk or negedge rst_n) begin   
@@ -163,7 +163,8 @@ end
 
 
 assign inst_id = use_collision ?  inst_collision :
-                 (stall_dly | stall_ld_ex | after_collision) ? inst_roll : inst_rdata_id;
+                 (stall_dly | stall_ld_ex) ? inst_roll : inst_rdata_id;
+                 //(stall_dly | stall_ld_ex | after_collision) ? inst_roll : inst_rdata_id;
 
 // post interrupt / ecall timing
 always @ (posedge clk or negedge rst_n) begin   

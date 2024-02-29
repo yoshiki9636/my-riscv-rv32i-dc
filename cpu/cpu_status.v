@@ -87,8 +87,8 @@ always @ (posedge clk or negedge rst_n) begin
 end
 
 assign stall_ex = stall_dly;
-assign stall_ma = stall_dly2;
-assign stall_wb = stall_dly3;
+assign stall_ma = stall_dly;
+assign stall_wb = stall_dly2;
 
 assign stall_1shot = stall & ~stall_dly;
 

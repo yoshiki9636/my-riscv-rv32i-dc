@@ -36,6 +36,7 @@ module forwarding(
 	output stall_ld,
 	// stall
 	input stall,
+	input stall_dly,
 	input stall_ex,
 	input stall_ma,
 	input stall_wb,
@@ -73,8 +74,22 @@ wire hit_rs2_idwb = rd_adr_wb_not0 & (inst_rs2_id == rd_adr_wb) & notstall_wb & 
 wire nohit_rs2 = ~( hit_rs2_idex | hit_rs2_idma | hit_rs2_idwb);
 
 // for stall 1 cycle
-assign stall_ld = hit_rs1_ldidex | hit_rs2_ldidex | (stall_fin2 & stall_ld_ex);
+reg keep_stall_ld;
 
+wire stall_ld_pre = hit_rs1_ldidex | hit_rs2_ldidex;
+assign stall_ld = stall_dly ? keep_stall_ld : stall_ld_pre;
+
+// keep stall_ld during stall
+always @ (posedge clk or negedge rst_n) begin
+	if (~rst_n)
+		keep_stall_ld <= 1'b0;
+	else if (rst_pipe)
+		keep_stall_ld <= 1'b0;
+	else if (~stall)
+		keep_stall_ld <= stall_ld;
+end
+
+// pipeline FF
 always @ (posedge clk or negedge rst_n) begin
 	if (~rst_n) begin
 		hit_rs1_idex_ex <= 1'b0;
