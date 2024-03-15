@@ -72,8 +72,6 @@ module axi_bus_top (
 
 	);
 
-parameter DWIDTH = 11;
-
 // fixed unused signal
 assign dc_rdat_m_mask = 16'd0;
 wire [3:0] uart_rnext_id;

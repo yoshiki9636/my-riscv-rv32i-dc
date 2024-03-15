@@ -28,6 +28,7 @@ module lsu_stage
     output [127:0] ram_wdata_all,
     output ram_wen_all,
     output dc_ld_issue_ma,
+    output dc_stall_fin,
 	// DC controls
 	output dc_tag_hit_ma,
 	output dc_st_wt_ma,
@@ -46,7 +47,9 @@ module lsu_stage
 	output rqfull_1,
 	input [127:0] rdat_m_data,
 	input rdat_m_valid,
-	input finish_mrd
+	input finish_mrd,
+	input stall,
+	input rst_pipe
 
 	);
 
@@ -71,7 +74,9 @@ tag_1r1w #(.DRWIDTH(DWIDTH-2)) tag_1r1w (
 always @ (posedge clk or negedge rst_n) begin
     if (~rst_n)
         dc_tag_adr_ma <= 15'd0 ;
-	else
+	else if (rst_pipe)
+        dc_tag_adr_ma <= 15'd0 ;
+	else if (~dc_stall | dc_stall_fin )
 		dc_tag_adr_ma <= dc_tag_adr_ex;
 end
 
@@ -177,22 +182,38 @@ end
 
 // current read address keeper
 reg [31:0] current_radr_keeper;
+reg [27:13] current_tag_keeper;
 
 always @ (posedge clk or negedge rst_n) begin
-    if (~rst_n)
+    if (~rst_n) begin
         current_radr_keeper <= 32'd0;
-	else if ((dc_miss_current == `DCMS_IDLE) & (dc_tag_misshit_ma | dc_tag_empty_ma))
+        current_tag_keeper <= 15'd0;
+	end
+	else if ((dc_miss_current == `DCMS_IDLE) & (dc_tag_misshit_ma | dc_tag_empty_ma)) begin
 		current_radr_keeper <= rd_data_ma;
+        //current_tag_keeper <= dc_tag_radr;
+        current_tag_keeper <= dc_tag_adr_ma;
+	end
 end
 
 // core stall singal
-assign dc_stall = (dc_miss_current != `DCMS_IDLE) | (dc_tag_misshit_ma | dc_tag_empty_ma);
+//assign dc_stall = ((dc_miss_current != `DCMS_LDRD)&(dc_miss_current != `DCMS_IDLE)) | (dc_tag_misshit_ma | dc_tag_empty_ma);
+assign dc_stall = ((dc_miss_current != `DCMS_LDRD)&(dc_miss_current != `DCMS_IDLE)) | ((dc_tag_misshit_ma | dc_tag_empty_ma)&(dc_miss_current != `DCMS_LDRD));
+//assign dc_stall = (dc_miss_current != `DCMS_IDLE) | (dc_tag_misshit_ma | dc_tag_empty_ma);
 
 // store data write timing
 assign dc_st_wt_ma = (dc_miss_current != `DCMS_DCWT);
 
 // load issue timing
 assign dc_ld_issue_ma = (dc_miss_current == `DCMS_LDRD);
+assign dc_stall_fin = (dc_miss_current == `DCMS_DCW3);
+
+//always @ (posedge clk or negedge rst_n) begin
+    //if (~rst_n)
+        //dc_stall_fin <= 1'b0;
+	//else
+        //dc_stall_fin <= (dc_miss_current == `DCMS_LDRD);
+//end
 
 // memory write bus i/f signals
 always @ (posedge clk or negedge rst_n) begin
@@ -205,13 +226,25 @@ end
 assign dcw_in_mask = 16'd0;
 
 assign dcw_in_addr = { rd_data_ma[31:28], dc_tag_radr[27:13],  rd_data_ma[12:0] };
+//assign dcw_in_addr = { current_radr_keeper[31:28], current_tag_keeper[27:13],  current_radr_keeper[12:0] };
 
 assign dcw_in_data = ram_rdata_all;
+//always @ (posedge clk or negedge rst_n) begin
+    //if (~rst_n) begin
+        //dcw_in_data <= 128'd0;
+		//dcw_in_addr = 32'd0;
+	//end
+	//else begin
+        //dcw_in_data <= ram_rdata_all;
+		//dcw_in_addr = { rd_data_ma[31:28], dc_tag_radr[27:13],  rd_data_ma[12:0] };
+	//end
+//end
 
 // memory read bus i/f signals
 
 assign dcr_start_rq = ((dc_miss_current == `DCMS_MEMW)|(dc_miss_current == `DCMS_IDLE)) & (dc_miss_next == `DCMS_MEMR);
 assign dcr_rin_addr = rd_data_ma;
+//assign dcr_rin_addr = (dc_miss_current == `DCMS_MEMW) ? current_radr_keeper : rd_data_ma;
 assign rqfull_1 = 1'b0;
 
 // to MA

@@ -72,6 +72,7 @@ module ex_stage(
 
 	// to MA
 	input dc_stall,
+	input dc_stall_fin,
     output reg cmd_ld_ma,
     output reg cmd_st_ma,
 	output reg [4:0] rd_adr_ma,
@@ -101,6 +102,7 @@ module ex_stage(
 	output jmp_purge_ex,
 	// stall
 	input stall,
+	input stall_dly,
 	input rst_pipe
 
 	);
@@ -316,11 +318,13 @@ always @ ( posedge clk or negedge rst_n) begin
         rd_data_roll <= 32'd0;
 	else if (rst_pipe)
         rd_data_roll <= 32'd0;
-	else if (~dc_stall)
+	else if (~dc_stall | dc_stall_fin)
         rd_data_roll <= rd_data_ex_pre;
 end
 
-assign rd_data_ex = dc_stall ? rd_data_roll : rd_data_ex_pre;
+assign rd_data_ex = (dc_stall & ~dc_stall_fin) ? rd_data_roll : rd_data_ex_pre;
+//assign rd_data_ex = dc_stall ? rd_data_roll : rd_data_ex_pre;
+//assign rd_data_ex = rd_data_ex_pre;
 
 // jamp/br
 
@@ -368,6 +372,7 @@ always @ ( posedge clk or negedge rst_n) begin
 		wbk_rd_reg_ma <= 1'b0;
 	end
 	else if (~stall) begin
+	//else if (~(stall_dly|stall)) begin
         cmd_st_ma <= cmd_st_tmp;
 		rd_adr_ma <= rd_adr_ex;
 		rd_data_ma <= rd_data_ex;

@@ -48,6 +48,8 @@ module if_stage(
 	input stall_ld,
 	input stall_ld_ex,
 	input rst_pipe,
+	input dc_stall_fin,
+	output reg use_collision_add,
 	output [31:0] pc_data
 	);
 
@@ -65,13 +67,14 @@ wire [31:2] jmp_adr = intr_ecall_exception ? csr_mtvec_ex :
                       cmd_sret_ex ? csr_sepc_ex : jmp_adr_ex;
 
 reg use_collision;
-reg after_collision;
+reg [1:0] after_collision;
 always @ (posedge clk or negedge rst_n) begin
 	if (~rst_n)
 		pc_if <= 30'd0;
 	else if (cpu_start)
 		pc_if <= start_adr;
-	else if (stall | stall_ld | use_collision)
+	//else if (stall | stall_ld | use_collision)
+	else if (stall | stall_ld)
 		pc_if <= pc_if;	
 	else if (jmp_cond)
 		pc_if <= jmp_adr;
@@ -85,7 +88,8 @@ reg [31:2] pc_collision;
 always @ (posedge clk or negedge rst_n) begin
 	if (~rst_n)
 		pc_id_pre <= 30'd0;
-	else if (stall | stall_ld | use_collision)
+	//else if (stall | stall_ld | use_collision)
+	else if (stall | stall_ld)
 		pc_id_pre <= pc_id_pre;	
 	else
 		pc_id_pre <= pc_if;
@@ -100,7 +104,11 @@ always @ (posedge clk or negedge rst_n) begin
         pc_collision <= pc_id;
 end
 
+//assign pc_id = (use_collision | (|after_collision)) ?  pc_collision : pc_id_pre;
+//assign pc_id = (use_collision | (after_collision[1])) ?  pc_collision : pc_id_pre;
+//assign pc_id = (use_collision | stall_dly) ?  pc_collision : pc_id_pre;
 assign pc_id = use_collision ?  pc_collision : pc_id_pre;
+//assign pc_id = stall_dly ?  pc_collision : pc_id_pre;
 assign pc_data = {pc_if, 2'd0};
 
 // instruction RAM
@@ -146,25 +154,47 @@ end
 always @ (posedge clk or negedge rst_n) begin   
 	if (~rst_n)
         use_collision <= 1'b0;
+	else if (rst_pipe)
+        use_collision <= 1'b0;
 	else if (stall_fin)
         use_collision <= 1'b0;
 	else if (stall_1shot & stall_ld_ex )
-        use_collision <= 1'b0;
+        use_collision <= 1'b1;
 end
 
 always @ (posedge clk or negedge rst_n) begin   
 	if (~rst_n)
-        after_collision <= 1'b0;
-	else if (after_collision)
-        after_collision <= 1'b0;
-	else if (stall_fin & use_collision )
-        after_collision <= 1'b1;
+        use_collision_add <= 1'b0;
+	else if (rst_pipe)
+        use_collision_add <= 1'b0;
+	else if (dc_stall_fin)
+        use_collision_add <= 1'b0;
+	else if (stall_1shot & stall_ld_ex )
+        use_collision_add <= 1'b1;
 end
 
 
-assign inst_id = use_collision ?  inst_collision :
-                 (stall_dly | stall_ld_ex) ? inst_roll : inst_rdata_id;
-                 //(stall_dly | stall_ld_ex | after_collision) ? inst_roll : inst_rdata_id;
+always @ (posedge clk or negedge rst_n) begin   
+	if (~rst_n)
+        after_collision <= 2'd0;
+	else if (rst_pipe)
+        after_collision <= 2'd0;
+	else if (stall_fin & use_collision )
+        after_collision <= 2'd2;
+	else if (after_collision > 2'd0)
+        after_collision <= after_collision - 2'd1;
+end
+
+//assign use_collision_add = (use_collision & ~stall_fin) | after_collision; //zantei
+//assign use_collision_add = use_collision & stall_fin;
+//assign use_collision_add = use_collision | after_collision[1];
+//assign use_collision_add = use_collision;
+
+//assign inst_id = (use_collision | (|after_collision)) ?  inst_collision : // for load store btb
+//assign inst_id = (use_collision | (after_collision[1])) ?  inst_collision : // for load store btb
+assign inst_id = use_collision  ?  inst_collision : // for load store btb
+                 (stall_dly | stall_ld_ex) ? inst_roll : // for load bypass pattern without store
+                 inst_rdata_id; // other condisitons
 
 // post interrupt / ecall timing
 always @ (posedge clk or negedge rst_n) begin   

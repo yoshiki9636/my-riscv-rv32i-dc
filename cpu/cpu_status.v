@@ -20,6 +20,7 @@ module cpu_status(
 	input quit_cmd,
 	// to CPU
 	output stall,
+	output stall_ex_pipe,
 	output stall_ex,
 	output stall_ma,
 	output stall_wb,
@@ -86,9 +87,12 @@ always @ (posedge clk or negedge rst_n) begin
 	end
 end
 
-assign stall_ex = stall_dly;
-assign stall_ma = stall_dly & stall;
-assign stall_wb = stall_dly2 & stall_dly;
+assign stall_ex_pipe = stall | stall_dly;
+assign stall_ex = stall & stall_dly;
+//assign stall_ma = stall_dly & stall;
+//assign stall_wb = stall_dly2 & stall_dly;
+assign stall_ma = stall_dly2 & stall;
+assign stall_wb = stall_dly3 & stall_dly;
 
 assign stall_1shot = stall & ~stall_dly;
 

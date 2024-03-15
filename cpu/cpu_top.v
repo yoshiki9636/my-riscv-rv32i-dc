@@ -154,6 +154,7 @@ wire stall_1shot;
 wire stall_fin;
 wire stall_fin2;
 wire stall_dly;
+wire stall_ex_pipe;
 wire stall_ex;
 wire stall_ma;
 wire stall_wb;
@@ -162,6 +163,8 @@ wire stall_ld_ex;
 wire wbk_rd_reg_ex;
 wire wbk_rd_reg_ma;
 wire wbk_rd_reg_wb;
+
+wire use_collision_add;
 
 wire [31:2] csr_mepc_ex;
 wire [31:2] csr_sepc_ex;
@@ -192,6 +195,7 @@ wire [DWIDTH-3:0] ram_wadr_all;
 wire [127:0] ram_wdata_all;
 wire ram_wen_all;
 wire dc_ld_issue_ma;
+wire dc_stall_fin;
 
 cpu_status cpu_status (
 	.clk(clk),
@@ -205,6 +209,7 @@ cpu_status cpu_status (
 	.stall_fin(stall_fin),
 	.stall_fin2(stall_fin2),
 	.stall_dly(stall_dly),
+	.stall_ex_pipe(stall_ex_pipe),
 	.stall_ex(stall_ex),
 	.stall_ma(stall_ma),
 	.stall_wb(stall_wb),
@@ -247,6 +252,8 @@ if_stage if_stage (
 	.stall_ld(stall_ld),
 	.stall_ld_ex(stall_ld_ex),
 	.rst_pipe(rst_pipe),
+	.dc_stall_fin(dc_stall_fin),
+	.use_collision_add(use_collision_add),
 	.pc_data(pc_data)
 	);
 
@@ -368,6 +375,7 @@ ex_stage ex_stage (
 	.wbk_data_wb(wbk_data_wb),
 	.wbk_data_wb2(wbk_data_wb2),
 	.dc_stall(dc_stall),
+	.dc_stall_fin(dc_stall_fin),
 	.cmd_ld_ma(cmd_ld_ma),
 	.cmd_st_ma(cmd_st_ma),
 	.rd_adr_ma(rd_adr_ma),
@@ -392,7 +400,9 @@ ex_stage ex_stage (
     .csr_msie(csr_msie),
 	.jmp_purge_ma(jmp_purge_ma),
 	.jmp_purge_ex(jmp_purge_ex),
+	//.stall(stall_ex_pipe),
 	.stall(stall),
+	.stall_dly(stall_dly),
 	.rst_pipe(rst_pipe_ex)
 	);
 
@@ -462,6 +472,8 @@ wb_stage wb_stage (
 forwarding forwarding (
 	.clk(clk),
 	.rst_n(rst_n),
+	.dc_stall(dc_stall),
+	.use_collision_add(use_collision_add),
 	.inst_rs1_id(inst_rs1_id),
 	.inst_rs1_valid(inst_rs1_valid),
 	.inst_rs2_id(inst_rs2_id),
@@ -503,6 +515,7 @@ interrupter interrupter (
 lsu_stage lsu_stage (
 	.clk(clk),
 	.rst_n(rst_n),
+	//.stall_ld(stall_ld),
 	.rd_data_ex(rd_data_ex),
 	.rd_data_ma(rd_data_ma),
 	.cmd_ld_ma(cmd_ld_ma),
@@ -515,6 +528,7 @@ lsu_stage lsu_stage (
 	.ram_wdata_all(ram_wdata_all),
 	.ram_wen_all(ram_wen_all),
 	.dc_ld_issue_ma(dc_ld_issue_ma),
+	.dc_stall_fin(dc_stall_fin),
 	.dc_tag_hit_ma(dc_tag_hit_ma),
 	.dc_st_wt_ma(dc_st_wt_ma),
 	.dc_cache_wr_ma(dc_cache_wr_ma),
@@ -530,7 +544,11 @@ lsu_stage lsu_stage (
 	.rqfull_1(rqfull_1),
 	.rdat_m_data(rdat_m_data),
 	.rdat_m_valid(rdat_m_valid),
-	.finish_mrd(finish_mrd)
+	.finish_mrd(finish_mrd),
+	.stall(stall),
+	//.stall_1shot(stall_1shot),
+	//.stall_dly(stall_dly),
+	.rst_pipe(rst_pipe)
 	);
 
 dma #(.DWIDTH(DWIDTH)) dma (
