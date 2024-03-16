@@ -151,10 +151,7 @@ wire rst_pipe_wb;
 wire dc_stall;
 wire stall;
 wire stall_1shot;
-wire stall_fin;
-wire stall_fin2;
 wire stall_dly;
-wire stall_ex_pipe;
 wire stall_ex;
 wire stall_ma;
 wire stall_wb;
@@ -164,7 +161,7 @@ wire wbk_rd_reg_ex;
 wire wbk_rd_reg_ma;
 wire wbk_rd_reg_wb;
 
-wire use_collision_add;
+wire stall_ld_add;
 
 wire [31:2] csr_mepc_ex;
 wire [31:2] csr_sepc_ex;
@@ -194,8 +191,8 @@ wire ram_ren_all;
 wire [DWIDTH-3:0] ram_wadr_all;
 wire [127:0] ram_wdata_all;
 wire ram_wen_all;
-wire dc_ld_issue_ma;
 wire dc_stall_fin;
+wire dc_stall_fin2;
 
 cpu_status cpu_status (
 	.clk(clk),
@@ -206,10 +203,7 @@ cpu_status cpu_status (
 	.quit_cmd(quit_cmd),
 	.stall(stall),
 	.stall_1shot(stall_1shot),
-	.stall_fin(stall_fin),
-	.stall_fin2(stall_fin2),
 	.stall_dly(stall_dly),
-	.stall_ex_pipe(stall_ex_pipe),
 	.stall_ex(stall_ex),
 	.stall_ma(stall_ma),
 	.stall_wb(stall_wb),
@@ -247,13 +241,13 @@ if_stage if_stage (
 	.start_adr(start_adr),
 	.stall(stall),
 	.stall_1shot(stall_1shot),
-	.stall_fin(stall_fin),
 	.stall_dly(stall_dly),
 	.stall_ld(stall_ld),
 	.stall_ld_ex(stall_ld_ex),
 	.rst_pipe(rst_pipe),
 	.dc_stall_fin(dc_stall_fin),
-	.use_collision_add(use_collision_add),
+	.dc_stall_fin2(dc_stall_fin2),
+	.stall_ld_add(stall_ld_add),
 	.pc_data(pc_data)
 	);
 
@@ -374,7 +368,6 @@ ex_stage ex_stage (
 	.nohit_rs2_ex(nohit_rs2_ex),
 	.wbk_data_wb(wbk_data_wb),
 	.wbk_data_wb2(wbk_data_wb2),
-	.dc_stall(dc_stall),
 	.dc_stall_fin(dc_stall_fin),
 	.cmd_ld_ma(cmd_ld_ma),
 	.cmd_st_ma(cmd_st_ma),
@@ -400,7 +393,6 @@ ex_stage ex_stage (
     .csr_msie(csr_msie),
 	.jmp_purge_ma(jmp_purge_ma),
 	.jmp_purge_ex(jmp_purge_ex),
-	//.stall(stall_ex_pipe),
 	.stall(stall),
 	.stall_dly(stall_dly),
 	.rst_pipe(rst_pipe_ex)
@@ -428,7 +420,7 @@ ma_stage #(.DWIDTH(DWIDTH)) ma_stage (
 	.ram_wadr_all(ram_wadr_all),
 	.ram_wdata_all(ram_wdata_all),
 	.ram_wen_all(ram_wen_all),
-	.dc_ld_issue_ma(dc_ld_issue_ma),
+	.dc_stall_fin2(dc_stall_fin2),
 	.dc_tag_hit_ma(dc_tag_hit_ma),
 	.dc_st_wt_ma(dc_st_wt_ma),
 	.dc_cache_wr_ma(dc_cache_wr_ma),
@@ -450,10 +442,7 @@ ma_stage #(.DWIDTH(DWIDTH)) ma_stage (
 	.dataram_radr_ma(dataram_radr_ma),
 	.dataram_rdata_wb(dataram_rdata_wb),
 	.stall(stall),
-	.stall_1shot(stall_1shot),
-	.stall_dly(stall_dly),
-	//.rst_pipe(rst_pipe)
-	.rst_pipe(rst_pipe_ma)
+	.rst_pipe_ma(rst_pipe_ma)
 	);
 
 wb_stage wb_stage (
@@ -472,8 +461,7 @@ wb_stage wb_stage (
 forwarding forwarding (
 	.clk(clk),
 	.rst_n(rst_n),
-	.dc_stall(dc_stall),
-	.use_collision_add(use_collision_add),
+	.stall_ld_add(stall_ld_add),
 	.inst_rs1_id(inst_rs1_id),
 	.inst_rs1_valid(inst_rs1_valid),
 	.inst_rs2_id(inst_rs2_id),
@@ -495,9 +483,7 @@ forwarding forwarding (
 	.nohit_rs2_ex(nohit_rs2_ex),
 	.stall_ld(stall_ld),
 	.stall_ld_ex(stall_ld_ex),
-	.stall_fin2(stall_fin2),
 	.stall(stall),
-	.stall_dly(stall_dly),
 	.stall_ex(stall_ex),
 	.stall_ma(stall_ma),
 	.stall_wb(stall_wb),
@@ -515,7 +501,6 @@ interrupter interrupter (
 lsu_stage lsu_stage (
 	.clk(clk),
 	.rst_n(rst_n),
-	//.stall_ld(stall_ld),
 	.rd_data_ex(rd_data_ex),
 	.rd_data_ma(rd_data_ma),
 	.cmd_ld_ma(cmd_ld_ma),
@@ -527,7 +512,7 @@ lsu_stage lsu_stage (
 	.ram_wadr_all(ram_wadr_all),
 	.ram_wdata_all(ram_wdata_all),
 	.ram_wen_all(ram_wen_all),
-	.dc_ld_issue_ma(dc_ld_issue_ma),
+	.dc_stall_fin2(dc_stall_fin2),
 	.dc_stall_fin(dc_stall_fin),
 	.dc_tag_hit_ma(dc_tag_hit_ma),
 	.dc_st_wt_ma(dc_st_wt_ma),
@@ -545,9 +530,6 @@ lsu_stage lsu_stage (
 	.rdat_m_data(rdat_m_data),
 	.rdat_m_valid(rdat_m_valid),
 	.finish_mrd(finish_mrd),
-	.stall(stall),
-	//.stall_1shot(stall_1shot),
-	//.stall_dly(stall_dly),
 	.rst_pipe(rst_pipe)
 	);
 

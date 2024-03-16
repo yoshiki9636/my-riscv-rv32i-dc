@@ -36,7 +36,7 @@ module ma_stage
 	input [DWIDTH-3:0] ram_wadr_all,
 	input [127:0] ram_wdata_all,
 	input ram_wen_all,
-	input dc_ld_issue_ma,
+	input dc_stall_fin2,
 	// dc controls
     input dc_tag_hit_ma,
     input dc_st_wt_ma,
@@ -65,9 +65,9 @@ module ma_stage
 
 	// stall
 	input stall,
-	input stall_1shot,
-	input stall_dly,
-	input rst_pipe
+	//input stall_1shot,
+	//input stall_dly,
+	input rst_pipe_ma
 
 	);
 
@@ -140,7 +140,7 @@ assign dma_io_radr = rd_data_ma[15:2];
 // load / next stage
 
 // data memory
-reg  [31:0] ld_data_roll;
+//reg  [31:0] ld_data_roll;
 //wire sel_data_rd_ma;
 wire [DWIDTH+1:2] data_radr_ma;
 wire [31:0] data_rdata_wb_mem;
@@ -192,14 +192,14 @@ end
 
 assign data_rdata_wb = dma_io_ren_wb ? dma_io_rdata : data_rdata_wb_mem;
 
-always @ ( posedge clk or negedge rst_n) begin   
-	if (~rst_n)
-        ld_data_roll <= 32'd0;
-	else if (rst_pipe)
-        ld_data_roll <= 32'd0;
-	else if (stall_1shot)
-        ld_data_roll <= data_rdata_wb;
-end
+//always @ ( posedge clk or negedge rst_n) begin   
+	//if (~rst_n)
+        //ld_data_roll <= 32'd0;
+	//else if (rst_pipe_ma)
+        //ld_data_roll <= 32'd0;
+	//else if (stall_1shot)
+        //ld_data_roll <= data_rdata_wb;
+//end
 
 //assign ld_data_wb = stall_dly ? ld_data_roll : data_rdata_wb;
 assign ld_data_wb = data_rdata_wb;
@@ -215,7 +215,7 @@ always @ ( posedge clk or negedge rst_n) begin
 		rd_data_wb <= 32'd0;
 		wbk_rd_reg_wb <= 1'b0;
 	end
-	else if (rst_pipe) begin
+	else if (rst_pipe_ma) begin
         cmd_ld_wb <= 1'b0;
 		ld_code_wb <= 3'd0;
 		rd_adr_wb <= 5'd0;
@@ -228,7 +228,7 @@ always @ ( posedge clk or negedge rst_n) begin
 		ld_code_wb <= ldst_code_ma;
 		rd_adr_wb <= rd_adr_ma;
 		rd_data_wb <= rd_data_ma;
-		wbk_rd_reg_wb <= stall ? dc_ld_issue_ma : wbk_rd_reg_ma;
+		wbk_rd_reg_wb <= stall ? dc_stall_fin2 : wbk_rd_reg_ma;
 		//wbk_rd_reg_wb <= ~stall & wbk_rd_reg_ma;
 	end
 end

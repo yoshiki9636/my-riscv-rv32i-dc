@@ -20,13 +20,10 @@ module cpu_status(
 	input quit_cmd,
 	// to CPU
 	output stall,
-	output stall_ex_pipe,
 	output stall_ex,
 	output stall_ma,
 	output stall_wb,
 	output stall_1shot,
-	output stall_fin,
-	output stall_fin2,
 	output reg stall_dly,
 	output reg rst_pipe,
 	output reg rst_pipe_id,
@@ -68,7 +65,6 @@ end
 // add lsu stall
 reg stall_dly2;
 reg stall_dly3;
-reg stall_dly4;
 
 assign stall = ~cpu_run_state | dc_stall;
 
@@ -77,17 +73,14 @@ always @ (posedge clk or negedge rst_n) begin
         stall_dly <= 1'b1 ;
         stall_dly2 <= 1'b1 ;
         stall_dly3 <= 1'b1 ;
-        stall_dly4 <= 1'b1 ;
 	end
 	else begin
 		stall_dly <= stall;
 		stall_dly2 <= stall_dly;
 		stall_dly3 <= stall_dly2;
-		stall_dly4 <= stall_dly3;
 	end
 end
 
-assign stall_ex_pipe = stall | stall_dly;
 assign stall_ex = stall & stall_dly;
 //assign stall_ma = stall_dly & stall;
 //assign stall_wb = stall_dly2 & stall_dly;
@@ -95,9 +88,6 @@ assign stall_ma = stall_dly2 & stall;
 assign stall_wb = stall_dly3 & stall_dly;
 
 assign stall_1shot = stall & ~stall_dly;
-
-assign stall_fin = ~stall & stall_dly;
-assign stall_fin2 = ~stall_dly & stall_dly2;
 
 // pipeline reset signal
 

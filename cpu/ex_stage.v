@@ -71,7 +71,7 @@ module ex_stage(
 	input [31:0] wbk_data_wb2,
 
 	// to MA
-	input dc_stall,
+	//input dc_stall,
 	input dc_stall_fin,
     output reg cmd_ld_ma,
     output reg cmd_st_ma,
@@ -318,13 +318,13 @@ always @ ( posedge clk or negedge rst_n) begin
         rd_data_roll <= 32'd0;
 	else if (rst_pipe)
         rd_data_roll <= 32'd0;
-	else if (~dc_stall | dc_stall_fin)
+	//else if (~dc_stall | dc_stall_fin)
+	else if (~stall | dc_stall_fin)
         rd_data_roll <= rd_data_ex_pre;
 end
 
-assign rd_data_ex = (dc_stall & ~dc_stall_fin) ? rd_data_roll : rd_data_ex_pre;
-//assign rd_data_ex = dc_stall ? rd_data_roll : rd_data_ex_pre;
-//assign rd_data_ex = rd_data_ex_pre;
+//assign rd_data_ex = (dc_stall & ~dc_stall_fin) ? rd_data_roll : rd_data_ex_pre;
+assign rd_data_ex = (stall & ~dc_stall_fin) ? rd_data_roll : rd_data_ex_pre;
 
 // jamp/br
 
