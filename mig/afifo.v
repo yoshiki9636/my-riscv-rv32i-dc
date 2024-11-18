@@ -49,6 +49,7 @@ wire [1:0] gwadr = { wadr[1], wadr[1] ^ wadr[0] };
 reg [1:0] gwadr_l0;
 reg [1:0] gwadr_l1;
 reg [1:0] gwadr_l2;
+reg [1:0] gwadr_l15;
 
 always @ (posedge wclk or negedge wrst_n) begin
 	if (~wrst_n)
@@ -58,14 +59,17 @@ always @ (posedge wclk or negedge wrst_n) begin
 end
 
 // double latch for meta-stable
+//  -> triple latch
 always @ (posedge rclk or negedge rrst_n) begin
 	if (~rrst_n) begin
 		gwadr_l1  <= 2'd0;
+		gwadr_l15  <= 2'd0;
 		gwadr_l2  <= 2'd0;
 	end
 	else begin
 		gwadr_l1  <= gwadr_l0;
-		gwadr_l2  <= gwadr_l1;
+		gwadr_l15  <= gwadr_l1;
+		gwadr_l2  <= gwadr_l15;
 	end
 end
 
@@ -83,6 +87,7 @@ wire [1:0] gradr = { radr[1], radr[1] ^ radr[0] } ;
 reg [1:0] gradr_l0;
 reg [1:0] gradr_l1;
 reg [1:0] gradr_l2;
+reg [1:0] gradr_l15;
 
 always @ (posedge rclk or negedge rrst_n) begin
 	if (~rrst_n)
@@ -92,14 +97,17 @@ always @ (posedge rclk or negedge rrst_n) begin
 end
 
 // double latch for meta-stable
+//  -> triple latch
 always @ (posedge wclk or negedge wrst_n) begin
 	if (~wrst_n) begin
 		gradr_l1  <= 2'd0;
+		gradr_l15  <= 2'd0;
 		gradr_l2  <= 2'd0;
 	end
 	else begin
 		gradr_l1  <= gradr_l0;
-		gradr_l2  <= gradr_l1;
+		gradr_l15  <= gradr_l1;
+		gradr_l2  <= gradr_l15;
 	end
 end
 
