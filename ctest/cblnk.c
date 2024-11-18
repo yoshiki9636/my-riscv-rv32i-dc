@@ -7,14 +7,15 @@ int main() {
     val = 0;
     while(1) {
         timer = 0;
-	timer2 = 0;
+		timer2 = 0;
         while(timer2 < 90) {
             while(timer < 1000000) {
+            //while(timer < 10) {
                 timer++;
-	    }
+	    	}
             timer2++;
-	}
-	val++;
-	*led = val & 0x7;
+		}
+		val++;
+		*led = val & 0x7777;
     }
 }
