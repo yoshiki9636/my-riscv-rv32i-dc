@@ -192,16 +192,6 @@ end
 
 assign data_rdata_wb = dma_io_ren_wb ? dma_io_rdata : data_rdata_wb_mem;
 
-//always @ ( posedge clk or negedge rst_n) begin   
-	//if (~rst_n)
-        //ld_data_roll <= 32'd0;
-	//else if (rst_pipe_ma)
-        //ld_data_roll <= 32'd0;
-	//else if (stall_1shot)
-        //ld_data_roll <= data_rdata_wb;
-//end
-
-//assign ld_data_wb = stall_dly ? ld_data_roll : data_rdata_wb;
 assign ld_data_wb = data_rdata_wb;
 assign d_ram_rdata = data_rdata_wb;
 

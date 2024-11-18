@@ -9,7 +9,7 @@
  */
 
 module data_1r1w
-	#(parameter DRWIDTH = 9)
+	#(parameter DRWIDTH = 11)
 	(
 	input clk,
 	input [DRWIDTH-1:0] ram_radr,

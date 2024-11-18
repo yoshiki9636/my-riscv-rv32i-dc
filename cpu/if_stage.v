@@ -37,7 +37,7 @@ module if_stage(
 	input i_read_sel,
 
 	// other place
-	input cpu_start,
+	input pc_start,
 	input [31:2] start_adr,
 	input stall,
 	input stall_1shot,
@@ -69,7 +69,7 @@ reg use_collision;
 always @ (posedge clk or negedge rst_n) begin
 	if (~rst_n)
 		pc_if <= 30'd0;
-	else if (cpu_start)
+	else if (pc_start)
 		pc_if <= start_adr;
 	else if (stall | stall_ld)
 		pc_if <= pc_if;	
@@ -84,6 +84,8 @@ reg [31:2] pc_collision;
 
 always @ (posedge clk or negedge rst_n) begin
 	if (~rst_n)
+		pc_id_pre <= 30'd0;
+	else if (rst_pipe)
 		pc_id_pre <= 30'd0;
 	else if (stall | stall_ld)
 		pc_id_pre <= pc_id_pre;	
@@ -127,18 +129,18 @@ reg [31:0] inst_collision;
 
 always @ (posedge clk or negedge rst_n) begin   
 	if (~rst_n)
-        inst_roll <= 32'd0;
+        inst_roll <= 32'h0000_0013;
 	else if (rst_pipe)
-        inst_roll <= 32'd0;	
+        inst_roll <= 32'h0000_0013;	
 	else if (stall_1shot | stall_ld )
         inst_roll <= inst_rdata_id;
 end
 
 always @ (posedge clk or negedge rst_n) begin   
 	if (~rst_n)
-        inst_collision <= 32'd0;
+        inst_collision <= 32'h0000_0013;
 	else if (rst_pipe)
-        inst_collision <= 32'd0;	
+        inst_collision <= 32'h0000_0013;	
 	else if (stall_1shot & stall_ld_ex )
         inst_collision <= inst_roll;
 end

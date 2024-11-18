@@ -59,6 +59,8 @@ module cpu_top
 	input [127:0] rdat_m_data,
 	input rdat_m_valid,
 	input finish_mrd,
+	input start_dcflush,
+	output dcflush_running,
 
 	input interrupt_0
 
@@ -143,6 +145,7 @@ wire jmp_purge_ma;
 wire jmp_purge_ex;
 wire nohit_rs1_ex;
 wire nohit_rs2_ex;
+wire pc_start;
 wire rst_pipe;
 wire rst_pipe_id;
 wire rst_pipe_ex;
@@ -207,6 +210,7 @@ cpu_status cpu_status (
 	.stall_ex(stall_ex),
 	.stall_ma(stall_ma),
 	.stall_wb(stall_wb),
+	.pc_start(pc_start),
 	.rst_pipe(rst_pipe),
 	.rst_pipe_id(rst_pipe_id),
 	.rst_pipe_ex(rst_pipe_ex),
@@ -237,7 +241,7 @@ if_stage if_stage (
 	.i_ram_wdata(i_ram_wdata),
 	.i_ram_wen(i_ram_wen),
 	.i_read_sel(i_read_sel),
-	.cpu_start(cpu_start),
+	.pc_start(pc_start),
 	.start_adr(start_adr),
 	.stall(stall),
 	.stall_1shot(stall_1shot),
@@ -530,6 +534,8 @@ lsu_stage lsu_stage (
 	.rdat_m_data(rdat_m_data),
 	.rdat_m_valid(rdat_m_valid),
 	.finish_mrd(finish_mrd),
+	.start_dcflush(start_dcflush),
+	.dcflush_running(dcflush_running),
 	.rst_pipe(rst_pipe)
 	);
 

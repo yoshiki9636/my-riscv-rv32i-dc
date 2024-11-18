@@ -36,7 +36,7 @@ module lsu_stage
 	input dc_cache_clr_bits,
 	output dc_stall,
 	// tiny AXI wirte bus i/f
-	output reg dcw_start_rq,
+	output dcw_start_rq,
 	output [31:0] dcw_in_addr,
 	output [15:0] dcw_in_mask,
 	output [127:0] dcw_in_data,
@@ -48,14 +48,20 @@ module lsu_stage
 	input [127:0] rdat_m_data,
 	input rdat_m_valid,
 	input finish_mrd,
+	// DC flush
+	input start_dcflush,
+	output dcflush_running,
+	// reset pipeline
 	input rst_pipe
 
 	);
-
+//
+// flush counter
+reg [12:4] dcflush_cntr;
 // tag ram
 reg [27:13] dc_tag_adr_ma;
 wire [27:13] dc_tag_adr_ex = rd_data_ex[27:13];
-wire [12:4] dc_index_adr = rd_data_ex[12:4];
+wire [12:4] dc_index_adr = dcflush_running ? dcflush_cntr : rd_data_ex[12:4];
 wire [27:13] dc_tag_wadr;
 wire [12:4] dc_index_wadr;
 wire [27:13] dc_tag_radr;
@@ -75,7 +81,8 @@ always @ (posedge clk or negedge rst_n) begin
         dc_tag_adr_ma <= 15'd0 ;
 	else if (rst_pipe)
         dc_tag_adr_ma <= 15'd0 ;
-	else if (~dc_stall | dc_stall_fin )
+	//else if (~dc_stall | dc_stall_fin )
+	else if (~dc_stall & ~dc_stall_fin )
 		dc_tag_adr_ma <= dc_tag_adr_ex;
 end
 
@@ -89,12 +96,13 @@ wire dc_tag_misshit_ma = ~dc_tag_equal & dc_cache_valid_ma & cmd_ldst_ma;
 reg [(2**(DWIDTH-2))-1:0] ent_dirty_bit_ma;
 reg [(2**(DWIDTH-2))-1:0] ent_valid_bit_ma;
 
-wire [27:13] dc_cache_dirty_adr = rd_data_ma[12:4];
+//wire [27:13] dc_cache_dirty_adr = rd_data_ma[12:4];
+wire [12:4] dc_cache_dirty_adr = rd_data_ma[12:4];
 
 always @ (posedge clk or negedge rst_n) begin
     if (~rst_n)
         ent_dirty_bit_ma <= { (2**(DWIDTH-2)){ 1'b0 }};
-    else if (dc_cache_clr_bits)
+    else if (dc_cache_clr_bits | rst_pipe)
         ent_dirty_bit_ma <= { (2**(DWIDTH-2)){ 1'b0 }};
     else if (dc_cache_wr_ma)
         ent_dirty_bit_ma[dc_cache_dirty_adr] <= 1'b1;
@@ -105,7 +113,8 @@ end
 always @ (posedge clk or negedge rst_n) begin
     if (~rst_n)
         ent_valid_bit_ma <= { (2**(DWIDTH-2)){ 1'b0 }};
-    else if (dc_cache_clr_bits)
+    //else if (dc_cache_clr_bits | rst_pipe)
+    else if (dc_cache_clr_bits | start_dcflush | rst_pipe)
         ent_valid_bit_ma <= { (2**(DWIDTH-2)){ 1'b0 }};
     else if (tag_wen)
         ent_valid_bit_ma[dc_index_wadr] <= 1'b1;
@@ -175,23 +184,22 @@ wire [2:0] dc_miss_next = dc_miss_decode( dc_miss_current, dc_tag_empty_ma, dc_t
 always @ (posedge clk or negedge rst_n) begin
     if (~rst_n)
         dc_miss_current <= `DCMS_IDLE;
+	else if (rst_pipe)
+        dc_miss_current <= `DCMS_IDLE;
     else
         dc_miss_current <= dc_miss_next;
 end
 
 // current read address keeper
 reg [31:0] current_radr_keeper;
-//reg [27:13] current_tag_keeper;
 
 always @ (posedge clk or negedge rst_n) begin
-    if (~rst_n) begin
+    if (~rst_n)
         current_radr_keeper <= 32'd0;
-        //current_tag_keeper <= 15'd0;
-	end
-	else if ((dc_miss_current == `DCMS_IDLE) & (dc_tag_misshit_ma | dc_tag_empty_ma)) begin
+	else if (rst_pipe)
+        current_radr_keeper <= 32'd0;
+	else if ((dc_miss_current == `DCMS_IDLE) & (dc_tag_misshit_ma | dc_tag_empty_ma))
 		current_radr_keeper <= rd_data_ma;
-        //current_tag_keeper <= dc_tag_adr_ma;
-	end
 end
 
 // core stall singal
@@ -205,16 +213,22 @@ assign dc_stall_fin = (dc_miss_current == `DCMS_DCW3);
 assign dc_stall_fin2 = (dc_miss_current == `DCMS_LDRD);
 
 // memory write bus i/f signals
+reg dcw_start_rq_dc;
+reg dcflush_wreq;
+wire [31:0] dcw_in_addr_dcflush;
+
 always @ (posedge clk or negedge rst_n) begin
     if (~rst_n)
-        dcw_start_rq <= 1'b0;
+        dcw_start_rq_dc <= 1'b0;
 	else
-        dcw_start_rq <= ram_ren_all;
+        dcw_start_rq_dc <= ram_ren_all;
 end
+
+assign dcw_start_rq = dcw_start_rq_dc | dcflush_wreq;
 
 assign dcw_in_mask = 16'd0;
 
-assign dcw_in_addr = { rd_data_ma[31:28], dc_tag_radr[27:13],  rd_data_ma[12:0] };
+assign dcw_in_addr = dcflush_running ? dcw_in_addr_dcflush : { rd_data_ma[31:28], dc_tag_radr[27:13],  rd_data_ma[12:0] };
 
 assign dcw_in_data = ram_rdata_all;
 
@@ -225,17 +239,57 @@ assign dcr_rin_addr = rd_data_ma;
 assign rqfull_1 = 1'b0;
 
 // to MA
-assign ram_wadr_all = current_radr_keeper[12:4];
+//assign ram_wadr_all = current_radr_keeper[12:4];
 assign ram_wdata_all = rdat_m_data;
-assign ram_radr_all = rd_data_ma[12:4];
+assign ram_radr_all = dcflush_running ? dcflush_cntr : rd_data_ma[12:4];
 assign ram_wadr_all = current_radr_keeper[12:4];
 assign ram_wen_all = rdat_m_valid;
-assign ram_ren_all = (dc_miss_current == `DCMS_IDLE) & (dc_miss_next == `DCMS_MEMW);
+assign ram_ren_all = ((dc_miss_current == `DCMS_IDLE) & (dc_miss_next == `DCMS_MEMW)) | dcflush_running;
 
 //tag write address
 assign dc_tag_wadr = current_radr_keeper[27:13];
 assign dc_index_wadr = current_radr_keeper[12:4];
 assign tag_wen =  rdat_m_valid;
 
+// DC flush
+always @ (posedge clk or negedge rst_n) begin
+    if (~rst_n)
+        dcflush_cntr <= 9'd0;
+	else if ( start_dcflush )
+        dcflush_cntr <= {9{1'b1}};
+	else if ((dcflush_cntr > 9'd0) & dcw_finish_wresp)
+        dcflush_cntr <= dcflush_cntr - 9'd1;
+end
+
+reg [12:4] dcflush_cntr_dly;
+always @ (posedge clk or negedge rst_n) begin
+    if (~rst_n)
+        dcflush_cntr_dly <= 9'd0;
+	else
+        dcflush_cntr_dly <= dcflush_cntr;
+end
+
+wire dcflush_cntr_not0 = (dcflush_cntr != 9'd0);
+reg dcflush_cntr_not0_dly;
+
+always @ (posedge clk or negedge rst_n) begin
+    if (~rst_n)
+		dcflush_cntr_not0_dly <= 1'b0;
+	else
+		dcflush_cntr_not0_dly <= dcflush_cntr_not0;
+end
+
+assign dcflush_running = dcflush_cntr_not0 | dcflush_cntr_not0_dly;
+
+wire dcflush_wreq_pre = dcflush_running & (dcflush_cntr_dly != dcflush_cntr_not0_dly);
+
+always @ (posedge clk or negedge rst_n) begin
+    if (~rst_n)
+		dcflush_wreq <= 1'b0;
+	else
+		dcflush_wreq <= dcflush_wreq_pre;
+end
+
+assign dcw_in_addr_dcflush = { 4'd0, dc_tag_radr[27:13],  dcflush_cntr_dly, 4'd0 };
 
 endmodule
