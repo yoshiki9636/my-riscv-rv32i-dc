@@ -76,6 +76,7 @@ lui x8, 0x00000 ; counter
 
 :label_loop3
 lw x9, 0x0(x5) ;byte read
+nop
 lw x10, 0x0(x6) ;byte write
 addi x5, x5, 4 ;
 addi x6, x6, 0xffc ;

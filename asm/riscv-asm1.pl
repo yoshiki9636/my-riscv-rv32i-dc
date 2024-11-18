@@ -20,7 +20,8 @@ $pc = 0;
 %defvalue = ();
 
 while(<>) {
-	if (/^;/) { next; }
+	if (/^;offset\s+(\w)/) { next; }
+	elsif (/^;/) { next; }
 	elsif (/^:(\w+)/) { $value{$1} = $pc; }
 	elsif (/^#immdefine (\w+) (\w+)/) {
 		@def = ( @def, $1 );
@@ -119,10 +120,15 @@ while(<>) {
 
 $ARGV[0] = $name;
 $pc = 0;
+$jump_offset = 0;
 
 while(<>) {
-	if (/^;/) { next; }
-	if (/^#immdefine/) { next; }
+	if (/^;offset\s+(\w)/) {
+		$w = $1;
+		if ($w =~ /^0x/) { $jump_offset = hex($w); } else { $sump_offset = $w; }
+ 	}
+	elsif (/^;/) { next; }
+	elsif (/^#immdefine/) { next; }
 	elsif (/^:(\w+)/) {
 		if ($v == 1) {
 			print " // $_";
@@ -406,7 +412,7 @@ while(<>) {
 		$code = $ofs1 + $ofs2 + $ofs3 + $ofs4 + $rd + $op1 + 3;
 	}
 	elsif (/^\s*jalr\s+x(\d+),\s*x(\d+),\s*(\w+)/) {
-        if (defined($value{$3})) { $ofs = $value{$3};  }
+        if (defined($value{$3})) { $ofs = $value{$3} + $jump_offset;  }
         else { die "Error: Label $3 is not defined."; }
 		$ofs = ($ofs & 0xfff) << 20;
 		$rd = $1 << 7;

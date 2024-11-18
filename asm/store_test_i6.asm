@@ -77,7 +77,7 @@ or x7, x7, x8
 bne x6, x7, fail_test3
 ; next value
 addi x1, x0, 4 ; LED value
-sw x1, 0x0(x2) ; set LED
+;sw x1, 0x0(x2) ; set LED
 ; test sb offset 3
 :fail_test4
 and x8, x8, x0
@@ -99,6 +99,7 @@ bne x6, x7, fail_test4
 addi x1, x0, 3 ; LED value
 sw x1, 0x0(x2) ; set LED
 ; test sh offset 0
+sw x3, 0x4(x0)
 :fail_test5
 ori x8, x0, 0x4
 ori x4, x0, 0x4
@@ -155,8 +156,8 @@ sw x1, 0x0(x2) ; set LED
 ; test finished
 nop
 nop
-lui x2, 01000 ; loop max
-;ori x2, x0, 10
+;lui x2, 01000 ; loop max
+ori x2, x0, 10
 and x3, x0, x3 ; LED value
 and x4, x0, x4 ;
 lui x4, 0xc0010 ; LED address

@@ -91,12 +91,12 @@ blt x8, x7, label_loop3
 ;addi x6, x6, 1 ;
 ;addi x8, x8, 1 ;
 ;blt x8, x7, label_loopb
-jalr x0, x0, label_pass
+jal x0, label_pass
 
 :label_fail
 addi x1, x0, 1 ; LED value
 sw x1, 0x0(x2) ; set LED
-jalr x0, x0, label_fail
+jal x0, label_fail
 nop
 nop
 
@@ -114,7 +114,7 @@ addi x1, x1, 1
 blt x1, x2, label_waitloop
 addi x3, x3, 1 
 sw x3, 0x0(x4)
-jalr x0, x0, label_led
+jal x0, label_led
 nop
 nop
 nop

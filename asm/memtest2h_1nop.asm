@@ -76,6 +76,7 @@ lui x8, 0x00000 ; counter
 
 :label_loop3
 lh x9, 0x0(x5) ;half word read
+nop
 lh x10, 0x0(x6) ;half word read
 addi x5, x5, 2 ;
 addi x6, x6, 0xffe ;
