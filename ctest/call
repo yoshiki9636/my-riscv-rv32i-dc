@@ -1,0 +1,5 @@
+ riscv32-unknown-linux-gnu-gcc -march=rv32i -mabi=ilp32 -c -o call_test.o call_test.c
+ riscv32-unknown-linux-gnu-ld -b elf32-littleriscv start.o call_test.o -Tlink.ld -o call_test
+ riscv32-unknown-linux-gnu-objdump -b elf32-littleriscv -D call_test > call_test.elf.dump
+ riscv32-unknown-linux-gnu-objcopy -O binary call_test call_test.bin
+ od -An -tx4 -w4 -v call_test.bin > call_test.hex
