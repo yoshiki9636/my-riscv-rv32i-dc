@@ -27,6 +27,7 @@ module uart_logics
 	output [127:0] d_ram_wdata,
 	output [15:0] d_ram_mask,
 	output d_ram_wen,
+	input uart_finish_wresp,
 	output d_read_sel,
 	// from controller
 	input [31:0] uart_data,
@@ -97,6 +98,7 @@ assign run = cpu_running | step_run;
 reg [31:2] cmd_wadr_cntr;
 wire [DWIDTH+1:2] trush_adr;
 wire [31:2] d_ram_wadr_all;
+wire trash_req;
 
 always @ (posedge clk or negedge rst_n) begin
 	if (~rst_n)
@@ -112,10 +114,11 @@ assign i_ram_wdata = trush_running ? 32'd0 : uart_data;
 assign i_ram_wen = inst_data_en | trush_running;
 assign d_ram_wadr_all =  trush_running ? { { 30-DWIDTH{ 1'b0}}, trush_adr} : cmd_wadr_cntr[31:2];
 assign d_ram_wdata = { i_ram_wdata, i_ram_wdata, i_ram_wdata, i_ram_wdata };
-assign d_ram_wen = write_data_en | trush_running;
-assign d_ram_wadr = { d_ram_wadr_all[31:4], 4'd0} ;
+assign d_ram_wen = write_data_en | trash_req;
+assign d_ram_wadr = { d_ram_wadr_all[31:4], 4'd0};
 // zantei : need to resolve
-assign d_ram_mask = (d_ram_wadr_all[3:2] == 2'd3) ? 16'h0fff :
+assign d_ram_mask = trush_running ? 16'h0000 :
+                    (d_ram_wadr_all[3:2] == 2'd3) ? 16'h0fff :
                     (d_ram_wadr_all[3:2] == 2'd2) ? 16'hf0ff :
                     (d_ram_wadr_all[3:2] == 2'd1) ? 16'hff0f : 16'hfff0;
 
@@ -339,19 +342,28 @@ assign rdata_snd = pc_print_sel ? { 32'd0, pc_data} : { data_1, data_0 };
 
 // trashing memory data
 reg [DWIDTH+2:2] trash_cntr;
+reg [DWIDTH+2:2] trash_cntr_dly;
 
 always @ (posedge clk or negedge rst_n) begin
 	if (~rst_n)
 		trash_cntr <= { DWIDTH+1{ 1'b0 }};
 	else if (start_trush)
 		trash_cntr <= { 1'b1, { DWIDTH{ 1'b0 }}};
-	else if (trash_cntr[DWIDTH+2])
+	else if (trash_cntr[DWIDTH+2] & uart_finish_wresp)
 		trash_cntr <= trash_cntr + 1;
+end
+
+always @ (posedge clk or negedge rst_n) begin
+	if (~rst_n)
+		trash_cntr_dly <= { DWIDTH+1{ 1'b0 }};
+	else
+		trash_cntr_dly <= trash_cntr;
 end
 
 assign trush_adr = trash_cntr[DWIDTH+1:2];
 assign trush_running = trash_cntr[DWIDTH+2];
 
+assign trash_req = trush_running & (trash_cntr != trash_cntr_dly);
 
 // send CPU status to UART i/f
 /*

@@ -9,7 +9,7 @@
  */
 
 module uart_top
-	#(parameter DWIDTH = 12)
+	#(parameter DWIDTH = 11)
 	(
 
 	input clk,
@@ -22,6 +22,7 @@ module uart_top
 	input [127:0] d_ram_rdata,
 	output [127:0] d_ram_wdata,
 	output d_ram_wen,
+	input uart_finish_wresp,
 	output d_read_sel,
 	output [15:0] d_ram_mask,
 	output dread_start,
@@ -35,7 +36,9 @@ module uart_top
 	input [31:0] pc_data,
 	
 	output cpu_start,
+	output start_dcflush,
 	output quit_cmd,
+	input dcflush_running,
 	output [31:2] start_adr
 	//output tx_fifo_full,
 	//output tx_fifo_overrun,
@@ -148,6 +151,7 @@ uart_rec_char uart_rec_char (
 	.rout_en(rout_en),
 	.dump_running(dump_running),
 	.trush_running(trush_running),
+	.dcflush_running(dcflush_running),
 	.uart_data(uart_data),
 	.cpu_start(cpu_start),
 	.write_address_set(write_address_set),
@@ -165,6 +169,7 @@ uart_rec_char uart_rec_char (
 	.inst_data_en(inst_data_en),
 	.pc_print(pc_print),
 	.pc_print_sel(pc_print_sel),
+	.start_dcflush(start_dcflush),
 	.crlf_in(crlf_in)
 	//.cmd_status(cmd_status),
 	//.data_en(data_en),
@@ -200,6 +205,7 @@ uart_logics  #(.DWIDTH(DWIDTH)) uart_logics (
 	.d_ram_wdata(d_ram_wdata),
 	.d_ram_mask(d_ram_mask),
 	.d_ram_wen(d_ram_wen),
+	.uart_finish_wresp(uart_finish_wresp),
 	.d_read_sel(d_read_sel),
 	.uart_data(uart_data),
 	.start_adr(start_adr),
