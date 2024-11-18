@@ -150,6 +150,8 @@ wire rqfull_1; // output
 //wire [127:0] rdat_m_data; // input
 //wire rdat_m_valid; // input
 //wire finish_mrd; // input
+wire start_dcflush;
+wire dcflush_running;
 
 wire clk;
 wire mclk;
@@ -158,6 +160,7 @@ wire tx_fifo_full;
 wire tx_fifo_overrun;
 wire tx_fifo_underrun;
 
+wire init_calib_complete = 1'b1;
 
 `ifdef ARTY_A7
 wire locked;
@@ -196,6 +199,7 @@ wire mrst_n = rst_n;
 cpu_top cpu_top (
 	.clk(clk),
 	.rst_n(rst_n),
+	.init_calib_complete(init_calib_complete),
 	.cpu_start(cpu_start),
 	.quit_cmd(quit_cmd),
 	.start_adr(start_adr),
@@ -234,6 +238,8 @@ cpu_top cpu_top (
 	.rdat_m_data(dc_rdat_m_data),
 	.rdat_m_valid(dc_rdat_m_valid),
 	.finish_mrd(dc_finish_mrd),
+	.start_dcflush(start_dcflush),
+	.dcflush_running(dcflush_running),
 	.interrupt_0(interrupt_0)
 	);
 
@@ -423,7 +429,9 @@ uart_top #(.DWIDTH(DWIDTH)) uart_top (
     .i_read_sel(i_read_sel),
     .pc_data(pc_data),
     .cpu_start(cpu_start),
+	.start_dcflush(start_dcflush),
     .quit_cmd(quit_cmd),
+	.dcflush_running(dcflush_running),
     .start_adr(start_adr)
     );
 

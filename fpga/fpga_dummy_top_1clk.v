@@ -22,7 +22,8 @@ module fpga_top
 	output [2:0] rgb_led,
 	output [2:0] rgb_led1,
 	output [2:0] rgb_led2,
-	output [2:0] rgb_led3,
+	output [2:0] rgb_led3
+/*
 // ddr signal
 	inout [15:0] ddr3_dq,
 	inout [1:0] ddr3_dqs_n,
@@ -39,6 +40,7 @@ module fpga_top
 	output [0:0] ddr3_cs_n,
 	output [1:0] ddr3_dm,
 	output [0:0] ddr3_odt
+*/
 
 	);
 
@@ -105,7 +107,6 @@ wire [127:0] app_rd_data; // input
 wire app_rd_data_end; // input
 wire app_rd_data_valid; // input
 
-
 wire [12:2] d_ram_radr = 11'd0;
 wire [12:2] d_ram_wadr = 11'd0;
 wire [31:0] d_ram_rdata;
@@ -138,7 +139,7 @@ wire cpu_start;
 wire quit_cmd;
 wire [31:0] pc_data;
 // bus i/f logic signals
-//wire dcw_start_rq; // output
+wire dcw_start_rq; // output
 //wire [31:0] dcw_in_addr; // output
 //wire [15:0] dcw_in_mask; // output
 //wire [127:0] dcw_in_data; // output
@@ -149,18 +150,18 @@ wire rqfull_1; // output
 //wire [127:0] rdat_m_data; // input
 //wire rdat_m_valid; // input
 //wire finish_mrd; // input
-
-// DC-flush signals
 wire start_dcflush;
 wire dcflush_running;
 
 wire clk;
-wire mclk;
+wire mclk = ~clk;
+wire mclk_not_used;
 // for debug
 wire tx_fifo_full;
 wire tx_fifo_overrun;
 wire tx_fifo_underrun;
 
+wire init_calib_complete = 1'b1;
 
 `ifdef ARTY_A7
 wire locked;
@@ -170,11 +171,10 @@ wire locked;
   clk_wiz_0 clknetwork
    (
     // Clock out ports
-    .clk_out1           (clk_200mhz),
-    .clk_out2           (clk_166mhz),
-    .clk_out3           (clk),
-    //.clk_out1           (mclk),
-    //.clk_out2           (clk),
+    .clk_out1           (mclk_not_used),
+    //.clk_out2           (clk_166mhz),
+    //.clk_out3           (clk),
+    .clk_out2           (clk),
 
     // Status and control signals
     .reset              (~rst_n),
@@ -184,32 +184,18 @@ wire locked;
     );
 `endif
 
-wire sys_clk_i = clk_166mhz; // input
-wire clk_ref_i = clk_200mhz; // input
-wire ui_clk;
-wire ui_clk_sync_rst;
-//wire mrst_n = rst_n;
-assign mclk = ui_clk;
-assign mrst_n = ~ui_clk_sync_rst;
-//wire mrst_n = rst_n;
+`ifdef TANG_PRIMER
+wire clklock;
+pll pll (
+	.refclk(clkin),
+	.reset(~rst_n),
+	//.stdby(stdby),
+	.extlock(clklock),
+	.clk0_out(clk)
+	);
+`endif
 
-// MIG interface
-wire app_sr_req = 1'b0; // input
-wire app_ref_req = 1'b0; // input
-wire app_zq_req = 1'b0; // input
-wire app_sr_active; // output
-wire app_ref_ack; // output
-wire app_zq_ack; // output
-
-
-wire init_calib_complete; // output
-wire [11:0] device_temp; // output
-wire calib_tap_req; // output
-wire calib_tap_load = 1'b0; // input
-wire [6:0] calib_tap_addr = 7'd0; // input
-wire [7:0] calib_tap_val = 8'd0; // input
-wire calib_tap_load_done = 1'b0; // input
-wire sys_rst = rst_n; // input
+wire mrst_n = rst_n;
 
 cpu_top cpu_top (
 	.clk(clk),
@@ -350,6 +336,11 @@ dram_top dram_top (
 	.rlast(rlast)
 	);
 
+
+//wire sys_clk_i = clk_166mhz; // input
+//wire clk_ref_i = clk_200mhz; // input
+
+/*
 mig_7series_0 mig_7series_0 (
 	.ddr3_dq(ddr3_dq),
 	.ddr3_dqs_n(ddr3_dqs_n),
@@ -397,8 +388,8 @@ mig_7series_0 mig_7series_0 (
 	//.calib_tap_load_done(calib_tap_load_done),
 	.sys_rst(sys_rst)
 	);
+*/
 
-/*
 dummy_mig dummy_mig (
 	.mclk(mclk),
 	.mrst_n(mrst_n),
@@ -416,7 +407,6 @@ dummy_mig dummy_mig (
 	.app_rd_data_valid(app_rd_data_valid)
 	);
 
-*/
 
 uart_top #(.DWIDTH(DWIDTH)) uart_top (
     .clk(clk),
@@ -428,7 +418,6 @@ uart_top #(.DWIDTH(DWIDTH)) uart_top (
     .d_ram_rdata(uart_rdat_m_data),
     .d_ram_wdata(uart_in_wdata),
     .d_ram_wen(uart_wstart_rq),
-	.uart_finish_wresp(uart_finish_wresp),
     .d_read_sel(uart_d_read_sel),
     .d_ram_mask(uart_in_mask),
     .dread_start(uart_rstart_rq),
@@ -441,24 +430,11 @@ uart_top #(.DWIDTH(DWIDTH)) uart_top (
     .i_read_sel(i_read_sel),
     .pc_data(pc_data),
     .cpu_start(cpu_start),
-    .start_dcflush(start_dcflush),
+	.start_dcflush(start_dcflush),
     .quit_cmd(quit_cmd),
-    .dcflush_running(dcflush_running),
+	.dcflush_running(dcflush_running),
     .start_adr(start_adr)
     );
-
-//assign rgb_led = start_adr[4:2];
-//assign rgb_led1 = start_adr[7:5];
-//assign rgb_led2 = start_adr[10:8];
-//assign rgb_led3 = start_adr[13:11];
-//assign rgb_led = pc_data[6:4];
-//assign rgb_led1 = pc_data[10:8];
-//assign rgb_led2 = pc_data[14:12];
-//assign rgb_led3 = pc_data[18:16];
-//wire [2:0] rgb_led_dmy;
-//wire [2:0] rgb_led1_dmy;
-//wire [2:0] rgb_led2_dmy;
-//wire [2:0] rgb_led3_dmy;
 
 io_led io_led (
 	.clk(clk),
