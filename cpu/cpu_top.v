@@ -160,6 +160,7 @@ wire stall_ma;
 wire stall_wb;
 wire stall_ld;
 wire stall_ld_ex;
+wire stall_ld_ma;
 wire wbk_rd_reg_ex;
 wire wbk_rd_reg_ma;
 wire wbk_rd_reg_wb;
@@ -315,6 +316,7 @@ id_stage id_stage (
 	.stall_dly(stall_dly),
 	.stall_ld(stall_ld),
 	.stall_ld_ex(stall_ld_ex),
+	.stall_ld_ma(stall_ld_ma),
 	.rst_pipe(rst_pipe_id)
 	);
 
@@ -487,6 +489,7 @@ forwarding forwarding (
 	.nohit_rs2_ex(nohit_rs2_ex),
 	.stall_ld(stall_ld),
 	.stall_ld_ex(stall_ld_ex),
+	.stall_ld_ma(stall_ld_ma),
 	.stall(stall),
 	.stall_ex(stall_ex),
 	.stall_ma(stall_ma),

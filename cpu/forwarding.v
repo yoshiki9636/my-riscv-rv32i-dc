@@ -34,6 +34,7 @@ module forwarding(
 	output reg hit_rs2_idwb_ex,
 	output reg nohit_rs2_ex,
 	output reg stall_ld_ex,
+	output reg stall_ld_ma,
 	output stall_ld,
 	// stall
 	input stall,
@@ -46,7 +47,7 @@ module forwarding(
 
 // stall_ld pipeline latch 
 //reg stall_ld_pp;
-reg stall_ld_ma;
+//reg stall_ld_ma;
 reg stall_ld_wb;
 
 always @ (posedge clk or negedge rst_n) begin
