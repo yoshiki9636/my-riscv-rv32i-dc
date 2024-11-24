@@ -12,7 +12,8 @@
 `define ARTY_A7
 
 module fpga_top
-    #(parameter DWIDTH = 11)
+    #(parameter IWIDTH = 14,
+      parameter DWIDTH = 14)
     (
 	input clkin,
 	input rst_n,
@@ -106,15 +107,15 @@ wire app_rd_data_end; // input
 wire app_rd_data_valid; // input
 
 
-wire [12:2] d_ram_radr = 11'd0;
-wire [12:2] d_ram_wadr = 11'd0;
+wire [DWIDTH+1:2] d_ram_radr = { DWIDTH{ 1'b0 }};
+wire [DWIDTH+1:2] d_ram_wadr = { DWIDTH{ 1'b0 }};
 wire [31:0] d_ram_rdata;
 wire [31:0] d_ram_wdata = 12'd0;
 wire d_ram_wen = 1'b0;
 wire d_read_sel = 1'b0;
 
-wire [13:2] i_ram_radr;
-wire [13:2] i_ram_wadr;
+wire [IWIDTH+1:2] i_ram_radr;
+wire [IWIDTH+1:2] i_ram_wadr;
 wire [31:0] i_ram_rdata;
 wire [31:0] i_ram_wdata;
 wire i_ram_wen;
@@ -124,8 +125,10 @@ wire dma_io_we;
 wire [15:2] dma_io_wadr;
 wire [31:0] dma_io_wdata;
 wire [15:2] dma_io_radr;
+wire dma_io_radr_en;
 wire [31:0] dma_io_rdata;
 wire [31:0] dma_io_rdata_in = 32'd0;
+wire [31:0] dma_io_rdata_in_2;
 wire ibus_ren;
 wire [19:2] ibus_radr;
 wire [15:0] ibus32_rdata = 16'd0;
@@ -211,7 +214,7 @@ wire [7:0] calib_tap_val = 8'd0; // input
 wire calib_tap_load_done = 1'b0; // input
 wire sys_rst = rst_n; // input
 
-cpu_top cpu_top (
+cpu_top #(.DWIDTH(DWIDTH), .IWIDTH(IWIDTH)) cpu_top (
 	.clk(clk),
 	.rst_n(rst_n),
 	.init_calib_complete(init_calib_complete),
@@ -418,7 +421,7 @@ dummy_mig dummy_mig (
 
 */
 
-uart_top #(.DWIDTH(DWIDTH)) uart_top (
+uart_top #(.DWIDTH(DWIDTH), .IWIDTH(IWIDTH)) uart_top (
     .clk(clk),
     .rst_n(rst_n),
     .rx(rx),
@@ -467,12 +470,28 @@ io_led io_led (
 	.dma_io_wadr(dma_io_wadr),
 	.dma_io_wdata(dma_io_wdata),
 	.dma_io_radr(dma_io_radr),
-	.dma_io_rdata_in(dma_io_rdata_in),
+	.dma_io_radr_en(dma_io_radr_en),
+	.dma_io_rdata_in(dma_io_rdata_in_2),
 	.dma_io_rdata(dma_io_rdata),
 	.rgb_led(rgb_led),
 	.rgb_led1(rgb_led1),
 	.rgb_led2(rgb_led2),
 	.rgb_led3(rgb_led3)
-
 	);
+
+io_uart_out io_uart_out (
+    .clk(clk),
+    .rst_n(rst_n),
+    .dma_io_we(dma_io_we),
+    .dma_io_wadr(dma_io_wadr),
+    .dma_io_wdata(dma_io_wdata),
+    .dma_io_radr(dma_io_radr),
+    .dma_io_radr_en(dma_io_radr_en),
+    .dma_io_rdata_in(dma_io_rdata_in),
+    .dma_io_rdata(dma_io_rdata_in_2),
+    .uart_io_char(uart_io_char),
+    .uart_io_we(uart_io_we),
+    .uart_io_full(uart_io_full)
+    );
+
 endmodule
