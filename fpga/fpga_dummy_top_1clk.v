@@ -157,7 +157,7 @@ wire start_dcflush;
 wire dcflush_running;
 
 wire clk;
-wire mclk = ~clk;
+wire mclk = clk;
 wire mclk_not_used;
 // for debug
 wire tx_fifo_full;
@@ -229,6 +229,7 @@ cpu_top #(.DWIDTH(DWIDTH), .IWIDTH(IWIDTH)) cpu_top (
 	.dma_io_wadr(dma_io_wadr),
 	.dma_io_wdata(dma_io_wdata),
 	.dma_io_radr(dma_io_radr),
+	.dma_io_radr_en(dma_io_radr_en),
 	.dma_io_rdata_in(dma_io_rdata_in),
 	.ibus_ren(ibus_ren),
 	.ibus_radr(ibus_radr),
