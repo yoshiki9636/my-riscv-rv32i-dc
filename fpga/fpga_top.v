@@ -164,6 +164,10 @@ wire tx_fifo_full;
 wire tx_fifo_overrun;
 wire tx_fifo_underrun;
 
+// for uart output
+wire [7:0] uart_io_char;
+wire  uart_io_we;
+wire  uart_io_full;
 
 `ifdef ARTY_A7
 wire locked;
@@ -447,7 +451,10 @@ uart_top #(.DWIDTH(DWIDTH), .IWIDTH(IWIDTH)) uart_top (
     .start_dcflush(start_dcflush),
     .quit_cmd(quit_cmd),
     .dcflush_running(dcflush_running),
-    .start_adr(start_adr)
+    .start_adr(start_adr),
+    .uart_io_char(uart_io_char),
+    .uart_io_we(uart_io_we),
+    .uart_io_full(uart_io_full)
     );
 
 //assign rgb_led = start_adr[4:2];
