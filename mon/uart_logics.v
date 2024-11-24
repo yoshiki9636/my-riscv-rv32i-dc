@@ -14,9 +14,9 @@ module uart_logics
 	(
 	input clk,
 	input rst_n,
-	output [[IWIDTH+1:2] i_ram_radr,
+	output [IWIDTH+1:2] i_ram_radr,
 	input [31:0] i_ram_rdata,
-	output [[IWIDTH+1:2] i_ram_wadr,
+	output [IWIDTH+1:2] i_ram_wadr,
 	output [31:0] i_ram_wdata,
 	output i_ram_wen,
 	output i_read_sel,

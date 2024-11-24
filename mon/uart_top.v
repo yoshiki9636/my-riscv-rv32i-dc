@@ -40,7 +40,7 @@ module uart_top
 	output start_dcflush,
 	output quit_cmd,
 	input dcflush_running,
-	output [31:2] start_adr
+	output [31:2] start_adr,
     input [7:0] uart_io_char,
     input uart_io_we,
     output uart_io_full
