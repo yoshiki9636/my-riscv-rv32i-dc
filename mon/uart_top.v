@@ -9,7 +9,8 @@
  */
 
 module uart_top
-	#(parameter DWIDTH = 11)
+    #(parameter IWIDTH = 12,
+      parameter DWIDTH = 12)
 	(
 
 	input clk,
@@ -27,8 +28,8 @@ module uart_top
 	output [15:0] d_ram_mask,
 	output dread_start,
 	input read_valid,
-	output [13:2] i_ram_radr,
-	output [13:2] i_ram_wadr,
+	output [IWIDTH+1:2] i_ram_radr,
+	output [IWIDTH+1:2] i_ram_wadr,
 	input [31:0] i_ram_rdata,
 	output [31:0] i_ram_wdata,
 	output i_ram_wen,
@@ -40,6 +41,9 @@ module uart_top
 	output quit_cmd,
 	input dcflush_running,
 	output [31:2] start_adr
+    input [7:0] uart_io_char,
+    input uart_io_we,
+    output uart_io_full
 	//output tx_fifo_full,
 	//output tx_fifo_overrun,
 	//output tx_fifo_underrun,
@@ -141,7 +145,10 @@ uart_loop uart_loop (
 	.tx_wten(tx_wten),
 	.tx_fifo_full(tx_fifo_full),
 	.tx_fifo_overrun(tx_fifo_overrun),
-	.tx_fifo_underrun(tx_fifo_underrun)
+	.tx_fifo_underrun(tx_fifo_underrun),
+    .uart_io_char(uart_io_char),
+    .uart_io_we(uart_io_we),
+    .uart_io_full(uart_io_full)
 	);
 
 uart_rec_char uart_rec_char (
@@ -188,7 +195,7 @@ uart_send_char uart_send_char (
 	.crlf_in(crlf_in)	
 	);
 
-uart_logics  #(.DWIDTH(DWIDTH)) uart_logics (
+uart_logics #(.DWIDTH(DWIDTH), .IWIDTH(IWIDTH)) uart_logics (
 	.clk(clk),
 	.rst_n(rst_n),
 	.i_ram_radr(i_ram_radr),
