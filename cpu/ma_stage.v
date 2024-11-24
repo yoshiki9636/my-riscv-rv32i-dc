@@ -66,8 +66,8 @@ module ma_stage
 
 	// stall
 	input stall,
-	//input stall_1shot,
-	//input stall_dly,
+	input stall_1shot,
+	input stall_dly,
 	input rst_pipe_ma
 
 	);
@@ -142,7 +142,7 @@ assign dma_io_radr_en = (rd_data_ma[31:30] == 2'b11) & cmd_ld_ma;
 // load / next stage
 
 // data memory
-//reg  [31:0] ld_data_roll;
+reg  [31:0] ld_data_roll;
 //wire sel_data_rd_ma;
 wire [DWIDTH+1:2] data_radr_ma;
 wire [31:0] data_rdata_wb_mem;
@@ -205,7 +205,17 @@ end
 
 assign data_rdata_wb = dma_io_ren_wb ? dma_io_rdata : data_rdata_wb_mem;
 
+always @ ( posedge clk or negedge rst_n) begin
+    if (~rst_n)
+        ld_data_roll <= 32'd0;
+    else if (rst_pipe_ma)
+        ld_data_roll <= 32'd0;
+    else if (stall_1shot)
+        ld_data_roll <= data_rdata_wb;
+end
+
 assign ld_data_wb = data_rdata_wb;
+//assign ld_data_wb = stall_dly ? ld_data_roll : data_rdata_wb;
 assign d_ram_rdata = data_rdata_wb;
 
 // FF to WB

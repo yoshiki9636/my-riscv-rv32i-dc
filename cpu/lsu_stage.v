@@ -57,14 +57,14 @@ module lsu_stage
 	);
 //
 // flush counter
-reg [12:4] dcflush_cntr;
+reg [DWIDTH+1:4] dcflush_cntr;
 // tag ram
-reg [27:13] dc_tag_adr_ma;
-wire [27:13] dc_tag_adr_ex = rd_data_ex[27:13];
-wire [12:4] dc_index_adr = dcflush_running ? dcflush_cntr : rd_data_ex[12:4];
-wire [27:13] dc_tag_wadr;
-wire [12:4] dc_index_wadr;
-wire [27:13] dc_tag_radr;
+reg [27:DWIDTH+2] dc_tag_adr_ma;
+wire [27:DWIDTH+2] dc_tag_adr_ex = rd_data_ex[27:DWIDTH+2];
+wire [DWIDTH+1:4] dc_index_adr = dcflush_running ? dcflush_cntr : rd_data_ex[DWIDTH+1:4];
+wire [27:DWIDTH+2] dc_tag_wadr;
+wire [DWIDTH+1:4] dc_index_wadr;
+wire [27:DWIDTH+2] dc_tag_radr;
 wire dc_cache_valid_ma;
 
 tag_1r1w #(.DRWIDTH(DWIDTH-2)) tag_1r1w (
@@ -78,9 +78,9 @@ tag_1r1w #(.DRWIDTH(DWIDTH-2)) tag_1r1w (
 
 always @ (posedge clk or negedge rst_n) begin
     if (~rst_n)
-        dc_tag_adr_ma <= 15'd0 ;
+        dc_tag_adr_ma <= { (27-DWIDTH-1){ 1'b0 }} ;
 	else if (rst_pipe)
-        dc_tag_adr_ma <= 15'd0 ;
+        dc_tag_adr_ma <= { (27-DWIDTH-1){ 1'b0 }} ;
 	//else if (~dc_stall | dc_stall_fin )
 	else if (~dc_stall & ~dc_stall_fin )
 		dc_tag_adr_ma <= dc_tag_adr_ex;
@@ -97,7 +97,7 @@ reg [(2**(DWIDTH-2))-1:0] ent_dirty_bit_ma;
 reg [(2**(DWIDTH-2))-1:0] ent_valid_bit_ma;
 
 //wire [27:13] dc_cache_dirty_adr = rd_data_ma[12:4];
-wire [12:4] dc_cache_dirty_adr = rd_data_ma[12:4];
+wire [DWIDTH+1:4] dc_cache_dirty_adr = rd_data_ma[DWIDTH+1:4];
 
 always @ (posedge clk or negedge rst_n) begin
     if (~rst_n)
@@ -228,7 +228,7 @@ assign dcw_start_rq = dcw_start_rq_dc | dcflush_wreq;
 
 assign dcw_in_mask = 16'd0;
 
-assign dcw_in_addr = dcflush_running ? dcw_in_addr_dcflush : { rd_data_ma[31:28], dc_tag_radr[27:13],  rd_data_ma[12:0] };
+assign dcw_in_addr = dcflush_running ? dcw_in_addr_dcflush : { rd_data_ma[31:28], dc_tag_radr[27:DWIDTH+2],  rd_data_ma[DWIDTH+1:0] };
 
 assign dcw_in_data = ram_rdata_all;
 
@@ -241,35 +241,36 @@ assign rqfull_1 = 1'b0;
 // to MA
 //assign ram_wadr_all = current_radr_keeper[12:4];
 assign ram_wdata_all = rdat_m_data;
-assign ram_radr_all = dcflush_running ? dcflush_cntr : rd_data_ma[12:4];
-assign ram_wadr_all = current_radr_keeper[12:4];
+assign ram_radr_all = dcflush_running ? dcflush_cntr : rd_data_ma[DWIDTH+1:4];
+assign ram_wadr_all = current_radr_keeper[DWIDTH+1:4];
 assign ram_wen_all = rdat_m_valid;
 assign ram_ren_all = ((dc_miss_current == `DCMS_IDLE) & (dc_miss_next == `DCMS_MEMW)) | dcflush_running;
 
 //tag write address
-assign dc_tag_wadr = current_radr_keeper[27:13];
-assign dc_index_wadr = current_radr_keeper[12:4];
+assign dc_tag_wadr = current_radr_keeper[27:DWIDTH+2];
+assign dc_index_wadr = current_radr_keeper[DWIDTH+1:4];
 assign tag_wen =  rdat_m_valid;
 
 // DC flush
 always @ (posedge clk or negedge rst_n) begin
     if (~rst_n)
-        dcflush_cntr <= 9'd0;
+        //dcflush_cntr <= 9'd0;
+        dcflush_cntr <= { (DWIDTH-3){ 1'b0 }};
 	else if ( start_dcflush )
         dcflush_cntr <= {9{1'b1}};
-	else if ((dcflush_cntr > 9'd0) & dcw_finish_wresp)
-        dcflush_cntr <= dcflush_cntr - 9'd1;
+	else if ((dcflush_cntr >  {(DWIDTH-3){ 1'b0 }}) & dcw_finish_wresp)
+        dcflush_cntr <= dcflush_cntr -  {{ (DWIDTH-4){ 1'b0 }}, 1'b1};
 end
 
-reg [12:4] dcflush_cntr_dly;
+reg [DWIDTH+1:4] dcflush_cntr_dly;
 always @ (posedge clk or negedge rst_n) begin
     if (~rst_n)
-        dcflush_cntr_dly <= 9'd0;
+        dcflush_cntr_dly <= { (DWIDTH-3){ 1'b0 }};
 	else
         dcflush_cntr_dly <= dcflush_cntr;
 end
 
-wire dcflush_cntr_not0 = (dcflush_cntr != 9'd0);
+wire dcflush_cntr_not0 = (dcflush_cntr != { (DWIDTH-3){ 1'b0 }});
 reg dcflush_cntr_not0_dly;
 
 always @ (posedge clk or negedge rst_n) begin
@@ -290,6 +291,6 @@ always @ (posedge clk or negedge rst_n) begin
 		dcflush_wreq <= dcflush_wreq_pre;
 end
 
-assign dcw_in_addr_dcflush = { 4'd0, dc_tag_radr[27:13],  dcflush_cntr_dly, 4'd0 };
+assign dcw_in_addr_dcflush = { 4'd0, dc_tag_radr[27:DWIDTH+2],  dcflush_cntr_dly, 4'd0 };
 
 endmodule

@@ -103,6 +103,7 @@ module ex_stage(
 	// stall
 	input stall,
 	input stall_dly,
+	input stall_dly2,
 	input rst_pipe
 
 	);
@@ -321,11 +322,13 @@ always @ ( posedge clk or negedge rst_n) begin
 	//else if (~dc_stall | dc_stall_fin)
 	//else if (~stall | dc_stall_fin)
 	else if (~stall & ~dc_stall_fin)
+	//else if (~stall & ~stall_dly)
         rd_data_roll <= rd_data_ex_pre;
 end
 
 //assign rd_data_ex = (dc_stall & ~dc_stall_fin) ? rd_data_roll : rd_data_ex_pre;
-assign rd_data_ex = (stall | dc_stall_fin) ? rd_data_roll : rd_data_ex_pre;
+//assign rd_data_ex = (stall | dc_stall_fin) ? rd_data_roll : rd_data_ex_pre;
+assign rd_data_ex = (stall | stall_dly2) ? rd_data_roll : rd_data_ex_pre;
 
 // jamp/br
 

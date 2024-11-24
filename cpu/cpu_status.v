@@ -26,6 +26,7 @@ module cpu_status(
 	output stall_wb,
 	output stall_1shot,
 	output reg stall_dly,
+	output reg stall_dly2,
 	output reg rst_pipe,
 	output reg rst_pipe_id,
 	output reg rst_pipe_ex,
@@ -75,7 +76,7 @@ assign pc_start = init_calib_complete & ((cpu_run_state & ~cpu_run_state_lat) | 
 
 // stall signal : currently controlled by outside
 // add lsu stall
-reg stall_dly2;
+//reg stall_dly2;
 reg stall_dly3;
 
 assign stall = ~cpu_run_state | dc_stall;

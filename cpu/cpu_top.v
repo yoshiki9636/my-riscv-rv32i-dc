@@ -9,7 +9,8 @@
  */
 
 module cpu_top
-	#(parameter DWIDTH = 11)
+    #(parameter IWIDTH = 12,
+      parameter DWIDTH = 12)
 	(
 
 	input clk,
@@ -27,8 +28,8 @@ module cpu_top
 	input d_ram_wen,
 	input d_read_sel,
 
-	input [13:2] i_ram_radr,
-	input [13:2] i_ram_wadr,
+	input [IWIDTH+1:2] i_ram_radr,
+	input [IWIDTH+1:2] i_ram_wadr,
 	output [31:0] i_ram_rdata,
 	input [31:0] i_ram_wdata,
 	input i_ram_wen,
@@ -39,6 +40,7 @@ module cpu_top
 	output [15:2] dma_io_wadr,
 	output [31:0] dma_io_wdata,
 	output [15:2] dma_io_radr,
+	output dma_io_radr_en,
 	input [31:0] dma_io_rdata_in,
 
     output ibus_ren,
@@ -141,8 +143,8 @@ wire inst_rs1_valid;
 wire inst_rs2_valid;
 wire jmp_condition_ex;
 wire ecall_condition_ex;
-wire jmp_purge_ma;
 wire jmp_purge_ex;
+wire jmp_purge_ma;
 wire nohit_rs1_ex;
 wire nohit_rs2_ex;
 wire pc_start;
@@ -155,6 +157,7 @@ wire dc_stall;
 wire stall;
 wire stall_1shot;
 wire stall_dly;
+wire stall_dly2;
 wire stall_ex;
 wire stall_ma;
 wire stall_wb;
@@ -208,6 +211,7 @@ cpu_status cpu_status (
 	.stall(stall),
 	.stall_1shot(stall_1shot),
 	.stall_dly(stall_dly),
+	.stall_dly2(stall_dly2),
 	.stall_ex(stall_ex),
 	.stall_ma(stall_ma),
 	.stall_wb(stall_wb),
@@ -219,7 +223,7 @@ cpu_status cpu_status (
 	.rst_pipe_wb(rst_pipe_wb)
 	);
 
-if_stage if_stage (
+if_stage #(.IWIDTH(IWIDTH)) if_stage (
 	.clk(clk),
 	.rst_n(rst_n),
 	.inst_id(inst_id),
@@ -401,6 +405,7 @@ ex_stage ex_stage (
 	.jmp_purge_ex(jmp_purge_ex),
 	.stall(stall),
 	.stall_dly(stall_dly),
+	.stall_dly2(stall_dly2),
 	.rst_pipe(rst_pipe_ex)
 	);
 
@@ -440,6 +445,7 @@ ma_stage #(.DWIDTH(DWIDTH)) ma_stage (
 	.dma_io_wadr(dma_io_wadr),
 	.dma_io_wdata(dma_io_wdata),
 	.dma_io_radr(dma_io_radr),
+	.dma_io_radr_en(dma_io_radr_en),
 	.dma_io_rdata(dma_io_rdata),
 	.dma_we_ma(dma_we_ma),
 	.dataram_wadr_ma(dataram_wadr_ma),
@@ -448,6 +454,8 @@ ma_stage #(.DWIDTH(DWIDTH)) ma_stage (
 	.dataram_radr_ma(dataram_radr_ma),
 	.dataram_rdata_wb(dataram_rdata_wb),
 	.stall(stall),
+	.stall_1shot(stall_1shot),
+	.stall_dly(stall_dly),
 	.rst_pipe_ma(rst_pipe_ma)
 	);
 
@@ -505,7 +513,7 @@ interrupter interrupter (
 	.g_interrupt(g_interrupt)
 	);
 
-lsu_stage lsu_stage (
+lsu_stage #(.DWIDTH(DWIDTH)) lsu_stage (
 	.clk(clk),
 	.rst_n(rst_n),
 	.rd_data_ex(rd_data_ex),
