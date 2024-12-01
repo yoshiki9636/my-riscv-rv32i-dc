@@ -13,7 +13,7 @@
 
 module fpga_top
     #(parameter IWIDTH = 14,
-      parameter DWIDTH = 14)
+      parameter DWIDTH = 13)
     (
 	input clkin,
 	input rst_n,
@@ -243,7 +243,8 @@ cpu_top #(.DWIDTH(DWIDTH), .IWIDTH(IWIDTH)) cpu_top (
 	.dma_io_wdata(dma_io_wdata),
 	.dma_io_radr(dma_io_radr),
 	.dma_io_radr_en(dma_io_radr_en),
-	.dma_io_rdata_in(dma_io_rdata_in),
+	//.dma_io_rdata_in(dma_io_rdata_in),
+	.dma_io_rdata_in(dma_io_rdata),
 	.ibus_ren(ibus_ren),
 	.ibus_radr(ibus_radr),
 	.ibus32_rdata(ibus32_rdata),
