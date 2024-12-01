@@ -9,7 +9,7 @@
  */
 
 module dma
-	#(parameter DWIDTH = 11)
+	#(parameter DWIDTH = 14)
 	(
 	input clk,
 	input rst_n,

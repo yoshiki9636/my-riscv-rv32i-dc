@@ -10,7 +10,7 @@
  */
 
 module if_stage
-	#(parameter IWIDTH = 12)
+	#(parameter IWIDTH = 14)
 	(
 	input clk,
 	input rst_n,

@@ -9,7 +9,7 @@
  */
 
 module lsu_stage
-	#(parameter DWIDTH = 11)
+	#(parameter DWIDTH = 14)
 	(
 	input clk,
 	input rst_n,
@@ -29,6 +29,7 @@ module lsu_stage
     output ram_wen_all,
     output dc_stall_fin2,
     output dc_stall_fin,
+    output dc_st_ok,
 	// DC controls
 	output dc_tag_hit_ma,
 	output dc_st_wt_ma,
@@ -58,10 +59,16 @@ module lsu_stage
 //
 // flush counter
 reg [DWIDTH+1:4] dcflush_cntr;
+reg dc_stall_dly;
+reg [31:0] current_radr_keeper;
 // tag ram
+wire dc_sel_tag; //=((dc_miss_current != `DCMS_LDRD)&(dc_miss_current != `DCMS_IDLE)&(dc_miss_current != `DCMS_MEMW)) ;
 reg [27:DWIDTH+2] dc_tag_adr_ma;
-wire [27:DWIDTH+2] dc_tag_adr_ex = rd_data_ex[27:DWIDTH+2];
-wire [DWIDTH+1:4] dc_index_adr = dcflush_running ? dcflush_cntr : rd_data_ex[DWIDTH+1:4];
+//wire [27:DWIDTH+2] dc_tag_adr_ex = dc_stall_dly ? current_radr_keeper[27:DWIDTH+2] : rd_data_ex[27:DWIDTH+2];
+wire [27:DWIDTH+2] dc_tag_adr_ex = dc_sel_tag ? current_radr_keeper[27:DWIDTH+2] : rd_data_ex[27:DWIDTH+2];
+wire [DWIDTH+1:4] dc_index_adr = dcflush_running ? dcflush_cntr :
+                                 dc_sel_tag ? current_radr_keeper[DWIDTH+1:4] : rd_data_ex[DWIDTH+1:4];
+                                 //dc_stall_dly ? current_radr_keeper[DWIDTH+1:4] : rd_data_ex[DWIDTH+1:4];
 wire [27:DWIDTH+2] dc_tag_wadr;
 wire [DWIDTH+1:4] dc_index_wadr;
 wire [27:DWIDTH+2] dc_tag_radr;
@@ -85,6 +92,7 @@ always @ (posedge clk or negedge rst_n) begin
 	else if (~dc_stall & ~dc_stall_fin )
 		dc_tag_adr_ma <= dc_tag_adr_ex;
 end
+
 
 wire cmd_ldst_ma = (cmd_ld_ma | cmd_st_ma) & (rd_data_ma[31:30] != 2'b11) ;
 wire dc_tag_equal = (dc_tag_adr_ma == dc_tag_radr);
@@ -120,8 +128,19 @@ always @ (posedge clk or negedge rst_n) begin
         ent_valid_bit_ma[dc_index_wadr] <= 1'b1;
 end
 
-assign dc_cache_valid_ma = ent_valid_bit_ma[dc_cache_dirty_adr];
-wire dc_cache_dirty_ma = ent_dirty_bit_ma[dc_cache_dirty_adr] & dc_tag_misshit_ma;
+reg [DWIDTH+1:4] dc_index_adr_dly;
+
+always @ (posedge clk or negedge rst_n) begin
+    if (~rst_n)
+        dc_index_adr_dly <= { (DWIDTH-3){ 1'b0 }};
+	else if (~dc_stall & ~dc_stall_fin )
+        dc_index_adr_dly <= dc_index_adr;
+end
+
+//assign dc_cache_valid_ma = ent_valid_bit_ma[dc_cache_dirty_adr];
+//wire dc_cache_dirty_ma = ent_dirty_bit_ma[dc_cache_dirty_adr] & dc_tag_misshit_ma;
+assign dc_cache_valid_ma = ent_valid_bit_ma[dc_index_adr_dly];
+wire dc_cache_dirty_ma = ent_dirty_bit_ma[dc_index_adr_dly] & dc_tag_misshit_ma;
 
 // dc state machine
 
@@ -191,7 +210,6 @@ always @ (posedge clk or negedge rst_n) begin
 end
 
 // current read address keeper
-reg [31:0] current_radr_keeper;
 
 always @ (posedge clk or negedge rst_n) begin
     if (~rst_n)
@@ -204,6 +222,8 @@ end
 
 // core stall singal
 assign dc_stall = ((dc_miss_current != `DCMS_LDRD)&(dc_miss_current != `DCMS_IDLE)) | ((dc_tag_misshit_ma | dc_tag_empty_ma)&(dc_miss_current != `DCMS_LDRD));
+assign dc_sel_tag = ((dc_miss_current != `DCMS_LDRD)&(dc_miss_current != `DCMS_IDLE)&(dc_miss_current != `DCMS_MEMW)) ;
+assign dc_st_ok = ((dc_miss_current != `DCMS_MEMW)&(dc_miss_current != `DCMS_MEMR));
 
 // store data write timing
 assign dc_st_wt_ma = (dc_miss_current != `DCMS_DCWT);
@@ -211,6 +231,13 @@ assign dc_st_wt_ma = (dc_miss_current != `DCMS_DCWT);
 // load issue timing
 assign dc_stall_fin = (dc_miss_current == `DCMS_DCW3);
 assign dc_stall_fin2 = (dc_miss_current == `DCMS_LDRD);
+
+always @ (posedge clk or negedge rst_n) begin
+    if (~rst_n)
+        dc_stall_dly <= 1'b0;
+	else
+        dc_stall_dly <= dc_stall;
+end
 
 // memory write bus i/f signals
 reg dcw_start_rq_dc;
@@ -223,12 +250,23 @@ always @ (posedge clk or negedge rst_n) begin
 	else
         dcw_start_rq_dc <= ram_ren_all;
 end
+//wire dcw_start_rq_dc = ram_ren_all;
+
+reg [31:0] dcw_in_addr_dly;
+
+always @ (posedge clk or negedge rst_n) begin
+    if (~rst_n)
+        dcw_in_addr_dly <= 32'd0;
+	else
+        dcw_in_addr_dly <= { rd_data_ma[31:28], dc_tag_radr[27:DWIDTH+2],  rd_data_ma[DWIDTH+1:0] };
+end
 
 assign dcw_start_rq = dcw_start_rq_dc | dcflush_wreq;
 
 assign dcw_in_mask = 16'd0;
 
-assign dcw_in_addr = dcflush_running ? dcw_in_addr_dcflush : { rd_data_ma[31:28], dc_tag_radr[27:DWIDTH+2],  rd_data_ma[DWIDTH+1:0] };
+//assign dcw_in_addr = dcflush_running ? dcw_in_addr_dcflush : { rd_data_ma[31:28], dc_tag_radr[27:DWIDTH+2],  rd_data_ma[DWIDTH+1:0] };
+assign dcw_in_addr = dcflush_running ? dcw_in_addr_dcflush : dcw_in_addr_dly;
 
 assign dcw_in_data = ram_rdata_all;
 

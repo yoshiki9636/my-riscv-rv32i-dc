@@ -9,8 +9,8 @@
  */
 
 module uart_logics
-    #(parameter IWIDTH = 12,
-      parameter DWIDTH = 12)
+    #(parameter IWIDTH = 14,
+      parameter DWIDTH = 14)
 	(
 	input clk,
 	input rst_n,
@@ -110,7 +110,14 @@ always @ (posedge clk or negedge rst_n) begin
 		cmd_wadr_cntr <= cmd_wadr_cntr + 30'd1;
 end
 
+generate
+if (DWIDTH < IWIDTH) begin
+assign i_ram_wadr = trush_running ? { { (IWIDTH-DWIDTH){ 1'b0}}, trush_adr[DWIDTH+1:2] } : cmd_wadr_cntr[IWIDTH+1:2];
+end
+else begin
 assign i_ram_wadr = trush_running ? trush_adr[IWIDTH+1:2] : cmd_wadr_cntr[IWIDTH+1:2];
+end
+endgenerate
 assign i_ram_wdata = trush_running ? 32'd0 : uart_data;
 assign i_ram_wen = inst_data_en | trush_running;
 assign d_ram_wadr_all =  trush_running ? { { 30-DWIDTH{ 1'b0}}, trush_adr} : cmd_wadr_cntr[31:2];

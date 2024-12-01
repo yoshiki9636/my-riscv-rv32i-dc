@@ -9,8 +9,8 @@
  */
 
 module cpu_top
-    #(parameter IWIDTH = 12,
-      parameter DWIDTH = 12)
+    #(parameter IWIDTH = 14,
+      parameter DWIDTH = 14)
 	(
 
 	input clk,
@@ -200,6 +200,7 @@ wire [127:0] ram_wdata_all;
 wire ram_wen_all;
 wire dc_stall_fin;
 wire dc_stall_fin2;
+wire dc_st_ok;
 
 cpu_status cpu_status (
 	.clk(clk),
@@ -404,6 +405,7 @@ ex_stage ex_stage (
 	.jmp_purge_ma(jmp_purge_ma),
 	.jmp_purge_ex(jmp_purge_ex),
 	.stall(stall),
+	.stall_1shot(stall_1shot),
 	.stall_dly(stall_dly),
 	.stall_dly2(stall_dly2),
 	.rst_pipe(rst_pipe_ex)
@@ -432,6 +434,7 @@ ma_stage #(.DWIDTH(DWIDTH)) ma_stage (
 	.ram_wdata_all(ram_wdata_all),
 	.ram_wen_all(ram_wen_all),
 	.dc_stall_fin2(dc_stall_fin2),
+	.dc_st_ok(dc_st_ok),
 	.dc_tag_hit_ma(dc_tag_hit_ma),
 	.dc_st_wt_ma(dc_st_wt_ma),
 	.dc_cache_wr_ma(dc_cache_wr_ma),
@@ -456,6 +459,7 @@ ma_stage #(.DWIDTH(DWIDTH)) ma_stage (
 	.stall(stall),
 	.stall_1shot(stall_1shot),
 	.stall_dly(stall_dly),
+	.stall_dly2(stall_dly2),
 	.rst_pipe_ma(rst_pipe_ma)
 	);
 
@@ -529,6 +533,7 @@ lsu_stage #(.DWIDTH(DWIDTH)) lsu_stage (
 	.ram_wen_all(ram_wen_all),
 	.dc_stall_fin2(dc_stall_fin2),
 	.dc_stall_fin(dc_stall_fin),
+	.dc_st_ok(dc_st_ok),
 	.dc_tag_hit_ma(dc_tag_hit_ma),
 	.dc_st_wt_ma(dc_st_wt_ma),
 	.dc_cache_wr_ma(dc_cache_wr_ma),

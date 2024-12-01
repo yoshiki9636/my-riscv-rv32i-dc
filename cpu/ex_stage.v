@@ -102,6 +102,7 @@ module ex_stage(
 	output jmp_purge_ex,
 	// stall
 	input stall,
+	input stall_1shot,
 	input stall_dly,
 	input stall_dly2,
 	input rst_pipe
@@ -157,7 +158,7 @@ wire [31:0] rs2_sel = (cmd_ld_pur | cmd_alui_ex) ? ld_alui_ofs :
 					  cmd_alui_shamt_ex ? shamt :
 					   ~nohit_rs2_ex ? rs2_fwd : rs2_data_ex;
 
-wire [31:0] st_data_ex = ~nohit_rs2_ex ? rs2_fwd : rs2_data_ex;
+wire [31:0] st_data_ex_pre = ~nohit_rs2_ex ? rs2_fwd : rs2_data_ex;
 
 // jump / branch / auipc
 
@@ -311,24 +312,61 @@ wire [31:0] rd_data_ex_pre = cmd_lui_ex ? lui_data :
                               cmd_csr_ex ? csr_rd_data :
                               alu_sel;
 
-// roll back for dc_stall
-reg [31:0] rd_data_roll;
+/*
+reg cmd_ld_ma_keeper;
 
 always @ ( posedge clk or negedge rst_n) begin   
 	if (~rst_n)
+        cmd_ld_ma_keeper <= 1'b0;
+	else if (stall)
+        cmd_ld_ma_keeper <= cmd_ld_ma;
+end
+*/
+
+// roll back for dc_stall
+wire cmd_st_tmp;
+reg [31:0] st_data_roll;
+reg [31:0] rd_data_roll;
+//wire stall_ldst_pre = (cmd_ld_pur | cmd_st_tmp) ? stall : stall_dly;
+//wire stall_ldst_pre = (cmd_ld_pur|cmd_st_tmp) ? stall : stall_dly;
+//wire stall_ldst_pre = (stall & cmd_st_tmp) |  (stall_dly & cmd_ld_pur);
+wire stall_ldst_pre = (stall & cmd_st_tmp) |  (stall & cmd_ld_pur);
+
+always @ ( posedge clk or negedge rst_n) begin   
+	if (~rst_n) begin
+        st_data_roll <= 32'd0;
         rd_data_roll <= 32'd0;
-	else if (rst_pipe)
+	end
+	else if (rst_pipe) begin
+        st_data_roll <= 32'd0;
         rd_data_roll <= 32'd0;
+	end
 	//else if (~dc_stall | dc_stall_fin)
 	//else if (~stall | dc_stall_fin)
-	else if (~stall & ~dc_stall_fin)
+	//else if (~stall & ~dc_stall_fin)
 	//else if (~stall & ~stall_dly)
+	else if (stall_1shot) begin
+        st_data_roll <= st_data_ex_pre;
         rd_data_roll <= rd_data_ex_pre;
+	end
 end
 
 //assign rd_data_ex = (dc_stall & ~dc_stall_fin) ? rd_data_roll : rd_data_ex_pre;
 //assign rd_data_ex = (stall | dc_stall_fin) ? rd_data_roll : rd_data_ex_pre;
-assign rd_data_ex = (stall | stall_dly2) ? rd_data_roll : rd_data_ex_pre;
+
+//wire stall_ldst = (cmd_ld_pur | cmd_st_tmp) ? stall_dly :  stall_dly2;
+//wire stall_ldst = (cmd_ld_pur) ? stall_dly :  stall_dly2;
+//wire stall_ldst = (stall_dly |  stall_dly2) & ~(cmd_ld_ma|cmd_st_ma);
+
+//wire stall_ldst = (stall_dly & cmd_st_ma) |  (stall_dly2 & cmd_ld_ma);
+wire stall_ldst = (stall_dly & cmd_st_ma) |  (stall_dly & cmd_ld_ma);
+//assign rd_data_ex = stall_ldst ? rd_data_roll : rd_data_ex_pre;
+
+//assign rd_data_ex = (stall | stall_dly2) ? rd_data_roll : rd_data_ex_pre;
+//assign rd_data_ex = (stall | stall_dly) ? rd_data_roll : rd_data_ex_pre;
+//assign rd_data_ex = rd_data_ex_pre;
+assign rd_data_ex = (stall_ldst) ? rd_data_roll : rd_data_ex_pre;
+wire [31:0] st_data_ex = (stall_ldst) ? st_data_roll : st_data_ex_pre;
 
 // jamp/br
 
@@ -350,7 +388,7 @@ assign ecall_condition_ex = ~jmp_purge_ma & (cmd_ecall_ex | illegal_ops_ex);
 assign jmp_purge_ex = jmp_condition_ex | ecall_condition_ex;
 
 wire wbk_rd_reg_tmp = wbk_rd_reg_ex & ~jmp_purge_ma & ~illegal_ops_ex;
-wire cmd_st_tmp = cmd_st_ex & ~jmp_purge_ma;
+assign cmd_st_tmp = cmd_st_ex & ~jmp_purge_ma;
 
 // FF to MA
 

@@ -9,7 +9,7 @@
  */
 
 module ma_stage
-	#(parameter DWIDTH = 11)
+	#(parameter DWIDTH = 14)
 	(
 	input clk,
 	input rst_n,
@@ -37,6 +37,7 @@ module ma_stage
 	input [127:0] ram_wdata_all,
 	input ram_wen_all,
 	input dc_stall_fin2,
+	input dc_st_ok,
 	// dc controls
     input dc_tag_hit_ma,
     input dc_st_wt_ma,
@@ -68,6 +69,7 @@ module ma_stage
 	input stall,
 	input stall_1shot,
 	input stall_dly,
+	input stall_dly2,
 	input rst_pipe_ma
 
 	);
@@ -169,7 +171,7 @@ endgenerate
 assign data_wdata_ma = d_ram_wen ? d_ram_wdata :
 					   dma_we_ma ? { 16'd0, dataram_wdata_ma } : st_wdata;
 //assign data_we_ma = ((d_ram_wen | dma_we_ma) ? 4'b1111 : st_we_mem) & { 4{ dc_tag_hit_ma | dc_st_wt_ma }};
-assign data_we_ma = ((d_ram_wen | dma_we_ma) ? 4'b1111 : st_we_mem) & { 4{ dc_tag_hit_ma }};
+assign data_we_ma = ((d_ram_wen | dma_we_ma) ? 4'b1111 : st_we_mem & { 4{ dc_st_ok}}) & { 4{ dc_tag_hit_ma }};
 
 assign dc_cache_wr_ma = |data_we_ma;
 
@@ -214,8 +216,9 @@ always @ ( posedge clk or negedge rst_n) begin
         ld_data_roll <= data_rdata_wb;
 end
 
-assign ld_data_wb = data_rdata_wb;
-//assign ld_data_wb = stall_dly ? ld_data_roll : data_rdata_wb;
+//assign ld_data_wb = data_rdata_wb;
+//assign ld_data_wb = stall_dly2 ? ld_data_roll : data_rdata_wb;
+assign ld_data_wb = stall_dly ? ld_data_roll : data_rdata_wb;
 assign d_ram_rdata = data_rdata_wb;
 
 // FF to WB
