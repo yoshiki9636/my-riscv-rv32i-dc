@@ -6,9 +6,9 @@
 //#define LP 10
 #define LP 1000000
 #define LP2 200
-#define YSIZE 16
-#define XSIZE 16
-#define ZSIZE 16
+#define YSIZE 5
+#define XSIZE 5
+#define ZSIZE 5
 // workaround for libm_nano.a
 int __errno;
 // workaround for using libc_nano.a
@@ -76,21 +76,20 @@ int mat_mul( double* mat1, double* mat2, double* result, int x, int y, int z) {
 
 int matrix_print( double* mat, int x, int y) {
 	char cbuf2[32];
-	char cbufe[32];
+	//char cbufe[32];
 	for(int j = 0; j < y; j++) {
 		for(int i = 0; i < x; i++) {
-			float f = (float)mat[j*x+i];
-			sprintf(cbuf2, " %e ",  f);
+			sprintf(cbuf2, "%e",  mat[j*x+i]);
 			int length = strlen(cbuf2);
-			sprintf(cbufe, "l = %d ",  length);
+			//sprintf(cbufe, "l = %d",  length);
+			//length = strlen(cbufe);
  
 			if ( i == x - 1 ) {
-				uprint( cbuf2, length, 1 );
-			}
-			else {
 				uprint( cbuf2, length, 2 );
 			}
-			uprint( cbufe, 20, 0 );
+			else {
+				uprint( cbuf2, length, 1 );
+			}
 		}
 	}
 	return 0;
@@ -101,17 +100,17 @@ void uprint( char* buf, int length, int ret ) {
     unsigned int* uart_out = (unsigned int*)0xc000fc00;
     unsigned int* uart_status = (unsigned int*)0xc000fc04;
 
-	for (int i = 0; i < length + 3; i++) {
+	for (int i = 0; i < length + ret + 1; i++) {
 		unsigned int flg = 1;
 		while(flg == 1) {
 			flg = *uart_status;
 		}
-		*uart_out = (i == length+2) ? 0 :
-		            ((i == length+1)&&(ret != 1)) ? 0 :
-		            ((i == length+1)&&(ret == 1)) ? 0x0a :
-		            ((i == length)&&(ret == 0)) ? 0 :
-		            ((i == length)&&(ret == 1)) ? 0x0d :
-		            ((i == length)&&(ret == 2)) ? 0x20 : buf[i];
+        *uart_out = (i == length+2) ? 0 :
+                    ((i == length+1)&&(ret != 2)) ? 0 :
+                    ((i == length+1)&&(ret == 2)) ? 0x0a :
+                    ((i == length)&&(ret == 0)) ? 0 :
+                    ((i == length)&&(ret == 1)) ? 0x20 :
+                    ((i == length)&&(ret == 2)) ? 0x0d : buf[i];
 		*led = i;
 	}
 	//return 0;

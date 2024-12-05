@@ -35,8 +35,7 @@ int main() {
 
 		sprintf(cbuf2, "value = %d\n", r);
 		int length = strlen(cbuf2);
-		//uprint( cbuf2, length, 0 );
-		uprint( cbuf2, 10, 0 );
+		uprint( cbuf2, length, 2 );
 		wait();
 	}
 	return 0;
@@ -46,17 +45,17 @@ void uprint( char* buf, int length, int ret ) {
 	unsigned int* uart_out = (unsigned int*)0xc000fc00;
 	unsigned int* uart_status = (unsigned int*)0xc000fc04;
 
-	for (int i = 0; i < length + 3; i++) {
-	unsigned int flg = 1;
-	while(flg == 1) {
-		flg = *uart_status;
-	}
+	for (int i = 0; i < length + ret + 1; i++) {
+		unsigned int flg = 1;
+		while(flg == 1) {
+			flg = *uart_status;
+		}
 		*uart_out = (i == length+2) ? 0 :
-                    ((i == length+1)&&(ret != 1)) ? 0 :
-                    ((i == length+1)&&(ret == 1)) ? 0x0a :
-                    ((i == length)&&(ret == 0)) ? 0 :
-                    ((i == length)&&(ret == 1)) ? 0x0d :
-                    ((i == length)&&(ret == 2)) ? 0x20 : buf[i];
+	                ((i == length+1)&&(ret != 2)) ? 0 :
+	                ((i == length+1)&&(ret == 2)) ? 0x0a :
+	                ((i == length)&&(ret == 0)) ? 0 :
+	                ((i == length)&&(ret == 1)) ? 0x20 :
+	                ((i == length)&&(ret == 2)) ? 0x0d : buf[i];
 	}
 	//return 0;
 }
