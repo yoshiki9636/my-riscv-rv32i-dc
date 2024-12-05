@@ -37,9 +37,11 @@ lui x7, 0x08000 ;
 addi x7, x7, 0xfff ;
 lui x8, 0x00000 ; counter
 
-:label_loop2
 lb x9, 0x0(x5) ;byte read
+addi x5, x5, 1 ;
+:label_loop2
 sb x9, 0x0(x6) ;byte write
+lb x9, 0x0(x5) ;byte read
 addi x5, x5, 1 ;
 addi x6, x6, 0xfff ;
 addi x8, x8, 1 ;
@@ -57,8 +59,8 @@ addi x7, x7, 0xfff ;
 lui x8, 0x00000 ; counter
 
 :label_loop3
-lb x9, 0x0(x5) ;byte read
 lb x10, 0x0(x6) ;byte write
+lb x9, 0x0(x5) ;byte read
 addi x5, x5, 1 ;
 addi x6, x6, 0xfff ;
 bne x9, x10, label_fail

@@ -15,82 +15,55 @@ lui x2, 0xc0010 ; LED address
 addi x2, x2, 0xe00 ;
 sw x1, 0x0(x2) ; set LED
 
-;lui x6, 0x00000 ; destiation
-;lui x7, 0x00001 ;
-;lui x8, 0x00000 ; counter
-
-;:label_loop0
-;sb x8, 0x0(x6) ;byte write
-;addi x6, x6, 1 ;
-;addi x8, x8, 1 ;
-;blt x8, x7, label_loop0
-
 lui x6, 0x00000 ; destiation
-lui x7, 0x02000 ;
-addi x7, x7, 0x000 ;
+lui x7, 0x04000 ;
+addi x7, x7, 0xfff ;
 lui x8, 0x00000 ; counter
 
 :label_loopa
-sh x8, 0x0(x6) ;half word write
-addi x6, x6, 1 ;
+sh x8, 0x0(x6) ;byte write
+addi x6, x6, 2 ;
 addi x8, x8, 1 ;
 blt x8, x7, label_loopa
 
 addi x1, x1, 0xfff ; LED value
 sw x1, 0x0(x2) ; set LED
 
-addi x10, x0, 2 ; counter
-addi x11, x0, 0 ; counter
 lui x5, 0x00000 ; source
 addi x5, x5, 0x000 ;
-lui x6, 0x04000 ; destiation
+lui x6, 0x10000 ; destiation
 addi x6, x6, 0xffe ;
-lui x7, 0x01000 ;
-addi x7, x7, 0x000 ;
+lui x7, 0x04000 ;
+addi x7, x7, 0xfff ;
 lui x8, 0x00000 ; counter
 
 :label_loop2
-lh x9, 0x0(x5) ;half word read
-sh x9, 0x0(x6) ;half word write
+lh x9, 0x0(x5) ;byte read
+sh x9, 0x0(x6) ;byte write
 addi x5, x5, 2 ;
 addi x6, x6, 0xffe ;
 addi x8, x8, 1 ;
 blt x8, x7, label_loop2
-sw x1, 0x0(x2) ; set LED
-;blt x11, x10, label_loop1
-
-nop
-nop
 
 addi x1, x1, 0xfff ; LED value
 sw x1, 0x0(x2) ; set LED
 
 lui x5, 0x00000 ; source
 addi x5, x5, 0x000 ;
-lui x6, 0x04000 ; destiation
+lui x6, 0x10000 ; destiation
 addi x6, x6, 0xffe ;
-lui x7, 0x01000 ;
-addi x7, x7, 0x000;
+lui x7, 0x04000 ;
+addi x7, x7, 0xfff ;
 lui x8, 0x00000 ; counter
 
 :label_loop3
-lh x9, 0x0(x5) ;half word read
-lh x10, 0x0(x6) ;half word read
+lh x9, 0x0(x5) ;byte read
+lh x10, 0x0(x6) ;byte write
 addi x5, x5, 2 ;
 addi x6, x6, 0xffe ;
 bne x9, x10, label_fail
 addi x8, x8, 1 ;
 blt x8, x7, label_loop3
-
-;lui x6, 0x00100 ; destiation
-;lui x7, 0x00001 ;
-;lui x8, 0x00000 ; counter
-
-;:label_loopb
-;sb x8, 0x0(x6) ;byte write
-;addi x6, x6, 1 ;
-;addi x8, x8, 1 ;
-;blt x8, x7, label_loopb
 jalr x0, x0, label_pass
 
 :label_fail

@@ -15,23 +15,13 @@ lui x2, 0xc0010 ; LED address
 addi x2, x2, 0xe00 ;
 sw x1, 0x0(x2) ; set LED
 
-;lui x6, 0x00000 ; destiation
-;lui x7, 0x00001 ;
-;lui x8, 0x00000 ; counter
-
-;:label_loop0
-;sb x8, 0x0(x6) ;byte write
-;addi x6, x6, 1 ;
-;addi x8, x8, 1 ;
-;blt x8, x7, label_loop0
-
 lui x6, 0x00000 ; destiation
-lui x7, 0x00800 ;
-addi x7, x7, 0x000 ;
+lui x7, 0x02000 ;
+addi x7, x7, 0xfff ;
 lui x8, 0x00000 ; counter
 
 :label_loopa
-sw x8, 0x0(x6) ;word write
+sw x8, 0x0(x6) ;byte write
 addi x6, x6, 4 ;
 addi x8, x8, 1 ;
 blt x8, x7, label_loopa
@@ -39,64 +29,47 @@ blt x8, x7, label_loopa
 addi x1, x1, 0xfff ; LED value
 sw x1, 0x0(x2) ; set LED
 
-addi x10, x0, 2 ; counter
-addi x11, x0, 0 ; counter
 lui x5, 0x00000 ; source
 addi x5, x5, 0x000 ;
-lui x6, 0x04000 ; destiation
+lui x6, 0x10000 ; destiation
 addi x6, x6, 0xffc ;
-lui x7, 0x00800 ;
-addi x7, x7, 0x000 ;
+lui x7, 0x02000 ;
+addi x7, x7, 0xfff ;
 lui x8, 0x00000 ; counter
 
 :label_loop2
-lw x9, 0x0(x5) ;word read
-sw x9, 0x0(x6) ;word write
+lw x9, 0x0(x5) ;byte read
+sw x9, 0x0(x6) ;byte write
 addi x5, x5, 4 ;
 addi x6, x6, 0xffc ;
 addi x8, x8, 1 ;
 blt x8, x7, label_loop2
-sw x1, 0x0(x2) ; set LED
-;blt x11, x10, label_loop1
-
-nop
-nop
 
 addi x1, x1, 0xfff ; LED value
 sw x1, 0x0(x2) ; set LED
 
 lui x5, 0x00000 ; source
 addi x5, x5, 0x000 ;
-lui x6, 0x04000 ; destiation
+lui x6, 0x10000 ; destiation
 addi x6, x6, 0xffc ;
-lui x7, 0x00800 ;
-addi x7, x7, 0x000;
+lui x7, 0x02000 ;
+addi x7, x7, 0xfff ;
 lui x8, 0x00000 ; counter
 
 :label_loop3
-lw x9, 0x0(x5) ;word read
-lw x10, 0x0(x6) ;word read
+lw x9, 0x0(x5) ;byte read
+lw x10, 0x0(x6) ;byte write
 addi x5, x5, 4 ;
 addi x6, x6, 0xffc ;
 bne x9, x10, label_fail
 addi x8, x8, 1 ;
 blt x8, x7, label_loop3
-
-;lui x6, 0x00100 ; destiation
-;lui x7, 0x00001 ;
-;lui x8, 0x00000 ; counter
-
-;:label_loopb
-;sb x8, 0x0(x6) ;byte write
-;addi x6, x6, 1 ;
-;addi x8, x8, 1 ;
-;blt x8, x7, label_loopb
-jal x0, label_pass
+jalr x0, x0, label_pass
 
 :label_fail
 addi x1, x0, 1 ; LED value
 sw x1, 0x0(x2) ; set LED
-jal x0, label_fail
+jalr x0, x0, label_fail
 nop
 nop
 
@@ -114,7 +87,7 @@ addi x1, x1, 1
 blt x1, x2, label_waitloop
 addi x3, x3, 1 
 sw x3, 0x0(x4)
-jal x0, label_led
+jalr x0, x0, label_led
 nop
 nop
 nop
