@@ -7,7 +7,7 @@ _start:
         nop ;
         nop ;
         nop ;
-	lui sp,0x1000
+	lui sp,0x10000
         j main
         nop ;
         nop ;

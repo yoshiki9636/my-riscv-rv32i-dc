@@ -100,15 +100,12 @@ void uprint( char* buf, int length, int ret ) {
     unsigned int* uart_out = (unsigned int*)0xc000fc00;
     unsigned int* uart_status = (unsigned int*)0xc000fc04;
 
-	for (int i = 0; i < length + ret + 1; i++) {
+	for (int i = 0; i < length + ret; i++) {
 		unsigned int flg = 1;
 		while(flg == 1) {
 			flg = *uart_status;
 		}
-        *uart_out = (i == length+2) ? 0 :
-                    ((i == length+1)&&(ret != 2)) ? 0 :
-                    ((i == length+1)&&(ret == 2)) ? 0x0a :
-                    ((i == length)&&(ret == 0)) ? 0 :
+        *uart_out = ((i == length+1)&&(ret == 2)) ? 0x0a :
                     ((i == length)&&(ret == 1)) ? 0x20 :
                     ((i == length)&&(ret == 2)) ? 0x0d : buf[i];
 		*led = i;

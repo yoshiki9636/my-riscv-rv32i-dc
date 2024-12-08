@@ -43,13 +43,12 @@ void uprint( char* buf, int length ) {
     unsigned int* uart_out = (unsigned int*)0xc000fc00;
     unsigned int* uart_status = (unsigned int*)0xc000fc04;
 
-	for (int i = 0; i < length + 3; i++) {
+	for (int i = 0; i < length + 2; i++) {
 		unsigned int flg = 1;
 		while(flg == 1) {
 			flg = *uart_status;
 		}
-		*uart_out = (i == length+2) ? 0 :
-		            (i == length+1) ? 0x0a :
+		*uart_out = (i == length+1) ? 0x0a :
 		            (i == length) ? 0x0d : buf[i];
 		*led = i;
 	}
