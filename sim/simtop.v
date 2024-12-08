@@ -33,10 +33,43 @@ fpga_top fpga_top (
 	);
 
 initial $readmemh("./test.txt", fpga_top.cpu_top.if_stage.inst_1r1w.ram);
-//initial $readmemh("./test0.txt", fpga_top.cpu_top.ma_stage.data_1r1w.ram0);
-//initial $readmemh("./test1.txt", fpga_top.cpu_top.ma_stage.data_1r1w.ram1);
-//initial $readmemh("./test2.txt", fpga_top.cpu_top.ma_stage.data_1r1w.ram2);
-//initial $readmemh("./test3.txt", fpga_top.cpu_top.ma_stage.data_1r1w.ram3);
+initial $readmemh("./test_dummy.txt", fpga_top.dummy_mig.sfifo_1r1w.ram);
+
+//initial $readmemh("./test0.txt", fpga_top.cpu_top.ma_stage.data_ram.ram0.ram0);
+//initial $readmemh("./test1.txt", fpga_top.cpu_top.ma_stage.data_ram.ram0.ram1);
+//initial $readmemh("./test2.txt", fpga_top.cpu_top.ma_stage.data_ram.ram0.ram2);
+//initial $readmemh("./test3.txt", fpga_top.cpu_top.ma_stage.data_ram.ram0.ram3);
+
+//initial $readmemh("./test4.txt", fpga_top.cpu_top.ma_stage.data_ram.ram1.ram0);
+//initial $readmemh("./test5.txt", fpga_top.cpu_top.ma_stage.data_ram.ram1.ram1);
+//initial $readmemh("./test6.txt", fpga_top.cpu_top.ma_stage.data_ram.ram1.ram2);
+//initial $readmemh("./test7.txt", fpga_top.cpu_top.ma_stage.data_ram.ram1.ram3);
+
+//initial $readmemh("./test8.txt", fpga_top.cpu_top.ma_stage.data_ram.ram2.ram0);
+//initial $readmemh("./test9.txt", fpga_top.cpu_top.ma_stage.data_ram.ram2.ram1);
+//initial $readmemh("./testa.txt", fpga_top.cpu_top.ma_stage.data_ram.ram2.ram2);
+//initial $readmemh("./testb.txt", fpga_top.cpu_top.ma_stage.data_ram.ram2.ram3);
+
+//initial $readmemh("./testc.txt", fpga_top.cpu_top.ma_stage.data_ram.ram3.ram0);
+//initial $readmemh("./testd.txt", fpga_top.cpu_top.ma_stage.data_ram.ram3.ram1);
+//initial $readmemh("./teste.txt", fpga_top.cpu_top.ma_stage.data_ram.ram3.ram2);
+//initial $readmemh("./testf.txt", fpga_top.cpu_top.ma_stage.data_ram.ram3.ram3);
+
+
+
+
+
+
+always @ ( fpga_top.cpu_top.id_stage.rf_2r1w.ram_wdata or fpga_top.cpu_top.id_stage.rf_2r1w.ram_wen ) begin
+	if ((fpga_top.cpu_top.id_stage.rf_2r1w.ram_wdata === 32'dx) & fpga_top.cpu_top.id_stage.rf_2r1w.ram_wen ) begin
+	//if ((fpga_top.cpu_top.id_stage.rf_2r1w.ram_wdata === 32'dx) ) begin
+	//if ((fpga_top.cpu_top.id_stage.rf_2r1w.ram_wdata === 32'd0) ) begin
+		//$display("unknown data is written to rf");
+		$warning("unknown data is written to rf");
+	end
+end
+
+
 
 initial clkin = 0;
 
@@ -55,7 +88,7 @@ initial begin
 	force fpga_top.cpu_start = 1'b1;
 #10
 	force fpga_top.cpu_start = 1'b0;
-#500000
+#5000000
 	$stop;
 end
 
