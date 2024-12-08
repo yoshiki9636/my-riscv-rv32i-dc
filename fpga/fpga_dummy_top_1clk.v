@@ -12,8 +12,8 @@
 `define ARTY_A7
 
 module fpga_top
-    #(parameter IWIDTH = 10,
-      parameter DWIDTH = 10)
+    #(parameter IWIDTH = 14,
+      parameter DWIDTH = 14)
     (
 	input clkin,
 	input rst_n,
