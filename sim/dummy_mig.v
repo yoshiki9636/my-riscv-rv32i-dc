@@ -34,20 +34,20 @@ module dummy_mig (
 `define DMIG_WWIT 2'b01
 `define DMIG_RWIT 2'b10
 `define DMIG_DEFO 2'b10
-`define READ_LATENCY 4'd15
+`define READ_LATENCY 8'd15
 
 // mask is not used
 // signal / sampler
 wire read_flg = app_cmd[0];
 wire read_end;
 
-reg [9:0] rwadr;
+reg [14:0] rwadr;
 
 always @ (posedge mclk or negedge mrst_n) begin
     if (~mrst_n)
-        rwadr <= 10'd0;
+        rwadr <= 15'd0;
     else if ( app_en & app_rdy )
-        rwadr <=  app_addr[13:4];
+        rwadr <=  app_addr[17:3];
 end
 
 // write data channel manager state machine
@@ -104,18 +104,18 @@ end
 wire rstart = (dmig_current == `DMIG_IDLE)&(dmig_next == `DMIG_RWIT);
 
 // burst counter just spport 4
-reg [3:0] burst_cntr;
+reg [7:0] burst_cntr;
 
 always @ (posedge mclk or negedge mrst_n) begin
     if (~mrst_n)
-        burst_cntr <= 4'd0;
+        burst_cntr <= 8'd0;
     else if (rstart)
         burst_cntr <= `READ_LATENCY;
-    else if (burst_cntr > 4'd0)
-        burst_cntr <= burst_cntr - 4'd1;
+    else if (burst_cntr > 8'd0)
+        burst_cntr <= burst_cntr - 8'd1;
 end
 
-assign read_end = (burst_cntr == 4'd1);
+assign read_end = (burst_cntr == 8'd1);
 
 // interface out signals
 
@@ -127,8 +127,10 @@ assign app_rd_data_valid = read_end;
 // dummy memory : 128bit x 1024 word
 sfifo_1r1w
     #(.SFIFODW(128),
-      .SFIFOAW(10),
-      .SFIFODP(1024)
+      .SFIFOAW(15),
+      .SFIFODP(32768)
+      //.SFIFOAW(13),
+      //.SFIFODP(8192)
     ) sfifo_1r1w (
     .clk(mclk),
     .ram_radr(rwadr),
