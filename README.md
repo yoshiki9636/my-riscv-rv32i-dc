@@ -95,7 +95,7 @@ make should select newlib.
 
 make 
 
-(2) A C sample is available in ctest/. It has been tested in the author's environment. Shell for compilation (Makefile was troublesome...) The name of the tool chain is written in the script. The tool name is written in the script, so please change it to the name of the tool in the above tool chain. After that, all you have to do is to run the shell.
+(2) C samples are available in ctest/. It has been tested in the author's environment. Shell for compilation (Makefile was troublesome...) The name of the tool chain is written in the script. The tool name is written in the script, so please change it to the name of the tool in the above tool chain. After that, all you have to do is to run the shell.
 
 ./cmpl.sh XX.c
 
