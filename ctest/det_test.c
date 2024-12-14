@@ -6,7 +6,7 @@
 //#define LP 10
 #define LP 1000000
 #define LP2 200
-#define SIZE 8
+#define SIZE 7
 // workaround for libm_nano.a
 int __errno;
 void pass();
@@ -32,7 +32,7 @@ int main() {
 	uprint( "mat1\n", 6, 0 );
 	matrix_print( mat1, SIZE, SIZE);
 	uprint( "det = ", 6, 0 );
-	int length = double_print( cbuf, det, 9 );
+	int length = double_print( cbuf, det, 30 );
 	uprint( cbuf, length, 2 );
 	pass();
 	return 0;
