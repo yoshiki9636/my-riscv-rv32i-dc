@@ -374,7 +374,7 @@ MMCMは50MHzで動作確認しました。
 - fence系、ecall以外のecall系未実装。  
 - メモリはinstructionとdataでセパレート。各々1KWordsの大きさ。  
 - I/Oは4セットのRGB LED、12ピン。
-- Uartでの表字を using I/Oで実現。
+- Uartでの表字をI/Oで実現。
 - D cacheと外部メモリとして128MB DRAMを追加。
 
 2. 簡単な使い方  
