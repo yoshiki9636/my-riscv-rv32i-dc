@@ -12,6 +12,8 @@ module cpu_status(
 	input clk,
 	input rst_n,
 
+	// I$ stall
+	input ic_stall,
 	// D$ stall
 	input dc_stall,
 	// from control
@@ -20,6 +22,7 @@ module cpu_status(
 	input quit_cmd,
 	// to CPU
 	output pc_start,
+	output pc_valid_id,
 	output stall,
 	output stall_ex,
 	output stall_ma,
@@ -37,6 +40,8 @@ module cpu_status(
 reg cpu_run_state;
 reg cpu_run_state_lat;
 reg cpu_start_lat;
+
+assign pc_valid_id = cpu_run_state_lat;
 
 always @ (posedge clk or negedge rst_n) begin
 	if (~rst_n)
@@ -76,10 +81,10 @@ assign pc_start = init_calib_complete & ((cpu_run_state & ~cpu_run_state_lat) | 
 
 // stall signal : currently controlled by outside
 // add lsu stall
-//reg stall_dly2;
 reg stall_dly3;
 
 assign stall = ~cpu_run_state | dc_stall;
+//assign stall = ~cpu_run_state | ic_stall | dc_stall;
 
 always @ (posedge clk or negedge rst_n) begin
     if (~rst_n) begin

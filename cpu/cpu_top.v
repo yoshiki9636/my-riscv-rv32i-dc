@@ -50,6 +50,14 @@ module cpu_top
     output [19:2] ibus_wadr,
     output [15:0] ibus32_wdata,
 
+	output icr_start_rq,
+	output [31:0] ic_rin_addr,
+	input [127:0] ic_rdat_m_data,
+	input [15:0] ic_rdat_m_mask, // unused
+	input ic_rdat_m_valid,
+    input ic_finish_mrd, // not used
+	input start_icflush,
+
 	output dcw_start_rq,
 	output [31:0] dcw_in_addr,
 	output [15:0] dcw_in_mask,
@@ -153,6 +161,8 @@ wire rst_pipe_id;
 wire rst_pipe_ex;
 wire rst_pipe_ma;
 wire rst_pipe_wb;
+wire ic_stall;
+wire ic_stall_dly;
 wire dc_stall;
 wire stall;
 wire stall_1shot;
@@ -202,9 +212,20 @@ wire dc_stall_fin;
 wire dc_stall_fin2;
 wire dc_st_ok;
 
+// ILU
+wire [31:2] pc_if;
+wire pc_valid_id;
+wire [IWIDTH-3:0] ic_ram_wadr_all;
+wire ic_stall_fin2;
+wire ic_stall_fin;
+wire ic_tag_hit_id;
+wire ic_st_wt_id;
+
+
 cpu_status cpu_status (
 	.clk(clk),
 	.rst_n(rst_n),
+	.ic_stall(ic_stall),
 	.dc_stall(dc_stall),
 	.init_calib_complete(init_calib_complete),
 	.cpu_start(cpu_start),
@@ -217,6 +238,7 @@ cpu_status cpu_status (
 	.stall_ma(stall_ma),
 	.stall_wb(stall_wb),
 	.pc_start(pc_start),
+	.pc_valid_id(pc_valid_id),
 	.rst_pipe(rst_pipe),
 	.rst_pipe_id(rst_pipe_id),
 	.rst_pipe_ex(rst_pipe_ex),
@@ -247,6 +269,11 @@ if_stage #(.IWIDTH(IWIDTH)) if_stage (
 	.i_ram_wdata(i_ram_wdata),
 	.i_ram_wen(i_ram_wen),
 	.i_read_sel(i_read_sel),
+	.ic_rdat_m_data(ic_rdat_m_data),
+	.ic_rdat_m_mask(ic_rdat_m_mask),
+	.ic_rdat_m_valid(ic_rdat_m_valid),
+	.ic_ram_wadr_all(ic_ram_wadr_all),
+	.pc_if(pc_if),
 	.pc_start(pc_start),
 	.start_adr(start_adr),
 	.stall(stall),
@@ -257,6 +284,8 @@ if_stage #(.IWIDTH(IWIDTH)) if_stage (
 	.rst_pipe(rst_pipe),
 	.dc_stall_fin(dc_stall_fin),
 	.dc_stall_fin2(dc_stall_fin2),
+	.ic_stall(ic_stall),
+	.ic_stall_dly(ic_stall_dly),
 	.stall_ld_add(stall_ld_add),
 	.pc_data(pc_data)
 	);
@@ -552,6 +581,27 @@ lsu_stage #(.DWIDTH(DWIDTH)) lsu_stage (
 	.finish_mrd(finish_mrd),
 	.start_dcflush(start_dcflush),
 	.dcflush_running(dcflush_running),
+	.rst_pipe(rst_pipe)
+	);
+
+ilu_stage ilu_stage (
+	.clk(clk),
+	.rst_n(rst_n),
+	.pc_if(pc_if),
+	.pc_id(pc_id),
+	.pc_valid_id(pc_valid_id),
+	.ic_ram_wadr_all(ic_ram_wadr_all),
+	.ic_stall_fin2(ic_stall_fin2),
+	.ic_stall_fin(ic_stall_fin),
+	.ic_stall(ic_stall),
+	.ic_stall_dly(ic_stall_dly),
+	.ic_tag_hit_id(ic_tag_hit_id),
+	.ic_st_wt_id(ic_st_wt_id),
+	.icr_start_rq(icr_start_rq),
+	.ic_rin_addr(ic_rin_addr),
+	.ic_rdat_m_valid(ic_rdat_m_valid),
+	.ic_finish_mrd(ic_finish_mrd),
+	.start_icflush(start_icflush),
 	.rst_pipe(rst_pipe)
 	);
 

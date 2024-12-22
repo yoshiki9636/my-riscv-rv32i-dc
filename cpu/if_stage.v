@@ -33,10 +33,21 @@ module if_stage
 	// from monitor
 	input [IWIDTH+1:2] i_ram_radr,
 	output [31:0] i_ram_rdata,
-	input [IWIDTH+1:2] i_ram_wadr,
-	input [31:0] i_ram_wdata,
-	input i_ram_wen,
+	input [IWIDTH+1:2] i_ram_wadr, // unused
+	input [31:0] i_ram_wdata, // unused
+	input i_ram_wen, // unused
 	input i_read_sel,
+
+	// from dram bus
+	input [127:0] ic_rdat_m_data,
+	input [15:0] ic_rdat_m_mask, // unused
+	input ic_rdat_m_valid,
+
+	// from/to ilu
+	input [IWIDTH-3:0] ic_ram_wadr_all,
+
+	output [31:2] pc_if,
+	//output pc_valid_id, // currently set to 1'b1
 
 	// other place
 	input pc_start,
@@ -49,14 +60,16 @@ module if_stage
 	input rst_pipe,
 	input dc_stall_fin,
 	input dc_stall_fin2,
+	input ic_stall,
+	input ic_stall_dly,
 	output reg stall_ld_add,
 	output [31:0] pc_data
 	);
 
-// resources
-// PC
 
-reg [31:2] pc_if;
+// valid signal
+//assign pc_valid_id = 1'b1; // zantei
+//reg [31:2] pc_if;
 reg post_intr_ecall_exception;
 wire intr_ecall_exception = ecall_condition_ex | g_interrupt | g_exception ;
 wire jump_cmd_cond = jmp_condition_ex | cmd_mret_ex | cmd_sret_ex | cmd_uret_ex;
@@ -67,19 +80,36 @@ wire [31:2] jmp_adr = intr_ecall_exception ? csr_mtvec_ex :
                       cmd_sret_ex ? csr_sepc_ex : jmp_adr_ex;
 
 reg use_collision;
+reg [31:2] pc_if_pre;
 
 always @ (posedge clk or negedge rst_n) begin
 	if (~rst_n)
-		pc_if <= 30'd0;
+		pc_if_pre <= 30'd0;
 	else if (pc_start)
-		pc_if <= start_adr;
+		pc_if_pre <= start_adr;
 	else if (stall | stall_ld)
-		pc_if <= pc_if;	
+		pc_if_pre <= pc_if_pre;	
 	else if (jmp_cond)
-		pc_if <= jmp_adr;
+		pc_if_pre <= jmp_adr;
+	else if (ic_stall)
+		pc_if_pre <= pc_if_pre;	
 	else
-		pc_if <= pc_if + 30'd1;
+		pc_if_pre <= pc_if + 30'd1;
 end
+
+reg [31:2] pc_if_roll;
+
+always @ (posedge clk or negedge rst_n) begin   
+	if (~rst_n)
+        pc_if_roll <= 30'd0;
+	else if (jmp_cond)
+        pc_if_roll <= jmp_adr;
+	else if (~ic_stall)
+        pc_if_roll <= pc_if_pre;
+end
+
+//assign pc_if = pc_if_pre;
+assign pc_if = ic_stall_dly ? pc_if_roll : pc_if_pre;
 
 reg [31:2] pc_id_pre;
 reg [31:2] pc_collision;
@@ -89,7 +119,7 @@ always @ (posedge clk or negedge rst_n) begin
 		pc_id_pre <= 30'd0;
 	else if (rst_pipe)
 		pc_id_pre <= 30'd0;
-	else if (stall | stall_ld)
+	else if (ic_stall | stall | stall_ld)
 		pc_id_pre <= pc_id_pre;	
 	else
 		pc_id_pre <= pc_if;
@@ -117,6 +147,7 @@ assign inst_radr_if = pc_if[IWIDTH+1:2]; // depend on size of iram
 assign iram_radr = i_read_sel ? i_ram_radr : pc_if[IWIDTH+1:2] ;
 assign i_ram_rdata = inst_rdata_id;
 
+/*
 inst_1r1w #(.IWIDTH(IWIDTH)) inst_1r1w (
 	.clk(clk),
 	.ram_radr(iram_radr),
@@ -124,6 +155,20 @@ inst_1r1w #(.IWIDTH(IWIDTH)) inst_1r1w (
 	.ram_wadr(i_ram_wadr),
 	.ram_wdata(i_ram_wdata),
 	.ram_wen(i_ram_wen)
+	);
+*/
+inst_ram #(.IWIDTH(IWIDTH)) inst_ram (
+	.clk(clk),
+	.rst_n(rst_n),
+	.ram_radr_part(iram_radr),
+	.ram_rdata(inst_rdata_id),
+	// direct write from monitor unsupported
+	//.ram_wadr(i_ram_wadr),
+	//.ram_wdata(i_ram_wdata),
+	//.ram_wen(i_ram_wen),
+	.ram_wadr_all(ic_ram_wadr_all),
+	.ram_wdata_all(ic_rdat_m_data),
+	.ram_wen_all(ic_rdat_m_valid)
 	);
 
 reg [31:0] inst_roll;
@@ -169,7 +214,8 @@ always @ (posedge clk or negedge rst_n) begin
         stall_ld_add <= 1'b1;
 end
 
-assign inst_id = use_collision  ?  inst_collision : // for load store btb
+assign inst_id = (ic_stall|ic_stall_dly) ? 32'h0000_0013 : // nop for icache stall
+                 use_collision  ?  inst_collision : // for load store btb
                  (stall_dly | stall_ld_ex) ? inst_roll : // for load bypass pattern without store
                  inst_rdata_id; // other condisitons
 
