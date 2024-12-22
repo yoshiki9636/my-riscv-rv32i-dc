@@ -82,6 +82,27 @@ Here is a note on how to synthesize when using the Digilent Arty A7, using Xilin
 	j : print current PC value : format: j
 	z : parge D cache : format:  z
 
+2.5 How to run C bare-metal programs
+
+(1)
+https://github.com/riscv-collab/riscv-gnu-toolchain
+Create a tool chain. You may get stuck on the way, but it may be the version of git, so please be patient and deal with the errors.
+Note that this CPU only supports RV32i and the most basic instruction set, so do not make a mistake when you configure it.
+
+./configure --prefix=/opt/riscv32i --with-arch=rv32i --with-abi=ilp32
+
+make should select newlib.
+
+make 
+
+(2) C samples are available in ctest/. It has been tested in the author's environment. Shell for compilation (Makefile was troublesome...) The name of the tool chain is written in the script. The tool name is written in the script, so please change it to the name of the tool in the above tool chain. After that, all you have to do is to run the shell.
+
+./cmpl.sh XX.c
+
+Various files such as binaries can be created, but all that is needed is XX.hex. Then, read XX.hex using the i command as in step 2. At this time, some programs (most of them) require an image on the D memory side as well, so use the w000000000 command to load the image on the D memory side as well. Execution is done g00000000.
+Some programs use functions such as sprintf, which requires the -u _print_float option, especially for floating-point sprintf. cmpl2.sh is a script that handles this, so please use that one. (The object size is dramatically larger.) In this case, there is a little problem with the display, and some floating-point numbers cannot be displayed properly. The cause is under investigation.
+
+
 ----------
 
 Design Memo ( English )
@@ -353,7 +374,7 @@ MMCMは50MHzで動作確認しました。
 - fence系、ecall以外のecall系未実装。  
 - メモリはinstructionとdataでセパレート。各々1KWordsの大きさ。  
 - I/Oは4セットのRGB LED、12ピン。
-- Uartでの表字を using I/Oで実現。
+- Uartでの表字をI/Oで実現。
 - D cacheと外部メモリとして128MB DRAMを追加。
 
 2. 簡単な使い方  
@@ -417,7 +438,30 @@ Digilent Arty A7を使う場合の合成方法のメモです。Xilinx Vivadoを
 	j : print current PC value                     : format:  j
 	z : parge D cache                              : format:  z
 
+2.5 ベアメタルCプログラム動作方法
 
+(1) riscv toolchainの整備
+
+https://github.com/riscv-collab/riscv-gnu-toolchain
+を使ってツールチェーンを作成します。途中引っかかることがありますが、gitのバージョンだったりしますので、根気よくエラーに対応してください。
+なお、本CPUはRV32iと、一番基本的な命令セットしかサポートしていないので、configureするときに指定を間違えないでください。
+
+./configure --prefix=/opt/riscv32i --with-arch=rv32i --with-abi=ilp32
+
+makeはnewlibを作成します。
+
+make 
+
+ツールのbinへのパスを通しておいてください。
+
+PATH=/opt/riscv32i/bin:$PATH
+
+(2) Cのサンプルがctest/内にあります。作者の環境で動作確認しております。コンパイル用のシェル(Makefileが面倒だったもので。。。)があります。スクリプト内部にツール名が記載されていますので、上記ツールチェーンのツール名に変更してください。後はシェルを実行するだけです。
+
+./cmpl.sh XX.c
+
+バイナリ等いろいろファイルができますが、必要なのはXX.hexです。あとは2.の手順と同じようにiコマンドでXX.hexを読み込んでください。この時、プログラムによっては（ほとんどはそうですが）Dメモリ側にもイメージが必要なので、w000000000 コマンドでDメモリ側にもイメージを読み込んでください。実行はg00000000を行います。
+プログラムによっては、sprintf等の関数を使うものがあり特に浮動小数点でのsprintfには-u _print_floatオプションが必要となります。cmpl2.shはそれに対処したスクリプトですので、そちらを使用してください。（オブジェクトサイズが飛躍的に大きくなります）なお、この場合の表示に少し問題があり、一部うまく浮動小数が表示できないものがあります。原因は調査中です。
 
 -----  
 Design Memo ( Japanese )  
