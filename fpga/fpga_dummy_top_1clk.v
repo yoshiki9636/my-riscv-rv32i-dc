@@ -69,6 +69,14 @@ wire [15:0] dc_rdat_m_mask; // output
 wire dc_rdat_m_valid; // output
 wire dc_finish_mrd; // output
 
+wire ic_rstart_rq; // output
+wire [31:0] ic_rin_addr; // output
+wire [127:0] ic_rdat_m_data; // input
+wire [15:0] ic_rdat_m_mask; // input
+wire ic_rdat_m_valid; // input
+wire ic_finish_mrd; // input
+//wire start_icflush; // input
+
 // axi bus to DRAM
 wire awvalid; // output
 wire awready; // input
@@ -142,7 +150,7 @@ wire cpu_start;
 wire quit_cmd;
 wire [31:0] pc_data;
 // bus i/f logic signals
-wire dcw_start_rq; // output
+//wire dcw_start_rq; // output
 //wire [31:0] dcw_in_addr; // output
 //wire [15:0] dcw_in_mask; // output
 //wire [127:0] dcw_in_data; // output
@@ -238,6 +246,15 @@ cpu_top #(.DWIDTH(DWIDTH), .IWIDTH(IWIDTH)) cpu_top (
 	.ibus_wen(ibus_wen),
 	.ibus_wadr(ibus_wadr),
 	.ibus32_wdata(ibus32_wdata),
+
+	.icr_start_rq(ic_rstart_rq),
+	.ic_rin_addr(ic_rin_addr),
+	.ic_rdat_m_data(ic_rdat_m_data),
+	.ic_rdat_m_mask(ic_rdat_m_mask),
+	.ic_rdat_m_valid(ic_rdat_m_valid),
+	.ic_finish_mrd(ic_finish_mrd),
+	.start_icflush(start_dcflush), // same timing
+
 	.dcw_start_rq(dc_wstart_rq),
 	.dcw_in_addr(dc_win_addr),
 	.dcw_in_mask(dc_in_mask),
@@ -279,6 +296,14 @@ axi_bus_top axi_bus_top (
 	.dc_rdat_m_mask(dc_rdat_m_mask),
 	.dc_rdat_m_valid(dc_rdat_m_valid),
 	.dc_finish_mrd(dc_finish_mrd),
+
+	.ic_rstart_rq(ic_rstart_rq),
+	.ic_rin_addr(ic_rin_addr),
+	.ic_rdat_m_data(ic_rdat_m_data),
+	.ic_rdat_m_mask(ic_rdat_m_mask),
+	.ic_rdat_m_valid(ic_rdat_m_valid),
+	.ic_finish_mrd(ic_finish_mrd),
+
 	.awvalid(awvalid),
 	.awready(awready),
 	.awid(awid),

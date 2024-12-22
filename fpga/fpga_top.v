@@ -12,8 +12,8 @@
 `define ARTY_A7
 
 module fpga_top
-    #(parameter IWIDTH = 15,
-      parameter DWIDTH = 12)
+    #(parameter IWIDTH = 13,
+      parameter DWIDTH = 13)
     (
 	input clkin,
 	input rst_n,
@@ -67,6 +67,14 @@ wire [15:0] dc_rdat_m_mask; // output
 wire dc_rdat_m_valid; // output
 wire dc_finish_mrd; // output
 
+wire ic_rstart_rq; // output
+wire [31:0] ic_rin_addr; // output
+wire [127:0] ic_rdat_m_data; // input
+wire [15:0] ic_rdat_m_mask; // input
+wire ic_rdat_m_valid; // input
+wire ic_finish_mrd; // input
+//wire start_icflush; // input
+
 // axi bus to DRAM
 wire awvalid; // output
 wire awready; // input
@@ -105,7 +113,6 @@ wire app_wdf_rdy; // input
 wire [127:0] app_rd_data; // input
 wire app_rd_data_end; // input
 wire app_rd_data_valid; // input
-
 
 wire [DWIDTH+1:2] d_ram_radr = { DWIDTH{ 1'b0 }};
 wire [DWIDTH+1:2] d_ram_wadr = { DWIDTH{ 1'b0 }};
@@ -152,17 +159,18 @@ wire rqfull_1; // output
 //wire [127:0] rdat_m_data; // input
 //wire rdat_m_valid; // input
 //wire finish_mrd; // input
-
-// DC-flush signals
 wire start_dcflush;
 wire dcflush_running;
 
 wire clk;
-wire mclk;
+//wire mclk = clk;
+//wire mclk_not_used;
 // for debug
 wire tx_fifo_full;
 wire tx_fifo_overrun;
 wire tx_fifo_underrun;
+
+//wire init_calib_complete = 1'b1;
 
 // for uart output
 wire [7:0] uart_io_char;
@@ -171,6 +179,8 @@ wire  uart_io_full;
 
 `ifdef ARTY_A7
 wire locked;
+wire clk_166mhz;
+wire clk_200mhz;
 
  // Instantiation of the clocking network
  //--------------------------------------
@@ -180,7 +190,6 @@ wire locked;
     .clk_out1           (clk_200mhz),
     .clk_out2           (clk_166mhz),
     .clk_out3           (clk),
-    //.clk_out1           (mclk),
     //.clk_out2           (clk),
 
     // Status and control signals
@@ -207,7 +216,6 @@ wire app_zq_req = 1'b0; // input
 wire app_sr_active; // output
 wire app_ref_ack; // output
 wire app_zq_ack; // output
-
 
 wire init_calib_complete; // output
 wire [11:0] device_temp; // output
@@ -251,6 +259,15 @@ cpu_top #(.DWIDTH(DWIDTH), .IWIDTH(IWIDTH)) cpu_top (
 	.ibus_wen(ibus_wen),
 	.ibus_wadr(ibus_wadr),
 	.ibus32_wdata(ibus32_wdata),
+
+	.icr_start_rq(ic_rstart_rq),
+	.ic_rin_addr(ic_rin_addr),
+	.ic_rdat_m_data(ic_rdat_m_data),
+	.ic_rdat_m_mask(ic_rdat_m_mask),
+	.ic_rdat_m_valid(ic_rdat_m_valid),
+	.ic_finish_mrd(ic_finish_mrd),
+	.start_icflush(start_dcflush), // same timing
+
 	.dcw_start_rq(dc_wstart_rq),
 	.dcw_in_addr(dc_win_addr),
 	.dcw_in_mask(dc_in_mask),
@@ -292,6 +309,14 @@ axi_bus_top axi_bus_top (
 	.dc_rdat_m_mask(dc_rdat_m_mask),
 	.dc_rdat_m_valid(dc_rdat_m_valid),
 	.dc_finish_mrd(dc_finish_mrd),
+
+	.ic_rstart_rq(ic_rstart_rq),
+	.ic_rin_addr(ic_rin_addr),
+	.ic_rdat_m_data(ic_rdat_m_data),
+	.ic_rdat_m_mask(ic_rdat_m_mask),
+	.ic_rdat_m_valid(ic_rdat_m_valid),
+	.ic_finish_mrd(ic_finish_mrd),
+
 	.awvalid(awvalid),
 	.awready(awready),
 	.awid(awid),
@@ -359,6 +384,8 @@ dram_top dram_top (
 	.rlast(rlast)
 	);
 
+
+
 mig_7series_0 mig_7series_0 (
 	.ddr3_dq(ddr3_dq),
 	.ddr3_dqs_n(ddr3_dqs_n),
@@ -424,7 +451,6 @@ dummy_mig dummy_mig (
 	.app_rd_data_end(app_rd_data_end),
 	.app_rd_data_valid(app_rd_data_valid)
 	);
-
 */
 
 uart_top #(.DWIDTH(DWIDTH), .IWIDTH(IWIDTH)) uart_top (
@@ -450,27 +476,14 @@ uart_top #(.DWIDTH(DWIDTH), .IWIDTH(IWIDTH)) uart_top (
     .i_read_sel(i_read_sel),
     .pc_data(pc_data),
     .cpu_start(cpu_start),
-    .start_dcflush(start_dcflush),
+	.start_dcflush(start_dcflush),
     .quit_cmd(quit_cmd),
-    .dcflush_running(dcflush_running),
+	.dcflush_running(dcflush_running),
     .start_adr(start_adr),
     .uart_io_char(uart_io_char),
     .uart_io_we(uart_io_we),
     .uart_io_full(uart_io_full)
     );
-
-//assign rgb_led = start_adr[4:2];
-//assign rgb_led1 = start_adr[7:5];
-//assign rgb_led2 = start_adr[10:8];
-//assign rgb_led3 = start_adr[13:11];
-//assign rgb_led = pc_data[6:4];
-//assign rgb_led1 = pc_data[10:8];
-//assign rgb_led2 = pc_data[14:12];
-//assign rgb_led3 = pc_data[18:16];
-//wire [2:0] rgb_led_dmy;
-//wire [2:0] rgb_led1_dmy;
-//wire [2:0] rgb_led2_dmy;
-//wire [2:0] rgb_led3_dmy;
 
 io_led io_led (
 	.clk(clk),
