@@ -12,10 +12,17 @@
 
 use Getopt::Long;
 
-GetOptions('v' => \$v);
 
+GetOptions('v' => \$v, 'p=s' => \$p);
+
+if (defined($p)) {
+ 	if ($p =~ /^0x/) { $pc = hex($p); }
+	else { $pc = int($p); }
+}
+else {
+	$pc = 0;
+}
 $name = $ARGV[0];
-$pc = 0;
 @value = ();
 %defvalue = ();
 
@@ -119,7 +126,13 @@ while(<>) {
 }
 
 $ARGV[0] = $name;
-$pc = 0;
+if (defined($p)) {
+ 	if ($p =~ /^0x/) { $pc = hex($p); }
+	else { $pc = int($p); }
+}
+else {
+	$pc = 0;
+}
 $jump_offset = 0;
 
 while(<>) {
