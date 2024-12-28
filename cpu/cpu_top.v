@@ -221,6 +221,7 @@ wire ic_stall_fin;
 wire ic_tag_hit_id;
 wire ic_st_wt_id;
 
+wire [31:2] start_adr_lat;
 
 cpu_status cpu_status (
 	.clk(clk),
@@ -229,6 +230,7 @@ cpu_status cpu_status (
 	.dc_stall(dc_stall),
 	.init_calib_complete(init_calib_complete),
 	.cpu_start(cpu_start),
+	.start_adr(start_adr),
 	.quit_cmd(quit_cmd),
 	.stall(stall),
 	.stall_1shot(stall_1shot),
@@ -238,6 +240,7 @@ cpu_status cpu_status (
 	.stall_ma(stall_ma),
 	.stall_wb(stall_wb),
 	.pc_start(pc_start),
+	.start_adr_lat(start_adr_lat),
 	.pc_valid_id(pc_valid_id),
 	.rst_pipe(rst_pipe),
 	.rst_pipe_id(rst_pipe_id),
@@ -275,7 +278,7 @@ if_stage #(.IWIDTH(IWIDTH)) if_stage (
 	.ic_ram_wadr_all(ic_ram_wadr_all),
 	.pc_if(pc_if),
 	.pc_start(pc_start),
-	.start_adr(start_adr),
+	.start_adr_lat(start_adr_lat),
 	.stall(stall),
 	.stall_1shot(stall_1shot),
 	.stall_dly(stall_dly),
@@ -286,6 +289,8 @@ if_stage #(.IWIDTH(IWIDTH)) if_stage (
 	.dc_stall_fin2(dc_stall_fin2),
 	.ic_stall(ic_stall),
 	.ic_stall_dly(ic_stall_dly),
+	.ic_stall_fin(ic_stall_fin),
+	.ic_stall_fin2(ic_stall_fin2),
 	.stall_ld_add(stall_ld_add),
 	.pc_data(pc_data)
 	);

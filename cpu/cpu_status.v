@@ -19,9 +19,11 @@ module cpu_status(
 	// from control
 	input init_calib_complete,
 	input cpu_start,
+	input [31:2] start_adr,
 	input quit_cmd,
 	// to CPU
 	output pc_start,
+	output reg [31:2] start_adr_lat,
 	output pc_valid_id,
 	output stall,
 	output stall_ex,
@@ -36,6 +38,13 @@ module cpu_status(
 	output reg rst_pipe_ma,
 	output reg rst_pipe_wb
 	);
+
+always @ (posedge clk or negedge rst_n) begin
+	if (~rst_n)
+		start_adr_lat <= 30'd0;
+	else if ( cpu_start )
+		start_adr_lat <= start_adr;
+end
 
 reg cpu_run_state;
 reg cpu_run_state_lat;

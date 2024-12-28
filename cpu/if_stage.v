@@ -51,7 +51,7 @@ module if_stage
 
 	// other place
 	input pc_start,
-	input [31:2] start_adr,
+	input [31:2] start_adr_lat,
 	input stall,
 	input stall_1shot,
 	input stall_dly,
@@ -62,6 +62,8 @@ module if_stage
 	input dc_stall_fin2,
 	input ic_stall,
 	input ic_stall_dly,
+	input ic_stall_fin,
+	input ic_stall_fin2,
 	output reg stall_ld_add,
 	output [31:0] pc_data
 	);
@@ -86,7 +88,7 @@ always @ (posedge clk or negedge rst_n) begin
 	if (~rst_n)
 		pc_if_pre <= 30'd0;
 	else if (pc_start)
-		pc_if_pre <= start_adr;
+		pc_if_pre <= start_adr_lat;
 	else if (stall | stall_ld)
 		pc_if_pre <= pc_if_pre;	
 	else if (jmp_cond)
@@ -102,6 +104,8 @@ reg [31:2] pc_if_roll;
 always @ (posedge clk or negedge rst_n) begin   
 	if (~rst_n)
         pc_if_roll <= 30'd0;
+	else if (pc_start)
+		pc_if_roll <= start_adr_lat;
 	else if (jmp_cond)
         pc_if_roll <= jmp_adr;
 	else if (~ic_stall)
@@ -179,7 +183,9 @@ always @ (posedge clk or negedge rst_n) begin
         inst_roll <= 32'h0000_0013;
 	else if (rst_pipe)
         inst_roll <= 32'h0000_0013;	
-	else if (stall_1shot | ~stall_dly & stall_ld )
+	else if (ic_stall_fin & stall )
+        inst_roll <= inst_rdata_id;
+	else if (~ic_stall & ( stall_1shot | ~stall_dly & stall_ld ))
         inst_roll <= inst_rdata_id;
 end
 
@@ -214,7 +220,20 @@ always @ (posedge clk or negedge rst_n) begin
         stall_ld_add <= 1'b1;
 end
 
-assign inst_id = (ic_stall|ic_stall_dly) ? 32'h0000_0013 : // nop for icache stall
+reg [1:0] ic_after_dc;
+always @ (posedge clk or negedge rst_n) begin   
+	if (~rst_n)
+        ic_after_dc <= 2'b00;
+	else if (ic_stall & stall)
+        ic_after_dc <= 2'b10;
+	else if (ic_stall & ~stall & (ic_after_dc[1] == 1'b1))
+        ic_after_dc <= 2'b11;
+	else
+        ic_after_dc <= 2'b00;
+end
+
+assign inst_id = (ic_after_dc[0] & ic_stall_fin2) ? inst_roll : // for ic stall after dc stall
+                 (ic_stall|ic_stall_dly) ? 32'h0000_0013 : // nop for icache stall
                  use_collision  ?  inst_collision : // for load store btb
                  (stall_dly | stall_ld_ex) ? inst_roll : // for load bypass pattern without store
                  inst_rdata_id; // other condisitons

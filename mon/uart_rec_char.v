@@ -363,7 +363,9 @@ wire word_start =  idle_status & (( next_cmd_status == `C_GSETNUM )|( next_cmd_s
 								  ( next_cmd_status == `C_IWTADRN ));
 
 reg [31:0] data_word;
+reg [31:0] data_word_out;
 reg [3:0] data_cntr;
+wire word_valid_pre;
 
 always @ (posedge clk or negedge rst_n) begin
 	if (~rst_n)
@@ -372,6 +374,13 @@ always @ (posedge clk or negedge rst_n) begin
 		data_word <= 32'd0;
 	else if (bin_data_set)
 		data_word <= { data_word[27:0], half_data };
+end
+
+always @ (posedge clk or negedge rst_n) begin
+	if (~rst_n)
+		data_word_out <= 32'd0;
+	else if (word_valid_pre)
+		data_word_out <= { data_word[27:0], half_data };
 end
 
 always @ (posedge clk or negedge rst_n) begin
@@ -387,7 +396,7 @@ always @ (posedge clk or negedge rst_n) begin
 		data_cntr <= data_cntr + 4'd1;
 end
 
-wire word_valid_pre = (data_cntr == 4'd7) & bin_data_set;
+assign word_valid_pre = (data_cntr == 4'd7) & bin_data_set;
 
 always @ (posedge clk or negedge rst_n) begin
 	if (~rst_n)
@@ -402,7 +411,7 @@ wire ctrl_valid = gcmd_setnum | wcmd_setnum | wcmd_setdat | rcmd_setsta | rcmd_s
 							  | pcmd_setsta | pcmd_setend | icmd_setnum | icmd_setdat;
 
 
-assign uart_data = data_word;
+assign uart_data = data_word_out;
 /*
 always @ (posedge clk or negedge rst_n) begin
 	if (~rst_n)
@@ -412,11 +421,20 @@ always @ (posedge clk or negedge rst_n) begin
 end
 */
 
+reg g_crlf_dly;
+reg g_crlf_dly2;
 always @ (posedge clk or negedge rst_n) begin
-	if (~rst_n)
+	if (~rst_n) begin
+		g_crlf_dly <= 1'b0;
+		g_crlf_dly2 <= 1'b0;
 		cpu_start <= 1'b0;
-	else
-		cpu_start <= g_crlf;
+	end
+	else begin
+		g_crlf_dly <= g_crlf;
+		g_crlf_dly2 <= g_crlf_dly;
+		cpu_start <= g_crlf_dly2;
+		//cpu_start <= gcmd_setrun;
+	end
 end
 
 assign write_address_set = wcmd_setnum & word_valid;
