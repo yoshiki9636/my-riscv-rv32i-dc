@@ -185,6 +185,15 @@ always @ (posedge clk or negedge rst_n) begin
         ic_miss_current <= ic_miss_next;
 end
 
+// for timing
+reg [31:2] pc_if_dly;
+always @ (posedge clk or negedge rst_n) begin
+    if (~rst_n)
+        pc_if_dly <= 30'd0;
+	else
+        pc_if_dly <= pc_if;
+end
+
 // current read address keeper
 always @ (posedge clk or negedge rst_n) begin
     if (~rst_n)
@@ -193,7 +202,7 @@ always @ (posedge clk or negedge rst_n) begin
         ic_curric_ent_radr_keeper <= 32'd0;
 	else if ((ic_miss_current == `ICMS_IDLE) & (ic_tag_misshit_id | ic_tag_empty_id))
 		//ic_curric_ent_radr_keeper <= {pc_if, 2'd0};
-		ic_curric_ent_radr_keeper <= {pc_id, 2'd0};
+		ic_curric_ent_radr_keeper <= {pc_if_dly, 2'd0};
 end
 
 // core stall singal
