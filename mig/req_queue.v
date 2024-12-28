@@ -80,29 +80,53 @@ assign rd_bwt = qr_rd_bwt_addr[32];
 
 always @ (posedge mclk or negedge mrst_n) begin
 	if (~mrst_n)
-		wadr  <= 2'd0;
+		wadr  <= 3'd0;
 	else if (qwen)
-		wadr  <= wadr + 2'd1;
+		wadr  <= wadr + 3'd1;
 end
 
 always @ (posedge mclk or negedge mrst_n) begin
 	if (~mrst_n)
-		radr  <= 2'd0;
+		radr  <= 3'd0;
 	else if (rnext)
-		radr  <= radr + 2'd1;
+		radr  <= radr + 3'd1;
+end
+
+// for ppcntr
+reg qwen_dly;
+always @ (posedge mclk or negedge mrst_n) begin
+	if (~mrst_n)
+		qwen_dly  <= 1'b0;
+	else
+		qwen_dly  <= qwen;
+end
+// push pull counter
+reg [3:0] ppcntr;
+
+always @ (posedge mclk or negedge mrst_n) begin
+    if (~mrst_n)
+        ppcntr  <= 4'd0;
+    else if (qwen_dly & rnext)
+        ppcntr  <= ppcntr;
+    else if (qwen_dly)
+        ppcntr  <= ppcntr + 4'd1;
+    else if (rnext)
+        ppcntr  <= ppcntr - 4'd1;
 end
 
 // qfull checker
-wire fwg = (wadr > radr);
-wire frg = (wadr < radr);
+reg rwait;
+assign wqfull = (ppcntr >= 4'd8);
 
-//wire wqfull_0 = (wadr == radr);
-//wire wqfull_1 = (wg&(wadr - radr == 2'd1))|(rg&(radr - wadr <= 2'd3));
-wire wqfull_2 = (fwg&(wadr - radr == 2'd2))|(frg&(radr - wadr <= 2'd2));
-wire wqfull_3 = (fwg&(wadr - radr == 2'd4))|(frg&(radr - wadr <= 2'd1));
-assign wqfull = wqfull_2 | wqfull_3 ;
+assign rqempty_pre = (ppcntr == 4'd0);
+assign rqempty = rqempty_pre | rwait;
 
-// qempty checker
-assign rqempty = (wadr == radr);
+// wait cycle
+always @ (posedge mclk or negedge mrst_n) begin
+	if (~mrst_n)
+		rwait  <= 1'b0;
+	else
+		rwait  <=  ~rqempty_pre & rnext;
+end
 
 endmodule
