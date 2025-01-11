@@ -314,7 +314,8 @@ wire [4:0] rd_adr_id = inst_rd;
 
 // destination register write back signal
 
-wire wbk_rd_reg_id = ~(cmd_st_id | cmd_br_id) & dc_notc & ~jmp_purge_ma;
+//wire wbk_rd_reg_id = ~(cmd_st_id | cmd_br_id) & dc_notc & ~jmp_purge_ma;
+wire wbk_rd_reg_id = ~(cmd_st_id | cmd_br_id) & dc_notc & ~jmp_purge_ma & ~stall_ld;
 
 // for forwarding
 

@@ -189,6 +189,18 @@ always @ (posedge clk or negedge rst_n) begin
         inst_roll <= inst_rdata_id;
 end
 
+reg post_jump_cmd_c2;
+reg stall_ld_ex_smpl;
+
+always @ (posedge clk or negedge rst_n) begin   
+	if (~rst_n)
+		stall_ld_ex_smpl <= 1'b0;
+	else if (~ic_stall)
+		stall_ld_ex_smpl <= 1'b0;
+	else if (ic_stall & ~ic_stall_dly & ~post_jump_cmd_c2 & stall_ld_ex)
+		stall_ld_ex_smpl <= 1'b1;
+end
+
 always @ (posedge clk or negedge rst_n) begin   
 	if (~rst_n)
         inst_collision <= 32'h0000_0013;
@@ -233,6 +245,7 @@ always @ (posedge clk or negedge rst_n) begin
 end
 
 assign inst_id = (ic_after_dc[0] & ic_stall_fin2) ? inst_roll : // for ic stall after dc stall
+                 ( stall_ld_ex_smpl & ic_stall_fin2) ? inst_roll :
                  (ic_stall|ic_stall_dly) ? 32'h0000_0013 : // nop for icache stall
                  use_collision  ?  inst_collision : // for load store btb
                  (stall_dly | stall_ld_ex) ? inst_roll : // for load bypass pattern without store
@@ -250,10 +263,14 @@ end
 reg post_jump_cmd_c;
 
 always @ (posedge clk or negedge rst_n) begin   
-	if (~rst_n)
+	if (~rst_n) begin
         post_jump_cmd_c <= 1'b0;
-	else
+        post_jump_cmd_c2 <= 1'b0;
+	end
+	else begin
         post_jump_cmd_c <= jump_cmd_cond;
+        post_jump_cmd_c2 <= post_jump_cmd_c;
+	end
 end
 
 assign post_jump_cmd_cond = post_jump_cmd_c;
