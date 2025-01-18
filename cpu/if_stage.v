@@ -237,15 +237,17 @@ reg [1:0] ic_after_dc;
 always @ (posedge clk or negedge rst_n) begin   
 	if (~rst_n)
         ic_after_dc <= 2'b00;
-	else if (ic_stall & stall)
-        ic_after_dc <= 2'b10;
-	else if (ic_stall & ~stall & (ic_after_dc[1] == 1'b1))
-        ic_after_dc <= 2'b11;
-	else
+	else if (~ic_stall & ~stall)
         ic_after_dc <= 2'b00;
+	else if (~ic_stall & stall & (ic_after_dc == 2'b00))
+        ic_after_dc <= 2'b01;
+	else if (ic_stall & stall & ic_after_dc == 2'b01)
+        ic_after_dc <= 2'b10;
+	else if (ic_stall & ~stall & (ic_after_dc == 2'b10))
+        ic_after_dc <= 2'b11;
 end
 
-assign inst_id = (ic_after_dc[0] & ic_stall_fin2) ? inst_roll : // for ic stall after dc stall
+assign inst_id = ((ic_after_dc == 2'b11) & ic_stall_fin2) ? inst_roll : // for ic stall after dc stall
                  ( stall_ld_ex_smpl & ic_stall_fin2) ? inst_roll :
                  (ic_stall|ic_stall_dly) ? 32'h0000_0013 : // nop for icache stall
                  use_collision  ?  inst_collision : // for load store btb
