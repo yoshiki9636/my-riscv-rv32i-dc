@@ -185,8 +185,8 @@ always @ (posedge clk or negedge rst_n) begin
         inst_roll <= 32'h0000_0013;	
 	else if (ic_stall_fin & stall )
         inst_roll <= inst_rdata_id;
-	//else if (~ic_stall & ( stall_1shot | ~stall_dly & stall_ld ))
-	else if ( stall_1shot | ~stall_dly & stall_ld )
+	else if (~ic_stall & ( stall_1shot | ~stall_dly & stall_ld ))
+	//else if ( stall_1shot | ~stall_dly & stall_ld )
         inst_roll <= inst_rdata_id;
 end
 
@@ -245,6 +245,8 @@ always @ (posedge clk or negedge rst_n) begin
         ic_after_dc <= 2'b10;
 	else if (ic_stall & ~stall & (ic_after_dc == 2'b10))
         ic_after_dc <= 2'b11;
+	//else
+        //ic_after_dc <= 2'b00;
 end
 
 assign inst_id = ((ic_after_dc == 2'b11) & ic_stall_fin2) ? inst_roll : // for ic stall after dc stall
