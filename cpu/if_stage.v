@@ -185,7 +185,8 @@ always @ (posedge clk or negedge rst_n) begin
         inst_roll <= 32'h0000_0013;	
 	else if (ic_stall_fin & stall )
         inst_roll <= inst_rdata_id;
-	else if (~ic_stall & ( stall_1shot | ~stall_dly & stall_ld ))
+	//else if (~ic_stall & ( stall_1shot | ~stall_dly & stall_ld ))
+	else if ( stall_1shot | ~stall_dly & stall_ld )
         inst_roll <= inst_rdata_id;
 end
 
