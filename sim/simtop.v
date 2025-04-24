@@ -32,7 +32,7 @@ fpga_top fpga_top (
         .rgb_led3(rgb_led3)
 	);
 
-initial $readmemh("./test.txt", fpga_top.cpu_top.if_stage.inst_1r1w.ram);
+//initial $readmemh("./test.txt", fpga_top.cpu_top.if_stage.inst_1r1w.ram);
 initial $readmemh("./test_dummy.txt", fpga_top.dummy_mig.sfifo_1r1w.ram);
 
 //initial $readmemh("./test0.txt", fpga_top.cpu_top.ma_stage.data_ram.ram0.ram0);
@@ -55,17 +55,21 @@ initial $readmemh("./test_dummy.txt", fpga_top.dummy_mig.sfifo_1r1w.ram);
 //initial $readmemh("./teste.txt", fpga_top.cpu_top.ma_stage.data_ram.ram3.ram2);
 //initial $readmemh("./testf.txt", fpga_top.cpu_top.ma_stage.data_ram.ram3.ram3);
 
-
-
-
-
-
 always @ ( fpga_top.cpu_top.id_stage.rf_2r1w.ram_wdata or fpga_top.cpu_top.id_stage.rf_2r1w.ram_wen ) begin
 	if ((fpga_top.cpu_top.id_stage.rf_2r1w.ram_wdata === 32'dx) & fpga_top.cpu_top.id_stage.rf_2r1w.ram_wen ) begin
 	//if ((fpga_top.cpu_top.id_stage.rf_2r1w.ram_wdata === 32'dx) ) begin
 	//if ((fpga_top.cpu_top.id_stage.rf_2r1w.ram_wdata === 32'd0) ) begin
 		//$display("unknown data is written to rf");
-		$warning("unknown data is written to rf");
+		$warning("Unknown data is written to rf");
+	end
+end
+
+always @ ( fpga_top.cpu_top.ilu_stage.ic_curric_ent_radr_keeper ) begin
+	if (fpga_top.cpu_top.ilu_stage.ic_curric_ent_radr_keeper[3:0] === 4'dx) begin
+		$warning("Unkown address written to ic_curric_ent_radr_keeper.");
+	end
+	else if (fpga_top.cpu_top.ilu_stage.ic_curric_ent_radr_keeper[3:0] !== 4'd0) begin
+		$warning("Unalined address written to ic_curric_ent_radr_keeper.");
 	end
 end
 
@@ -86,6 +90,7 @@ initial begin
 	rst_n = 1'b1;
 #10
 	force fpga_top.cpu_start = 1'b1;
+	//force fpga_top.start_adr = 30'h00000040;
 #10
 	force fpga_top.cpu_start = 1'b0;
 #5000000

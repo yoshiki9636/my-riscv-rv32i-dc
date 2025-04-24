@@ -96,6 +96,17 @@ initial clkin = 0;
 
 always #5.0 clkin <= ~clkin;
 
+integer file_out;
+
+initial file_out = $fopen("./instfilelog.txt", "w");
+
+always @ ( posedge fpga_top.cpu_top.clk ) begin
+    if (~(fpga_top.cpu_top.if_stage.ic_stall) & ~(fpga_top.cpu_top.if_stage.ic_stall_dly) & ~(fpga_top.cpu_top.if_stage.stall) & ~(fpga_top.cpu_top.if_stage.stall_ld) & ~(fpga_top.cpu_top.if_stage.jmp_cond) & ~(fpga_top.cpu_top.if_stage.post_jump_cmd_c) ) begin
+        $display("instlog: %h",fpga_top.cpu_top.if_stage.pc_id * 4," , %h",fpga_top.cpu_top.if_stage.inst_id);
+        $fdisplay(file_out,"instlog: %h",fpga_top.cpu_top.if_stage.pc_id * 4," , %h",fpga_top.cpu_top.if_stage.inst_id);
+    end
+end
+
 
 initial begin
 	force fpga_top.cpu_start = 1'b0;
