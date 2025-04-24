@@ -87,7 +87,7 @@ wire ic_tag_misshit_id = ~ic_tag_equal & ic_cache_valid_id & pc_valid_id;
 //reg [(2**(IWIDTH-2))-1:0] ic_ent_dirty_bit_id;
 reg [(2**(IWIDTH-2))-1:0] ic_ent_valid_bit_id;
 
-wire [IWIDTH+1:4] ic_cache_dirty_adr = pc_if[IWIDTH+1:4];
+//wire [IWIDTH+1:4] ic_cache_dirty_adr = pc_if[IWIDTH+1:4];
 
 /*
 always @ (posedge clk or negedge rst_n) begin
@@ -116,7 +116,8 @@ reg [IWIDTH+1:4] ic_index_adr_dly;
 always @ (posedge clk or negedge rst_n) begin
     if (~rst_n)
         ic_index_adr_dly <= { (IWIDTH-3){ 1'b0 }};
-	else if (~ic_stall & ~ic_stall_fin )
+	//else if (~ic_stall & ~ic_stall_fin )
+	else
         ic_index_adr_dly <= ic_index_adr;
 end
 
