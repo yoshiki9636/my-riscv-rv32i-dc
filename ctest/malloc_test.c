@@ -43,6 +43,7 @@ struct _node_list {
     t_NODE_LIST* next;
 };
 
+
 int __errno;
 
 char* heap_end = (char*)0x02000000;
@@ -51,23 +52,23 @@ char* _sbrk(int incr) {
  char* heap_low = (char*)0x02000000;
  char* heap_top = (char*)0x03000000;
  char *prev_heap_end;
-
+ 
  if (heap_end == 0) {
   heap_end = heap_low;
  }
  prev_heap_end = heap_end;
-
+ 
  if (heap_end + incr > heap_top) {
   /* Heap and stack collision */
   return (char *)0;
  }
-
+ 
  heap_end += incr;
  return (char*) prev_heap_end;
 }
 
+
 int start_dijkstra(int start_node, int end_node, int num_node, int num_edge, t_NODE_BASE* node_info, t_EDGE_BASE* edge_info);
-int marking_start_node(int cur_node, t_NODE_BASE* node_info, t_EDGE_BASE* edge_info);
 int marking_next_node(int cur_node, t_NODE_BASE* node_info, t_EDGE_BASE* edge_info);
 int node_not_finished(int num_node, t_NODE_BASE* node_info, t_EDGE_BASE* edge_info);
 int init_graph(int num_node, int num_edge, int* edge_data, t_NODE_BASE* node_info, t_EDGE_BASE* edge_info);
@@ -75,16 +76,16 @@ int print_edge_info(int num_edge, t_EDGE_BASE* edge_info);
 int print_node_info(int num_node, t_NODE_BASE* node_info);
 int int_print( char* cbuf, int value, int type );
 void uprint( char* buf, int length, int ret );
-//static void clearbss(void);
+static void clearbss(void);
 void pass();
 void wait();
 
 int edge_init_data[NUM_EDGE*3] = {
-        0, 1, 4,
-        0, 2, 2,
-        1, 2, 1,
-        1, 3, 3,
-        2, 3, 2,
+		0, 1, 4,
+		0, 2, 2,
+		1, 2, 1,
+		1, 3, 3,
+		2, 3, 1,
 };
 
 int main() {
@@ -94,37 +95,52 @@ int main() {
 	//t_NODE_BASE start_node;
 	//t_NODE_BASE end_node;
 
-	//clearbss();
+	clearbss();
 
-	init_graph(NUM_NODE, NUM_EDGE, edge_init_data, node_info, edge_info);
+	t_NODE_LIST* node_bottom;
+	node_bottom = (t_NODE_LIST*)malloc(sizeof(t_NODE_LIST));
+	node_bottom->na = -1;
+	node_bottom->next = NULL;
+	t_NODE_LIST* node_entry = node_bottom;
 
-	// print initial status
-	print_edge_info(NUM_EDGE, edge_info);
-	print_node_info(NUM_NODE, node_info);
+	t_EDGE_LIST* edge_bottom;
+	edge_bottom = (t_EDGE_LIST*)malloc(sizeof(t_EDGE_LIST));
+	edge_bottom->ea = -1;
+	edge_bottom->next = NULL;
+	t_EDGE_LIST* edge_entry = edge_bottom;
 
-	// do dijkstra
-	start_dijkstra(START_NODE, END_NODE, NUM_NODE, NUM_EDGE, node_info, edge_info); 
+	for (int i = 0; i < 1000; i++) {
+		t_NODE_LIST* node_tmp = (t_NODE_LIST*)malloc(sizeof(t_NODE_LIST));
+		node_tmp->na = i+20000;
+		node_tmp->next = node_entry;
+		node_entry = node_tmp;
 
-	// print finsal status
-	print_node_info(NUM_NODE, node_info);
-
-	// print result
-	uprint( "distance = ", 11, 0 );
-	int length = int_print( cbuf, node_info[END_NODE].cur_dist, 0 );
-	uprint( cbuf, length, 2 );
-	uprint( "route = ", 8, 0 );
-	t_NODE_LIST* route_node = node_info[END_NODE].cur_route;
-	while ( route_node != NULL ) {
-		int length = int_print( cbuf, route_node->na, 0 );
-		uprint( cbuf, length, 1 );
-		route_node = route_node->next;
+		t_EDGE_LIST* edge_tmp = (t_EDGE_LIST*)malloc(sizeof(t_EDGE_LIST));
+		edge_tmp->ea = i+30000;
+		edge_tmp->next = edge_entry;
+		edge_entry = edge_tmp;
 	}
-	uprint( " ", 1, 2 );
+
+
+	while ( node_entry->next != NULL) {
+		int aa = node_entry->na;
+		int length = int_print( cbuf, aa, 0 );
+		uprint( cbuf, length, 2 );
+		node_entry = node_entry->next;
+	}
+
+	while ( edge_entry->next != NULL) {
+		int aa = edge_entry->ea;
+		int length = int_print( cbuf, aa, 0 );
+		uprint( cbuf, length, 2 );
+		edge_entry = edge_entry->next;
+	}
 	
 	pass();
 	return 0;
 }
 
+/*
 int node_not_finished(int num_node, t_NODE_BASE* node_info, t_EDGE_BASE* edge_info) {
 	for (int i = 0; i < num_node; i++) {
 		if ( node_info[i].chk_flg == 0) {
@@ -146,16 +162,9 @@ int node_not_finished(int num_node, t_NODE_BASE* node_info, t_EDGE_BASE* edge_in
 			if ( flg == 1 ) {
 				return i;
 			}
-			// flg == 2 : skip this node becase it is not connect to others
 		}
 	}
 	return -1; // all nodes are finished
-}
-
-int marking_start_node(int cur_node, t_NODE_BASE* node_info, t_EDGE_BASE* edge_info) {
-	node_info[cur_node].cur_dist = 0;
-	node_info[cur_node].chk_flg = 1;
-	return 0;
 }
 
 int marking_next_node(int cur_node, t_NODE_BASE* node_info, t_EDGE_BASE* edge_info) {
@@ -166,42 +175,37 @@ int marking_next_node(int cur_node, t_NODE_BASE* node_info, t_EDGE_BASE* edge_in
 		int next_node = (edge_info[edge->ea].na == cur_node) ? edge_info[edge->ea].nb : edge_info[edge->ea].na;
 		int length = int_print( cbuf, next_node, 0 );
 		uprint( cbuf, length, 2 );
-		if (node_info[next_node].chk_flg == 1) {
-			// update cur_node 
-			int distance = node_info[next_node].cur_dist + edge_info[edge->ea].dist;
-			if (distance < node_info[cur_node].cur_dist) {
+		if (node_info[next_node].chk_flg == 0) {
+			int distance = cur_dist + edge_info[edge->ea].dist;
+			if (distance < node_info[next_node].cur_dist) {
 				// use new data
-				node_info[cur_node].cur_dist = distance;
-				// add next node to current
-				t_NODE_LIST* node_entry = (t_NODE_LIST*)malloc(sizeof(t_NODE_LIST));
-				node_entry->na = next_node;
-				node_entry->next = node_info[next_node].cur_route;
-				node_info[cur_node].cur_route = node_entry;
+				node_info[next_node].cur_dist = distance;
+				// erace old list
+				t_NODE_LIST* erace_form = node_info[next_node].cur_route;
+				while ( erace_form != NULL ) {
+					t_NODE_LIST* next_erace_from = erace_form->next;
+					free ( erace_form );
+					erace_form = next_erace_from;
+				}
+				t_NODE_LIST* copy_from = node_info[cur_node].cur_route;
+				t_NODE_LIST* copy_to = NULL;
+				t_NODE_LIST* node_entry;
+				while ( copy_from != NULL ) {
+					node_entry = (t_NODE_LIST*)malloc(sizeof(t_NODE_LIST));
+					node_entry->na = copy_from->na;
+					node_entry->next = copy_to;
+					copy_to = node_entry;
+					copy_from = copy_from->next;
+				}
+				// add current node
+				node_entry = (t_NODE_LIST*)malloc(sizeof(t_NODE_LIST));
+				node_entry->na = cur_node;
+				node_entry->next = copy_to;
+				node_info[next_node].cur_route = node_entry;
 			} // else higher distance
 		} // else fixed node
 		edge = edge->next;
 	}
-
-	// update next_node also
-	edge =  node_info[cur_node].edges;
-	while ( edge != NULL ) {
-		int next_node = (edge_info[edge->ea].na == cur_node) ? edge_info[edge->ea].nb : edge_info[edge->ea].na;
-		int length = int_print( cbuf, next_node, 0 );
-		uprint( cbuf, length, 2 );
-		if (node_info[next_node].chk_flg == 1) {
-			int distance = node_info[cur_node].cur_dist + edge_info[edge->ea].dist;
-			if (distance < node_info[next_node].cur_dist) {
-				node_info[next_node].cur_dist = distance;
-				// add current node to next
-				t_NODE_LIST* node_entry = (t_NODE_LIST*)malloc(sizeof(t_NODE_LIST));
-				node_entry->na = cur_node;
-				node_entry->next = node_info[cur_node].cur_route;
-				node_info[next_node].cur_route = node_entry;
-			}
-		} // else fixed node
-		edge = edge->next;
-	}
-
 	// marking finished
 	node_info[cur_node].chk_flg = 1;
 	return 0;
@@ -214,7 +218,7 @@ int start_dijkstra(int start_node, int end_node, int num_node, int num_edge, t_N
 	node_info[start_node].cur_dist = 0;
 
 	// 1st marking 
-	marking_start_node(start_node, node_info, edge_info);
+	marking_next_node(start_node, node_info, edge_info);
 
 	int cur_node = node_not_finished(num_node, node_info, edge_info);
 	while ( cur_node != -1 ) {
@@ -328,7 +332,7 @@ int print_node_info(int num_node, t_NODE_BASE* node_info) {
 	return 0;
 }
 
-/*
+*/
 static void clearbss(void)
 {
     unsigned int *p;
@@ -339,7 +343,7 @@ static void clearbss(void)
         *p = 0;
     }
 }
-*/
+
 
 void uprint( char* buf, int length, int ret ) {
     unsigned int* led = (unsigned int*)0xc000fe00;
@@ -350,7 +354,7 @@ void uprint( char* buf, int length, int ret ) {
 	//while(flg == 1) {
 		//flg = *uart_status;
 	//}
-	//*uart_out = 0x41;
+	// *uart_out = 0x41;
 
 	for (int i = 0; i < length + ret; i++) {
 		unsigned int flg = 1;
@@ -360,18 +364,8 @@ void uprint( char* buf, int length, int ret ) {
         *uart_out = ((i == length+1)&&(ret == 2)) ? 0x0a :
                     ((i == length)&&(ret == 1)) ? 0x20 :
                     ((i == length)&&(ret == 2)) ? 0x0d : buf[i];
-		*led = i;
+		// *led = i;
 	}
-/*
-	char cbuf[64];
-	for ( int i = 0; i<length; i++ ) {
-		cbuf[i] = buf[i];
-	}
-	cbuf[length] = 0x0;
-	printf("%s",cbuf);
-	if ( ret == 2) { printf("\n"); }
-    else if ( ret == 1) { printf(" "); }
-*/
 }
 
 void pass() {
