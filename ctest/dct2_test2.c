@@ -15,7 +15,6 @@
 // workaround for libm_nano.a
 int __errno;
 
-/*
 char* heap_end = (char*)0x02000000;
 //void _sbrk_r(void) {}
 char* _sbrk(int incr) {
@@ -47,7 +46,6 @@ void _getpid_r(void) {}
 void _fstat_r(void) {}
 void _isatty_r(void) {}
 void _isatty(void) {}
-*/
 int print_coodinate(int x, int y, int type);
 int uchar2double(unsigned char* indata, double* outdata, int size);
 int double2uchar(double* indata, unsigned int* outdata, int size);
@@ -183,8 +181,8 @@ int put_dctval(double* indata, double* outdata, int xsize, int x, int y, int dum
 	for (int i = 0; i < size; i++) {
 		for (int j = 0; j < size; j++) {
 			outdata[(y+i)*xsize+x+j] = indata[i*size+j];
-			length = double_print( cbuf2, indata[i*size+j], 9 );
-			//length = sprintf(cbuf2, "%e", indata[i*size+j]);
+			//length = double_print( cbuf2, indata[i*size+j], 9 );
+			length = sprintf(cbuf2, "%e", indata[i*size+j]);
 			if ( j == size - 1 ) {
 				uprint( cbuf2, length, 2 );
 			}
@@ -282,8 +280,8 @@ int matrix_print( double* mat, int x, int y) {
 	char cbuf2[64];
 	for(int j = 0; j < y; j++) {
 		for(int i = 0; i < x; i++) {
-			int length = double_print( cbuf2, mat[j*x+i], 9 );
-			//int length = sprintf(cbuf2, "%e",  mat[j*x+i]);
+			//int length = double_print( cbuf2, mat[j*x+i], 9 );
+			int length = sprintf(cbuf2, "%e",  mat[j*x+i]);
 			if ( i == x - 1 ) {
 				uprint( cbuf2, length, 2 );
 			}
