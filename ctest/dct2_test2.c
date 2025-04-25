@@ -6,8 +6,8 @@
 #define LP 1000000
 #define LP2 200
 #define T 2
-#define K 8
-#define S 2
+#define K 2
+#define S 4
 #define MY_PI 3.141592653589793238462643
 
 //#include "lenna.txt"
