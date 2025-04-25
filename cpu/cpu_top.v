@@ -533,6 +533,7 @@ forwarding forwarding (
 	.hit_rs2_idma_ex(hit_rs2_idma_ex),
 	.hit_rs2_idwb_ex(hit_rs2_idwb_ex),
 	.nohit_rs2_ex(nohit_rs2_ex),
+	.jmp_purge_ma(jmp_purge_ma),
 	.stall_ld(stall_ld),
 	.stall_ld_ex(stall_ld_ex),
 	.stall_ld_ma(stall_ld_ma),

@@ -36,6 +36,8 @@ module forwarding(
 	output reg stall_ld_ex,
 	output reg stall_ld_ma,
 	output stall_ld,
+	// jump condition
+	input jmp_purge_ma,
 	// stall
 	input stall,
 	input stall_ex,
@@ -96,7 +98,7 @@ wire nohit_rs2 = ~( hit_rs2_idex | hit_rs2_idma | hit_rs2_idwb);
 // for stall 1 cycle
 reg keep_stall_ld;
 
-wire stall_ld_pre = hit_rs1_ldidex | hit_rs2_ldidex;
+wire stall_ld_pre = (hit_rs1_ldidex | hit_rs2_ldidex) & ~jmp_purge_ma;
 assign stall_ld = stall_ld_pre | stall_ld_add;
 
 // keep stall_ld during stall

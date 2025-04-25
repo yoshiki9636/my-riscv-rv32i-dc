@@ -40,6 +40,14 @@ module axi_bus_top (
 	output [15:0] dc_rdat_m_mask,
 	output dc_rdat_m_valid,
 	output dc_finish_mrd,
+// icache axi bus interface
+// icache axi read bus manager
+	input ic_rstart_rq,
+	input [31:0] ic_rin_addr,
+	output [127:0] ic_rdat_m_data,
+	output [15:0] ic_rdat_m_mask,
+	output ic_rdat_m_valid,
+	output ic_finish_mrd,
 
     // write request
     output awvalid,
@@ -74,8 +82,10 @@ module axi_bus_top (
 
 // fixed unused signal
 assign dc_rdat_m_mask = 16'd0;
+assign ic_rdat_m_mask = 16'd0;
 wire [3:0] uart_rnext_id;
 wire [3:0] dc_rnext_id;
+wire [3:0] ic_rnext_id;
 
 // arbiter signals
 wire uart_req_wt;
@@ -85,12 +95,25 @@ wire dc_gnt_wt;
 wire [2:0] sel_wt;
 wire uart_req_rd;
 wire dc_req_rd;
+wire ic_req_rd;
 wire uart_gnt_rd;
 wire dc_gnt_rd;
+wire ic_gnt_rd;
 wire [2:0] sel_rd;
 
 wire gnt2_wt;
-wire gnt2_rd;
+//wire gnt2_rd;
+
+// ic axi bus signals : read only
+wire ic_arvalid;
+wire ic_arready;
+wire [3:0] ic_arid;
+wire [31:0] ic_araddr;
+wire ic_rvalid;
+wire ic_rready;
+wire [3:0] ic_rid;
+wire [31:0] ic_rdata;
+wire ic_rlast;
 
 // dc axi bus signals
 wire dc_awvalid;
@@ -141,6 +164,33 @@ wire uart_rready;
 wire [3:0] uart_rid;
 wire [31:0] uart_rdata;
 wire uart_rlast;
+
+// instruction cache bus
+
+read_channels_mngr #(.REQC_M_ID(2'b10)) ic_read_channels_mngr (
+	.clk(clk),
+	.rst_n(rst_n),
+	.req_rq(ic_req_rd),
+	.gnt_rq(ic_gnt_rd),
+	.arvalid(ic_arvalid),
+	.arready(ic_arready),
+	.arid(ic_arid),
+	.araddr(ic_araddr),
+	.rvalid(ic_rvalid),
+	.rready(ic_rready),
+	.rid(ic_rid),
+	.rdata(ic_rdata),
+	.rlast(ic_rlast),
+	.rstart_rq(ic_rstart_rq),
+	.rin_addr(ic_rin_addr),
+	.rnext_rq(),
+	.next_rid(ic_rnext_id),
+	.rnext_id(ic_rnext_id),
+	.rqfull_1(1'b0),
+	.rdat_m_data(ic_rdat_m_data),
+	.rdat_m_valid(ic_rdat_m_valid),
+	.finish_mrd(ic_finish_mrd)
+	);
 
 // data cache bus
 
@@ -271,19 +321,24 @@ assign uart_bid = bid;
 assign dc_bcomp = bcomp;
 assign uart_bcomp = bcomp;
 // read request
-assign arvalid =  sel_rd[0] ? dc_arvalid : sel_rd[1] ? uart_arvalid :  sel_rd[2] ? 1'b0 : 1'b0;
+assign arvalid =  sel_rd[0] ? dc_arvalid : sel_rd[1] ? uart_arvalid :  sel_rd[2] ? ic_arvalid : 1'b0;
+assign ic_arready = arready;
 assign dc_arready = arready;
 assign uart_arready = arready;
-assign arid = sel_rd[0] ? dc_arid : sel_rd[1] ? uart_arid : sel_rd[2] ? 4'd0 : 4'd0;
-assign araddr = sel_rd[0] ? dc_araddr : sel_rd[1] ? uart_araddr : sel_rd[2] ? 1'b0 : 1'b0;
+assign arid = sel_rd[0] ? dc_arid : sel_rd[1] ? uart_arid : sel_rd[2] ? ic_arid : 4'd0;
+assign araddr = sel_rd[0] ? dc_araddr : sel_rd[1] ? uart_araddr : sel_rd[2] ? ic_araddr : 1'b0;
     // read data
+assign ic_rvalid = rvalid;
 assign dc_rvalid = rvalid;
 assign uart_rvalid = rvalid;
-assign rready = sel_rd[0] ? dc_rready : sel_rd[1] ? uart_rready : sel_rd[2] ? 1'b0 : 1'b0;
+assign rready = sel_rd[0] ? dc_rready : sel_rd[1] ? uart_rready : sel_rd[2] ? ic_rready : 1'b0;
+assign ic_rid = rid;
 assign dc_rid = rid;
 assign uart_rid = rid;
+assign ic_rdata = rdata;
 assign dc_rdata = rdata;
 assign uart_rdata = rdata;
+assign ic_rlast = rlast;
 assign dc_rlast = rlast;
 assign uart_rlast = rlast;
 
@@ -308,14 +363,14 @@ arbitor3 read_arb (
 	.rst_n(rst_n),
 	.req0(dc_req_rd),
 	.req1(uart_req_rd),
-	.req2(1'b0),
+	.req2(ic_req_rd),
 	.gnt0(dc_gnt_rd),
 	.gnt1(uart_gnt_rd),
-	.gnt2(gnt2_rd),
+	.gnt2(ic_gnt_rd),
 	.sel(sel_rd),
 	.finish0(dc_finish_mrd),
 	.finish1(uart_finish_mrd),
-	.finish2(1'b0)
+	.finish2(ic_finish_mrd)
 	);
 
 endmodule
