@@ -119,7 +119,8 @@ initial begin
 #15000
 #10
 	force fpga_top.cpu_start = 1'b1;
-    force fpga_top.start_adr = 30'h00000400; // 0x1000
+    force fpga_top.start_adr = 30'h00000400; // 0x1000 for C
+    //force fpga_top.start_adr = 30'h00000040; // 0x100 for asm
 #50
 	force fpga_top.cpu_start = 1'b0;
 //#500000
