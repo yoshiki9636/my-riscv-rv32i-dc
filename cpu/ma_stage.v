@@ -68,6 +68,7 @@ module ma_stage
 	// stall
 	input stall,
 	input stall_1shot,
+	input stall_1shot_dly,
 	input stall_dly,
 	input stall_dly2,
 	input rst_pipe_ma
@@ -212,7 +213,7 @@ always @ ( posedge clk or negedge rst_n) begin
         ld_data_roll <= 32'd0;
     else if (rst_pipe_ma)
         ld_data_roll <= 32'd0;
-    else if (stall_1shot)
+    else if (stall_1shot_dly)
         ld_data_roll <= data_rdata_wb;
 end
 

@@ -30,6 +30,7 @@ module cpu_status(
 	output stall_ma,
 	output stall_wb,
 	output stall_1shot,
+	output stall_1shot_dly,
 	output reg stall_dly,
 	output reg stall_dly2,
 	output reg rst_pipe,
@@ -116,6 +117,7 @@ assign stall_ma = stall_dly2 & stall;
 assign stall_wb = stall_dly3 & stall_dly;
 
 assign stall_1shot = stall & ~stall_dly;
+assign stall_1shot_dly = stall_dly & ~stall_dly2;
 
 // pipeline reset signal
 

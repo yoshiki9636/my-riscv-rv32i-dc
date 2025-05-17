@@ -372,7 +372,7 @@ wire [31:0] st_data_ex = (stall_ldst) ? st_data_roll : st_data_ex_pre;
 
 assign jmp_adr_ex = jump_adr[31:2];
 
-assign jmp_condition_ex = ~jmp_purge_ma & (
+assign jmp_condition_ex = ~stall & ~jmp_purge_ma & (
                         cmd_jal_ex | cmd_jalr_ex | cmd_br_ex &
 						( seq  & (alu_code_ex == 3'b000) |
 					      sne  & (alu_code_ex == 3'b001) |
@@ -382,7 +382,7 @@ assign jmp_condition_ex = ~jmp_purge_ma & (
 					      sbgu & (alu_code_ex == 3'b111) ));
 
 // ecall
-assign ecall_condition_ex = ~jmp_purge_ma & (cmd_ecall_ex | illegal_ops_ex);
+assign ecall_condition_ex = ~stall & ~jmp_purge_ma & (cmd_ecall_ex | illegal_ops_ex);
 
 // purge signal
 assign jmp_purge_ex = jmp_condition_ex | ecall_condition_ex;

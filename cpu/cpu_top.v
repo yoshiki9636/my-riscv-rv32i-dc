@@ -211,15 +211,17 @@ wire ram_wen_all;
 wire dc_stall_fin;
 wire dc_stall_fin2;
 wire dc_st_ok;
+wire dc_wbback_state;
 
 // ILU
 wire [31:2] pc_if;
+wire [31:2] pc_id_pre;
 wire pc_valid_id;
 wire [IWIDTH-3:0] ic_ram_wadr_all;
 wire ic_stall_fin2;
 wire ic_stall_fin;
 wire ic_tag_hit_id;
-wire ic_st_wt_id;
+//wire ic_st_wt_id;
 
 wire [31:2] start_adr_lat;
 
@@ -234,6 +236,7 @@ cpu_status cpu_status (
 	.quit_cmd(quit_cmd),
 	.stall(stall),
 	.stall_1shot(stall_1shot),
+	.stall_1shot_dly(stall_1shot_dly),
 	.stall_dly(stall_dly),
 	.stall_dly2(stall_dly2),
 	.stall_ex(stall_ex),
@@ -277,8 +280,10 @@ if_stage #(.IWIDTH(IWIDTH)) if_stage (
 	.ic_rdat_m_valid(ic_rdat_m_valid),
 	.ic_ram_wadr_all(ic_ram_wadr_all),
 	.pc_if(pc_if),
+	.pc_id_pre(pc_id_pre),
 	.pc_start(pc_start),
 	.start_adr_lat(start_adr_lat),
+	.dc_wbback_state(dc_wbback_state),
 	.stall(stall),
 	.stall_1shot(stall_1shot),
 	.stall_dly(stall_dly),
@@ -492,6 +497,7 @@ ma_stage #(.DWIDTH(DWIDTH)) ma_stage (
 	.dataram_rdata_wb(dataram_rdata_wb),
 	.stall(stall),
 	.stall_1shot(stall_1shot),
+	.stall_1shot_dly(stall_1shot_dly),
 	.stall_dly(stall_dly),
 	.stall_dly2(stall_dly2),
 	.rst_pipe_ma(rst_pipe_ma)
@@ -587,14 +593,16 @@ lsu_stage #(.DWIDTH(DWIDTH)) lsu_stage (
 	.finish_mrd(finish_mrd),
 	.start_dcflush(start_dcflush),
 	.dcflush_running(dcflush_running),
+	.dc_wbback_state(dc_wbback_state),
 	.rst_pipe(rst_pipe)
 	);
 
-ilu_stage ilu_stage (
+ilu_stage #(.IWIDTH(IWIDTH)) ilu_stage (
 	.clk(clk),
 	.rst_n(rst_n),
 	.pc_if(pc_if),
-	.pc_id(pc_id),
+	//.pc_id(pc_id),
+	.pc_id_pre(pc_id_pre),
 	.pc_valid_id(pc_valid_id),
 	.ic_ram_wadr_all(ic_ram_wadr_all),
 	.ic_stall_fin2(ic_stall_fin2),
@@ -602,7 +610,7 @@ ilu_stage ilu_stage (
 	.ic_stall(ic_stall),
 	.ic_stall_dly(ic_stall_dly),
 	.ic_tag_hit_id(ic_tag_hit_id),
-	.ic_st_wt_id(ic_st_wt_id),
+	//.ic_st_wt_id(ic_st_wt_id),
 	.icr_start_rq(icr_start_rq),
 	.ic_rin_addr(ic_rin_addr),
 	.ic_rdat_m_valid(ic_rdat_m_valid),

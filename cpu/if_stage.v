@@ -47,11 +47,13 @@ module if_stage
 	input [IWIDTH-3:0] ic_ram_wadr_all,
 
 	output [31:2] pc_if,
+	output reg [31:2] pc_id_pre,
 	//output pc_valid_id, // currently set to 1'b1
 
 	// other place
 	input pc_start,
 	input [31:2] start_adr_lat,
+	input dc_wbback_state,
 	input stall,
 	input stall_1shot,
 	input stall_dly,
@@ -115,7 +117,7 @@ end
 //assign pc_if = pc_if_pre;
 assign pc_if = ic_stall_dly ? pc_if_roll : pc_if_pre;
 
-reg [31:2] pc_id_pre;
+//reg [31:2] pc_id_pre;
 reg [31:2] pc_collision;
 
 always @ (posedge clk or negedge rst_n) begin
@@ -143,11 +145,11 @@ assign pc_data = {pc_if, 2'd0};
 
 // instruction RAM
 
-wire [11:0] inst_radr_if; // input
+//wire [11:0] inst_radr_if; // input
 wire [31:0] inst_rdata_id; // output
 wire [IWIDTH+1:2] iram_radr;
 
-assign inst_radr_if = pc_if[IWIDTH+1:2]; // depend on size of iram
+//assign inst_radr_if = pc_if[IWIDTH+1:2]; // depend on size of iram
 assign iram_radr = i_read_sel ? i_ram_radr : pc_if[IWIDTH+1:2] ;
 assign i_ram_rdata = inst_rdata_id;
 
@@ -177,16 +179,42 @@ inst_ram #(.IWIDTH(IWIDTH)) inst_ram (
 
 reg [31:0] inst_roll;
 reg [31:0] inst_collision;
+reg [2:0] dc_after_ic;
+reg [2:0] ic_after_dc;
+
+wire ic_stall_1shot = ic_stall & ~ic_stall_dly;
 
 always @ (posedge clk or negedge rst_n) begin   
 	if (~rst_n)
         inst_roll <= 32'h0000_0013;
 	else if (rst_pipe)
         inst_roll <= 32'h0000_0013;	
-	else if (ic_stall_fin & stall )
+	//else if (ic_stall_1shot & stall_1shot)
+        //inst_roll <= inst_rdata_id;
+	//else if (ic_stall_fin2 & stall )
+	//else if (ic_stall_fin  & stall & (dc_after_ic == 3'b010 ) & (ic_after_dc == 3'b100))
+        //inst_roll <= inst_rdata_id;
+	else if (ic_stall_fin2 & stall & (dc_after_ic == 3'b010 ) & (ic_after_dc == 3'b100))
+        inst_roll <= inst_roll;
+	else if (ic_stall_fin  & stall & (dc_after_ic == 3'b010 ) & (ic_after_dc == 3'b011))
+        //inst_roll <= inst_rdata_id;
+        inst_roll <= inst_roll;
+	else if (ic_stall_fin2 & stall & (dc_after_ic == 3'b010 ) & (ic_after_dc == 3'b011))
+        inst_roll <= inst_roll;
+	else if (ic_stall_fin2 & stall & (dc_after_ic == 3'b010 ))
         inst_roll <= inst_rdata_id;
-	else if (~ic_stall & ( stall_1shot | ~stall_dly & stall_ld ))
+	else if (ic_stall_fin2 & stall & (dc_after_ic == 3'b110 ) & (ic_after_dc == 3'b100))
+        inst_roll <= inst_roll;
+	else if (ic_stall_fin2 & stall & (dc_after_ic == 3'b110 ) & (ic_after_dc == 3'b110))
+        inst_roll <= inst_roll;
+	else if (ic_stall_fin2 & stall & (dc_after_ic == 3'b110 ))
+        inst_roll <= inst_rdata_id;
+	//else if (ic_stall_fin & stall )
+	//else if (ic_stall_fin2 & stall & (dc_after_ic == 3'b010 ) & (ic_after_dc == 3'b010))
+        //inst_roll <= inst_rdata_id;
 	//else if ( stall_1shot | ~stall_dly & stall_ld )
+	//else if ((~ic_stall | (ic_after_dc != 2'b00)) & ( stall_1shot | ~stall_dly & stall_ld ))
+	else if (~ic_stall & ( stall_1shot | ~stall_dly & stall_ld ))
         inst_roll <= inst_rdata_id;
 end
 
@@ -233,24 +261,53 @@ always @ (posedge clk or negedge rst_n) begin
         stall_ld_add <= 1'b1;
 end
 
-reg [1:0] ic_after_dc;
 always @ (posedge clk or negedge rst_n) begin   
 	if (~rst_n)
-        ic_after_dc <= 2'b00;
+        ic_after_dc <= 3'b000;
 	else if (~ic_stall & ~stall)
-        ic_after_dc <= 2'b00;
-	else if (~ic_stall & stall & (ic_after_dc == 2'b00))
-        ic_after_dc <= 2'b01;
-	else if (ic_stall & stall & ic_after_dc == 2'b01)
-        ic_after_dc <= 2'b10;
-	else if (ic_stall & ~stall & (ic_after_dc == 2'b10))
-        ic_after_dc <= 2'b11;
+        ic_after_dc <= 3'b000;
+	else if (dc_wbback_state & (ic_after_dc == 3'b001))
+        ic_after_dc <= 3'b100;
+	else if (dc_wbback_state & (ic_after_dc[1:0] == 2'b10))
+        ic_after_dc <= 3'b000;
+	else if (ic_stall_1shot & stall_1shot)
+        //ic_after_dc <= 3'b010;
+        ic_after_dc <= 3'b110;
+	else if (~ic_stall & stall & (ic_after_dc == 3'b000))
+        ic_after_dc <= 3'b001;
+	else if (ic_stall & stall & (ic_after_dc == 3'b001))
+        ic_after_dc <= 3'b010;
+	else if (ic_stall & ~stall & (ic_after_dc == 3'b010))
+        ic_after_dc <= 3'b011;
 	//else
         //ic_after_dc <= 2'b00;
 end
 
-assign inst_id = ((ic_after_dc == 2'b11) & ic_stall_fin2) ? inst_roll : // for ic stall after dc stall
+always @ (posedge clk or negedge rst_n) begin   
+	if (~rst_n)
+        dc_after_ic <= 3'b000;
+	else if (~ic_stall & ~stall)
+        dc_after_ic <= 3'b000;
+	else if (ic_stall & ~stall & (dc_after_ic == 3'b000))
+        dc_after_ic <= 3'b001;
+	else if (dc_wbback_state & ic_stall & stall & (ic_after_dc != 3'b000))
+        dc_after_ic <= 3'b110;
+	else if (ic_stall & stall & (dc_after_ic == 3'b001))
+        dc_after_ic <= 3'b010;
+	else if (~ic_stall & stall & (dc_after_ic == 3'b010))
+        dc_after_ic <= 3'b011;
+	else if (~ic_stall & stall & (dc_after_ic == 3'b110))
+        dc_after_ic <= 3'b111;
+	//else
+        //ic_after_dc <= 2'b00;
+end
+
+                 //((dc_after_ic == 3'b111) & dc_stall_fin2) ? inst_rdata_id : // 
+assign inst_id = ((ic_after_dc == 3'b011) & ic_stall_fin2) ? inst_roll : // for ic stall after dc stall
+                 ((dc_after_ic == 3'b011) & dc_stall_fin2) ? inst_roll : // 
+                 ((dc_after_ic == 3'b111) & dc_stall_fin2) ? inst_roll : // 
                  ( stall_ld_ex_smpl & ic_stall_fin2) ? inst_roll :
+                 //((ic_stall|ic_stall_dly)&dc_stall_fin2) ? inst_roll : // 1shot ok dc stall inside ic stall
                  (ic_stall|ic_stall_dly) ? 32'h0000_0013 : // nop for icache stall
                  use_collision  ?  inst_collision : // for load store btb
                  (stall_dly | stall_ld_ex) ? inst_roll : // for load bypass pattern without store

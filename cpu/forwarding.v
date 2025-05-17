@@ -83,14 +83,14 @@ wire rd_adr_ma_not0 = |rd_adr_ma;
 wire rd_adr_wb_not0 = |rd_adr_wb;
 
 
-wire hit_rs1_ldidex = rd_adr_ex_not0 & (inst_rs1_id == rd_adr_ex) & inst_rs1_valid & wbk_rd_reg_ex & cmd_ld_ex;
-wire hit_rs1_idex = rd_adr_ex_not0 & (inst_rs1_id == rd_adr_ex) & inst_rs1_valid & wbk_rd_reg_ex & ~cmd_ld_ex & ~hit_rs1_ldidex_dly & nostall_ld_ex;
+wire hit_rs1_ldidex = rd_adr_ex_not0 & (inst_rs1_id == rd_adr_ex) & inst_rs1_valid & wbk_rd_reg_ex & cmd_ld_ex & ~jmp_purge_ma;
+wire hit_rs1_idex = rd_adr_ex_not0 & (inst_rs1_id == rd_adr_ex) & inst_rs1_valid & wbk_rd_reg_ex & ~cmd_ld_ex & ~hit_rs1_ldidex_dly & nostall_ld_ex & ~jmp_purge_ma;
 wire hit_rs1_idma = rd_adr_ma_not0 & (inst_rs1_id == rd_adr_ma) & inst_rs1_valid & wbk_rd_reg_ma & (nostall_ld_ma | keep_rs1_stall);
 wire hit_rs1_idwb = rd_adr_wb_not0 & (inst_rs1_id == rd_adr_wb) & inst_rs1_valid & wbk_rd_reg_wb & (nostall_ld_wb | keep_rs1_stall);
 wire nohit_rs1 = ~( hit_rs1_idex | hit_rs1_idma | hit_rs1_idwb);
 
-wire hit_rs2_ldidex = rd_adr_ex_not0 & (inst_rs2_id == rd_adr_ex) & inst_rs2_valid & wbk_rd_reg_ex & cmd_ld_ex;
-wire hit_rs2_idex = rd_adr_ex_not0 & (inst_rs2_id == rd_adr_ex) & inst_rs2_valid & wbk_rd_reg_ex & ~cmd_ld_ex & ~hit_rs2_ldidex_dly & nostall_ld_ex;
+wire hit_rs2_ldidex = rd_adr_ex_not0 & (inst_rs2_id == rd_adr_ex) & inst_rs2_valid & wbk_rd_reg_ex & cmd_ld_ex & ~jmp_purge_ma;
+wire hit_rs2_idex = rd_adr_ex_not0 & (inst_rs2_id == rd_adr_ex) & inst_rs2_valid & wbk_rd_reg_ex & ~cmd_ld_ex & ~hit_rs2_ldidex_dly & nostall_ld_ex & ~jmp_purge_ma;
 wire hit_rs2_idma = rd_adr_ma_not0 & (inst_rs2_id == rd_adr_ma) & inst_rs2_valid & wbk_rd_reg_ma & (nostall_ld_ma | keep_rs2_stall);
 wire hit_rs2_idwb = rd_adr_wb_not0 & (inst_rs2_id == rd_adr_wb) & inst_rs2_valid & wbk_rd_reg_wb & (nostall_ld_wb | keep_rs2_stall);
 wire nohit_rs2 = ~( hit_rs2_idex | hit_rs2_idma | hit_rs2_idwb);
@@ -98,7 +98,8 @@ wire nohit_rs2 = ~( hit_rs2_idex | hit_rs2_idma | hit_rs2_idwb);
 // for stall 1 cycle
 reg keep_stall_ld;
 
-wire stall_ld_pre = (hit_rs1_ldidex | hit_rs2_ldidex) & ~jmp_purge_ma;
+//wire stall_ld_pre = (hit_rs1_ldidex | hit_rs2_ldidex) & ~jmp_purge_ma;
+wire stall_ld_pre = hit_rs1_ldidex | hit_rs2_ldidex;
 assign stall_ld = stall_ld_pre | stall_ld_add;
 
 // keep stall_ld during stall

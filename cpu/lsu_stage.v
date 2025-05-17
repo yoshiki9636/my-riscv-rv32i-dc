@@ -52,6 +52,8 @@ module lsu_stage
 	// DC flush
 	input start_dcflush,
 	output dcflush_running,
+	// to IF
+	output dc_wbback_state,
 	// reset pipeline
 	input rst_pipe
 
@@ -89,7 +91,8 @@ always @ (posedge clk or negedge rst_n) begin
 	else if (rst_pipe)
         dc_tag_adr_ma <= { (27-DWIDTH-1){ 1'b0 }} ;
 	//else if (~dc_stall | dc_stall_fin )
-	else if (~dc_stall & ~dc_stall_fin )
+	//else if (~dc_stall & ~dc_stall_fin )
+	else
 		dc_tag_adr_ma <= dc_tag_adr_ex;
 end
 
@@ -105,7 +108,9 @@ reg [(2**(DWIDTH-2))-1:0] ent_dirty_bit_ma;
 reg [(2**(DWIDTH-2))-1:0] ent_valid_bit_ma;
 
 //wire [27:13] dc_cache_dirty_adr = rd_data_ma[12:4];
-wire [DWIDTH+1:4] dc_cache_dirty_adr = rd_data_ma[DWIDTH+1:4];
+//wire [DWIDTH+1:4] dc_cache_dirty_adr = rd_data_ma[DWIDTH+1:4];
+//wire [DWIDTH+1:4] dc_cache_dirty_adr = current_radr_keeper[DWIDTH+1:4];
+wire [DWIDTH+1:4] dc_cache_dirty_adr = dc_index_adr;
 
 always @ (posedge clk or negedge rst_n) begin
     if (~rst_n)
@@ -132,7 +137,7 @@ reg [DWIDTH+1:4] dc_index_adr_dly;
 
 always @ (posedge clk or negedge rst_n) begin
     if (~rst_n)
-        dc_index_adr_dly <= { (DWIDTH-3){ 1'b0 }};
+        dc_index_adr_dly <= { (DWIDTH-2){ 1'b0 }};
 	else if (~dc_stall & ~dc_stall_fin )
         dc_index_adr_dly <= dc_index_adr;
 end
@@ -293,22 +298,23 @@ assign tag_wen =  rdat_m_valid;
 always @ (posedge clk or negedge rst_n) begin
     if (~rst_n)
         //dcflush_cntr <= 9'd0;
-        dcflush_cntr <= { (DWIDTH-3){ 1'b0 }};
+        dcflush_cntr <= { (DWIDTH-2){ 1'b0 }};
 	else if ( start_dcflush )
-        dcflush_cntr <= {9{1'b1}};
-	else if ((dcflush_cntr >  {(DWIDTH-3){ 1'b0 }}) & dcw_finish_wresp)
-        dcflush_cntr <= dcflush_cntr -  {{ (DWIDTH-4){ 1'b0 }}, 1'b1};
+        //dcflush_cntr <= {9{1'b1}};
+        dcflush_cntr <= { (DWIDTH-2){ 1'b1 }};
+	else if ((dcflush_cntr >  {(DWIDTH-2){ 1'b0 }}) & dcw_finish_wresp)
+        dcflush_cntr <= dcflush_cntr -  {{ (DWIDTH-3){ 1'b0 }}, 1'b1};
 end
 
 reg [DWIDTH+1:4] dcflush_cntr_dly;
 always @ (posedge clk or negedge rst_n) begin
     if (~rst_n)
-        dcflush_cntr_dly <= { (DWIDTH-3){ 1'b0 }};
+        dcflush_cntr_dly <= { (DWIDTH-2){ 1'b0 }};
 	else
         dcflush_cntr_dly <= dcflush_cntr;
 end
 
-wire dcflush_cntr_not0 = (dcflush_cntr != { (DWIDTH-3){ 1'b0 }});
+wire dcflush_cntr_not0 = (dcflush_cntr != { (DWIDTH-2){ 1'b0 }});
 reg dcflush_cntr_not0_dly;
 
 always @ (posedge clk or negedge rst_n) begin
@@ -330,5 +336,9 @@ always @ (posedge clk or negedge rst_n) begin
 end
 
 assign dcw_in_addr_dcflush = { 4'd0, dc_tag_radr[27:DWIDTH+2],  dcflush_cntr_dly, 4'd0 };
+
+// dc wirte back state signal to IF stage to cancel ic_after_dc
+
+assign dc_wbback_state = (dc_miss_current == `DCMS_MEMW) ;
 
 endmodule

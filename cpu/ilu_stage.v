@@ -16,7 +16,7 @@ module ilu_stage
 
 	// FORM TO IF
 	input [31:2] pc_if,
-	input [31:2] pc_id,
+	input [31:2] pc_id_pre,
 	input pc_valid_id,
     output [IWIDTH-3:0] ic_ram_wadr_all,
     //output [127:0] ic_ram_wdata_all,
