@@ -4,9 +4,9 @@
 //#define LP 10
 #define LP 1000000
 #define LP2 200
-#define YSIZE 16
-#define XSIZE 16
-#define ZSIZE 16
+#define YSIZE 8
+#define XSIZE 8
+#define ZSIZE 8
 // workaround for libm_nano.a
 int __errno;
 void pass();

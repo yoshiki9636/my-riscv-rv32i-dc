@@ -71,19 +71,14 @@ int main() {
 	double R[128],max;
  	complex x[128], X;
 
-	unsigned int* led = (unsigned int*)0xc000fe00;
-	uprint(  "t", 1, 2 );
- 
  	for(n=0; n<128; n++){
-		*led = n & 0x7777;
  		x[n].r=0.5+sin(0.1*n)+0.3*sin(0.3*n)+0.15*sin(0.5*n);
- 		//x[n].r=0.5+sin(0.1*n)+0.3*sin(0.3*n);
  		x[n].i=0.0;
  	}
  	for(n=0; n<128; n++){
- 		length = sprintf(cbuf, "sin[%d]=%3.3lf\n",n,x[n].r);
-		uprint( cbuf, length, 0 );
- 		//printf("sin[%d]=%3.3lf\n",n,x[n].r);
+ 		//length = sprintf(cbuf, "sin[%d]=%3.3lf\n",n,x[n].r);
+		//uprint( cbuf, length, 0 );
+ 		printf("sin[%d]=%3.3lf\n",n,x[n].r);
  	}
 	uprint( "\n", 2, 0 );
 
@@ -93,9 +88,9 @@ int main() {
 		uprint( "\n", 2, 0 );
  	}
  	max=0.0;
- 	length = sprintf(cbuf, "Fourie transform output\n");
-	uprint( cbuf, length, 0 );
- 	//printf("Fourie transform output\n");
+ 	//length = sprintf(cbuf, "Fourie transform output\n");
+	//uprint( cbuf, length, 0 );
+ 	printf("Fourie transform output\n");
  	for(n=0; n<N; n++){
  		X.r=0;
  		X.i=0;
@@ -105,14 +100,13 @@ int main() {
  		}
  		R[n] = sqrt(X.r*X.r + X.i*X.i);
  		if(R[n]>max) max=R[n];
- 		length = sprintf(cbuf, "X.r=%f, X.i=%f, R(%d)=%f\n", X.r, X.i,n,R[n]);
-		uprint( cbuf, length, 0 );
- 		//printf("X.r=%lf, X.i=%lf, R(%d)=%lf\n", X.r, X.i,n,R[n]);
+ 		//length = sprintf(cbuf, "X.r=%lf, X.i=%lf, R(%d)=%lf\n", X.r, X.i,n,R[n]);
+		//uprint( cbuf, length, 0 );
+ 		printf("X.r=%lf, X.i=%lf, R(%d)=%lf\n", X.r, X.i,n,R[n]);
  	}
 	uprint( "\n", 2, 0 );
- 	length = sprintf(cbuf, "Fourie transform graph\n");
-	uprint( cbuf, length, 2 );
- 	//printf("Fourie transform graph\n");
+ 	//length = sprintf(cbuf, "Fourie transform graph\n");
+ 	printf("Fourie transform graph\n");
  	for(n=0; n<N; n++){
  		for( k=0; k<R[n]*60/max; k++)
 			uprint( "*", 1, 0 );

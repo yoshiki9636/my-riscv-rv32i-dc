@@ -71,25 +71,25 @@ int main() {
 		    1.0, 4.0, 1.0, 3.0,
 		    4.0, 0.0, 1.0, 2.0};
 
-	//uprint( "mat1\n", 6, 0 );
-	printf( "mat1\n");
+	uprint( "mat1\n", 6, 0 );
+	//printf( "mat1\n");
 	matrix_print( mat1, SIZE, SIZE);
 
 	double det = det_cal( mat1, SIZE);
 
-	//uprint( "det = ", 6, 0 );
-	//int length = double_print( cbuf, det, 9 );
+	uprint( "det = ", 6, 0 );
+	int length = double_print( cbuf, det, 9 );
 	//int length = sprintf(cbuf, "det = %e\n",  det);
-	//uprint( cbuf, length, 2 );
-	printf("det = %e\n",  det);
+	uprint( cbuf, length, 2 );
+	//printf("det = %e\n",  det);
 
 	if (det == 0.0) {
 		uprint( "no inverse matrix\n", 19, 0 );
 	}
 	else {
-		mat_cofactor(mat1, SIZE);
-		mat_trans(mat1, SIZE);
-		matmul_scala(mat1, 1.0/det);
+		//mat_cofactor(mat1, SIZE);
+		//mat_trans(mat1, SIZE);
+		//matmul_scala(mat1, 1.0/det);
 
 		uprint( "inverse matrix\n", 16, 0 );
 		matrix_print( mat1, SIZE, SIZE);
@@ -139,6 +139,7 @@ int part_mat( double* mat, double* pmat, int s, int p) {
 	return 0;
 }
 
+/*
 int part_mat2( double* mat, double* pmat, int s, int x, int y) {
 	int l = 0;
 	for (int j = 0; j < s; j++) {
@@ -193,6 +194,7 @@ int matmul_scala( double* mat, double a) {
 	}
 	return 0;
 }
+*/
 
 int mat_mul( double* mat1, double* mat2, double* result, int x, int y, int z) {
 	for(int j = 0; j < y; j++) {
@@ -210,14 +212,14 @@ int matrix_print( double* mat, int x, int y) {
 	for(int j = 0; j < y; j++) {
 		for(int i = 0; i < x; i++) {
 			//int length = double_print( cbuf2, mat[j*x+i], 9 );
-			//int length = sprintf(cbuf2, " %e",  mat[j*x+i]);
+			int length = sprintf(cbuf2, " %e",  mat[j*x+i]);
 			if ( i == x - 1 ) {
-				//uprint( cbuf2, length, 2 );
-				printf(" %e\n",  mat[j*x+i]);
+				uprint( cbuf2, length, 2 );
+				//printf(" %e\n",  mat[j*x+i]);
 			}
 			else {
-				//uprint( cbuf2, length, 1 );
-				printf(" %e",  mat[j*x+i]);
+				uprint( cbuf2, length, 1 );
+				//printf(" %e",  mat[j*x+i]);
 			}
 		}
 	}

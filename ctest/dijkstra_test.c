@@ -126,13 +126,19 @@ int main() {
 }
 
 int node_not_finished(int num_node, t_NODE_BASE* node_info, t_EDGE_BASE* edge_info) {
+	char cbuf[64];
+	int j = -1;
 	for (int i = 0; i < num_node; i++) {
+		uprint( "dbg ", 4, 0 );
+		int length = int_print( cbuf, i, 0 );
+		uprint( cbuf, length, 1 );
+		length = int_print( cbuf, node_info[i].chk_flg, 0 );
+		uprint( cbuf, length, 2 );
 		if ( node_info[i].chk_flg == 0) {
 			int flg = 0;
 			t_EDGE_LIST* edge = node_info[i].edges;
-			int next_node;
 			while ( flg == 0 ) {
-				next_node = (edge_info[edge->ea].na == i) ? edge_info[edge->ea].nb : edge_info[edge->ea].na;
+				int next_node = (edge_info[edge->ea].na == i) ? edge_info[edge->ea].nb : edge_info[edge->ea].na;
 				if (node_info[next_node].chk_flg == 1) {
 					flg = 1;
 				}
@@ -144,12 +150,18 @@ int node_not_finished(int num_node, t_NODE_BASE* node_info, t_EDGE_BASE* edge_in
 				}
 			}
 			if ( flg == 1 ) {
+				j = i;
+				uprint( "dbg2 ", 5, 0 );
+				int length = int_print( cbuf, j, 0 );
+				uprint( cbuf, length, 2 );
+				//break;
 				return i;
 			}
 			// flg == 2 : skip this node becase it is not connect to others
 		}
 	}
 	return -1; // all nodes are finished
+	//return j; // all nodes are finished
 }
 
 int marking_start_node(int cur_node, t_NODE_BASE* node_info, t_EDGE_BASE* edge_info) {
@@ -210,13 +222,14 @@ int marking_next_node(int cur_node, t_NODE_BASE* node_info, t_EDGE_BASE* edge_in
 int start_dijkstra(int start_node, int end_node, int num_node, int num_edge, t_NODE_BASE* node_info, t_EDGE_BASE* edge_info) {
 	char cbuf[64];
 
-	// set start node
-	node_info[start_node].cur_dist = 0;
-
 	// 1st marking 
 	marking_start_node(start_node, node_info, edge_info);
 
 	int cur_node = node_not_finished(num_node, node_info, edge_info);
+	//cur_node = 1;
+	uprint( "dbg3 = ", 7, 0 );
+	int length = int_print( cbuf, cur_node, 0 );
+	uprint( cbuf, length, 2 );
 	while ( cur_node != -1 ) {
 		uprint( "current node = ", 15, 0 );
 		int length = int_print( cbuf, cur_node, 0 );
@@ -225,6 +238,7 @@ int start_dijkstra(int start_node, int end_node, int num_node, int num_edge, t_N
 		// marking
 		marking_next_node(cur_node, node_info, edge_info);
 		cur_node = node_not_finished(num_node, node_info, edge_info);
+		//cur_node = (cur_node == -1) ? -1 : cur_node - 1;
 	}
 
 	return 0;

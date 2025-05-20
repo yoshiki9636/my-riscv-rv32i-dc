@@ -94,6 +94,7 @@ int main() {
 	t_EDGE_BASE edge_info[NUM_EDGE];
 	//t_NODE_BASE start_node;
 	//t_NODE_BASE end_node;
+    unsigned int* led = (unsigned int*)0xc000fe00;
 
 	clearbss();
 
@@ -111,12 +112,12 @@ int main() {
 
 	for (int i = 0; i < 1000; i++) {
 		t_NODE_LIST* node_tmp = (t_NODE_LIST*)malloc(sizeof(t_NODE_LIST));
-		node_tmp->na = i+20000;
+		node_tmp->na = i+0x20000;
 		node_tmp->next = node_entry;
 		node_entry = node_tmp;
 
 		t_EDGE_LIST* edge_tmp = (t_EDGE_LIST*)malloc(sizeof(t_EDGE_LIST));
-		edge_tmp->ea = i+30000;
+		edge_tmp->ea = i+0x30000;
 		edge_tmp->next = edge_entry;
 		edge_entry = edge_tmp;
 	}
@@ -124,15 +125,17 @@ int main() {
 
 	while ( node_entry->next != NULL) {
 		int aa = node_entry->na;
-		int length = int_print( cbuf, aa, 0 );
-		uprint( cbuf, length, 2 );
+		*led = aa & 0x7777;
+		//int length = int_print( cbuf, aa, 0 );
+		//uprint( cbuf, length, 2 );
 		node_entry = node_entry->next;
 	}
 
 	while ( edge_entry->next != NULL) {
 		int aa = edge_entry->ea;
-		int length = int_print( cbuf, aa, 0 );
-		uprint( cbuf, length, 2 );
+		*led = aa & 0x7777;
+		//int length = int_print( cbuf, aa, 0 );
+		//uprint( cbuf, length, 2 );
 		edge_entry = edge_entry->next;
 	}
 	

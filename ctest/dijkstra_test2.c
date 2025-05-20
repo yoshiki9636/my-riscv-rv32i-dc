@@ -204,7 +204,7 @@ int marking_next_node(int cur_node, t_NODE_BASE* node_info, t_EDGE_BASE* edge_in
 		int next_node = (edge_info[edge->ea].na == cur_node) ? edge_info[edge->ea].nb : edge_info[edge->ea].na;
 		//int length = int_print( cbuf, next_node, 0 );
 		//uprint( cbuf, length, 2 );
-		printf( "&d\n", next_node );
+		printf( "%d\n", next_node );
 		if (node_info[next_node].chk_flg == 1) {
 			// update cur_node 
 			int distance = node_info[next_node].cur_dist + edge_info[edge->ea].dist;
@@ -227,7 +227,7 @@ int marking_next_node(int cur_node, t_NODE_BASE* node_info, t_EDGE_BASE* edge_in
 		int next_node = (edge_info[edge->ea].na == cur_node) ? edge_info[edge->ea].nb : edge_info[edge->ea].na;
 		//int length = int_print( cbuf, next_node, 0 );
 		//uprint( cbuf, length, 2 );
-		printf( "&d\n", next_node );
+		printf( "%d\n", next_node );
 		if (node_info[next_node].chk_flg == 1) {
 			int distance = node_info[cur_node].cur_dist + edge_info[edge->ea].dist;
 			if (distance < node_info[next_node].cur_dist) {

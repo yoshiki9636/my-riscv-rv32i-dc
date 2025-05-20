@@ -27,10 +27,16 @@ int main() {
 	double R[128],max;
  	complex x[128], X;
 
+    unsigned int* led = (unsigned int*)0xc000fe00;
+	uprint(  "t", 1, 2 );
  	for(n=0; n<128; n++){
+		*led = n & 0x7777;
+ 		//x[n].r=0.5+sin(0.1*n)+0.3*sin(0.3*n);
  		x[n].r=0.5+sin(0.1*n)+0.3*sin(0.3*n)+0.15*sin(0.5*n);
+ 		//x[n].r=1.0;
  		x[n].i=0.0;
  	}
+ 	//x[1].r=0.5+sin(0.1*1)+0.3*sin(0.3*1)+0.15*sin(0.5*1);
  	for(n=0; n<128; n++){
 		uprint(  "sin[", 4, 0 );
 		length = int_print(cbuf, n, 0);
