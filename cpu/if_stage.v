@@ -303,9 +303,9 @@ always @ (posedge clk or negedge rst_n) begin
 end
 
                  //((dc_after_ic == 3'b111) & dc_stall_fin2) ? inst_rdata_id : // 
-assign inst_id = ((ic_after_dc == 3'b011) & ic_stall_fin2) ? inst_roll : // for ic stall after dc stall
-                 ((dc_after_ic == 3'b011) & dc_stall_fin2) ? inst_roll : // 
-                 ((dc_after_ic == 3'b111) & dc_stall_fin2) ? inst_roll : // 
+assign inst_id = ((ic_after_dc == 3'b011) & ic_stall_fin2) ? use_collision ? inst_collision : inst_roll : // for ic stall after dc stall
+                 ((dc_after_ic == 3'b011) & dc_stall_fin2) ? use_collision ? inst_collision : inst_roll : // 
+                 ((dc_after_ic == 3'b111) & dc_stall_fin2) ? use_collision ? inst_collision : inst_roll : // 
                  ( stall_ld_ex_smpl & ic_stall_fin2) ? inst_roll :
                  //((ic_stall|ic_stall_dly)&dc_stall_fin2) ? inst_roll : // 1shot ok dc stall inside ic stall
                  (ic_stall|ic_stall_dly) ? 32'h0000_0013 : // nop for icache stall
