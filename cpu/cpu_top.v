@@ -189,6 +189,7 @@ wire [31:2] csr_sepc_ex;
 wire [1:0] g_interrupt_priv = `M_MODE; // temp
 wire [1:0] g_current_priv = `M_MODE; // temp
 wire g_interrupt;
+wire g_interrupt_1shot;
 wire post_jump_cmd_cond;
 wire csr_meie;
 //wire csr_mtie;
@@ -269,7 +270,7 @@ if_stage #(.IWIDTH(IWIDTH)) if_stage (
 	.csr_sepc_ex(csr_sepc_ex),
 	.cmd_uret_ex(cmd_uret_ex),
 	.csr_mtvec_ex(csr_mtvec_ex),
-    .g_interrupt(g_interrupt),
+    .g_interrupt_1shot(g_interrupt_1shot),
     .post_jump_cmd_cond(post_jump_cmd_cond),
     .g_exception(g_exception),
 	.i_ram_radr(i_ram_radr),
@@ -437,6 +438,7 @@ ex_stage ex_stage (
 	.csr_mepc_ex(csr_mepc_ex),
 	.csr_sepc_ex(csr_sepc_ex),
     .g_interrupt(g_interrupt),
+    .g_interrupt_1shot(g_interrupt_1shot),
     .post_jump_cmd_cond(post_jump_cmd_cond),
     .g_interrupt_priv(g_interrupt_priv),
     .g_current_priv(g_current_priv),
@@ -560,6 +562,7 @@ interrupter interrupter (
 	.interrupt_0(interrupt_0),
 	.interrupt_clear(interrupt_clear),
 	.csr_meie(csr_meie),
+    .g_interrupt_1shot(g_interrupt_1shot),
 	.g_interrupt(g_interrupt)
 	);
 
