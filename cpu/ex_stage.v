@@ -97,6 +97,7 @@ module ex_stage(
     output csr_meie,
     output csr_mtie,
     output csr_msie,
+    input frc_cntr_val_leq,
 	// to ID
 	output reg jmp_purge_ma,
 	output jmp_purge_ex,
@@ -247,7 +248,8 @@ csr_array csr_array (
 	//.csr_mie(csr_mie),
     .cmd_ecall_ex(cmd_ecall_ex),
 	.pc_excep(pc_ex),
-	.stall(stall)
+	.stall(stall),
+	.frc_cntr_val_leq(frc_cntr_val_leq)
 	);
 
 // exception block

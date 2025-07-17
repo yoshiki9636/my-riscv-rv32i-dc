@@ -72,6 +72,9 @@ module cpu_top
 	input start_dcflush,
 	output dcflush_running,
 
+	output interrupt_clear,
+	output csr_mtie,
+	input frc_cntr_val_leq,
 	input interrupt_0
 
 	);
@@ -188,7 +191,7 @@ wire [1:0] g_current_priv = `M_MODE; // temp
 wire g_interrupt;
 wire post_jump_cmd_cond;
 wire csr_meie;
-wire csr_mtie;
+//wire csr_mtie;
 wire csr_msie;
 wire dma_we_ma;
 wire [15:2] dataram_wadr_ma;
@@ -441,6 +444,7 @@ ex_stage ex_stage (
     .csr_meie(csr_meie),
     .csr_mtie(csr_mtie),
     .csr_msie(csr_msie),
+    .frc_cntr_val_leq(frc_cntr_val_leq),
 	.jmp_purge_ma(jmp_purge_ma),
 	.jmp_purge_ex(jmp_purge_ex),
 	.stall(stall),
@@ -554,6 +558,7 @@ interrupter interrupter (
 	.clk(clk),
 	.rst_n(rst_n),
 	.interrupt_0(interrupt_0),
+	.interrupt_clear(interrupt_clear),
 	.csr_meie(csr_meie),
 	.g_interrupt(g_interrupt)
 	);
