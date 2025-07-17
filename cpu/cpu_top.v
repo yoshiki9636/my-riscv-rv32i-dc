@@ -72,7 +72,7 @@ module cpu_top
 	input start_dcflush,
 	output dcflush_running,
 
-	output interrupt_clear,
+	input interrupt_clear,
 	output csr_mtie,
 	input frc_cntr_val_leq,
 	input interrupt_0
