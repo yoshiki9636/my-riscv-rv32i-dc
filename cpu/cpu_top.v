@@ -72,9 +72,6 @@ module cpu_top
 	input start_dcflush,
 	output dcflush_running,
 
-	input interrupt_clear,
-	output csr_mtie,
-	input frc_cntr_val_leq,
 	input interrupt_0
 
 	);
@@ -93,6 +90,7 @@ wire [2:0] alu_code_ex;
 wire [2:0] ld_code_wb;
 wire [2:0] ldst_code_ma;
 wire [31:0] inst_id;
+wire [31:0] inst_ex;
 wire [31:0] ld_data_wb;
 wire [31:0] rd_data_ma;
 wire [31:0] rd_data_ex;
@@ -189,10 +187,9 @@ wire [31:2] csr_sepc_ex;
 wire [1:0] g_interrupt_priv = `M_MODE; // temp
 wire [1:0] g_current_priv = `M_MODE; // temp
 wire g_interrupt;
-wire g_interrupt_1shot;
 wire post_jump_cmd_cond;
 wire csr_meie;
-//wire csr_mtie;
+wire csr_mtie;
 wire csr_msie;
 wire dma_we_ma;
 wire [15:2] dataram_wadr_ma;
@@ -226,6 +223,15 @@ wire ic_stall_fin2;
 wire ic_stall_fin;
 wire ic_tag_hit_id;
 //wire ic_st_wt_id;
+
+// new singals
+wire csr_rmie; // new
+wire csr_radr_en_mon = 1'b0; // new
+wire [11:0] csr_radr_mon = 12'd0; // new
+wire [11:0] csr_wadr_mon = 12'd0; // new
+wire csr_we_mon = 1'b0; // new
+wire [31:0] csr_wdata_mon = 12'd0; // new
+wire [31:0] csr_rdata_mon; // new
 
 wire [31:2] start_adr_lat;
 
@@ -270,7 +276,7 @@ if_stage #(.IWIDTH(IWIDTH)) if_stage (
 	.csr_sepc_ex(csr_sepc_ex),
 	.cmd_uret_ex(cmd_uret_ex),
 	.csr_mtvec_ex(csr_mtvec_ex),
-    .g_interrupt_1shot(g_interrupt_1shot),
+    .g_interrupt(g_interrupt),
     .post_jump_cmd_cond(post_jump_cmd_cond),
     .g_exception(g_exception),
 	.i_ram_radr(i_ram_radr),
@@ -348,6 +354,7 @@ id_stage id_stage (
 	.cmd_mret_ex(cmd_mret_ex),
 	.cmd_wfi_ex(cmd_wfi_ex),
 	.illegal_ops_ex(illegal_ops_ex),
+	.inst_ex(inst_ex),
 	.rd_adr_ex(rd_adr_ex),
 	.wbk_rd_reg_ex(wbk_rd_reg_ex),
 	.jmp_purge_ma(jmp_purge_ma),
@@ -438,7 +445,6 @@ ex_stage ex_stage (
 	.csr_mepc_ex(csr_mepc_ex),
 	.csr_sepc_ex(csr_sepc_ex),
     .g_interrupt(g_interrupt),
-    .g_interrupt_1shot(g_interrupt_1shot),
     .post_jump_cmd_cond(post_jump_cmd_cond),
     .g_interrupt_priv(g_interrupt_priv),
     .g_current_priv(g_current_priv),
@@ -446,7 +452,14 @@ ex_stage ex_stage (
     .csr_meie(csr_meie),
     .csr_mtie(csr_mtie),
     .csr_msie(csr_msie),
-    .frc_cntr_val_leq(frc_cntr_val_leq),
+	.illegal_ops_inst(inst_ex), // new
+	.csr_rmie(csr_rmie), // new
+    .csr_radr_en_mon(csr_radr_en_mon), // new
+    .csr_radr_mon(csr_radr_mon), // new
+    .csr_wadr_mon(csr_wadr_mon), // new
+    .csr_we_mon(csr_we_mon), // new
+    .csr_wdata_mon(csr_wdata_mon), // new
+    .csr_rdata_mon(csr_rdata_mon), // new
 	.jmp_purge_ma(jmp_purge_ma),
 	.jmp_purge_ex(jmp_purge_ex),
 	.stall(stall),
@@ -560,9 +573,7 @@ interrupter interrupter (
 	.clk(clk),
 	.rst_n(rst_n),
 	.interrupt_0(interrupt_0),
-	.interrupt_clear(interrupt_clear),
 	.csr_meie(csr_meie),
-    .g_interrupt_1shot(g_interrupt_1shot),
 	.g_interrupt(g_interrupt)
 	);
 

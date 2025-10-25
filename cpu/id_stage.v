@@ -59,6 +59,7 @@ module id_stage(
 	output reg [4:0] rd_adr_ex,
 	output reg wbk_rd_reg_ex,
     output reg illegal_ops_ex,
+    output reg [31:0] inst_ex,
 	// from EX
 	input jmp_purge_ma,
 	input jmp_purge_ex,
@@ -307,7 +308,7 @@ wire cmd_all_except_nop =
 	| cmd_csr_id | cmd_ec_id | cmd_ecall_id | cmd_ebreak_id | cmd_uret_id  
 	| cmd_sret_id | cmd_mret_id | cmd_wfi_id;
 
-wire illegal_ops_id = ~(cmd_nop | cmd_all_except_nop) & ~jmp_purge_ma & ~jmp_purge_ex;
+wire illegal_ops_id = ~(cmd_nop | cmd_all_except_nop) & ~jmp_purge_ma & ~jmp_purge_ex & ~stall;
 
 // destination register number
 wire [4:0] rd_adr_id = inst_rd;
@@ -455,6 +456,7 @@ always @ (posedge clk or negedge rst_n) begin
 		rd_adr_ex <= 5'd0;
 		wbk_rd_reg_ex <= 1'b0;
 		pc_ex_pre <= 30'd0;
+		inst_ex <= 32'd0;
      end
 	else if (rst_pipe) begin
         cmd_lui_ex <= 1'b0;
@@ -541,6 +543,7 @@ always @ (posedge clk or negedge rst_n) begin
 		rd_adr_ex <= rd_adr_id;
 		wbk_rd_reg_ex <= wbk_rd_reg_id;
 		pc_ex_pre <= pc_id;
+		inst_ex <= inst_id;
     end
 end
 

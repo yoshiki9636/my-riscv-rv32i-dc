@@ -3,7 +3,7 @@
  *   Control and Status Register Module
  *    Verilog code
  * @auther		Yoshiki Kurokawa <yoshiki.k963@gmail.com>
- * @copylight	2025 Yoshiki Kurokawa
+ * @copylight	2021 Yoshiki Kurokawa
  * @license		https://opensource.org/licenses/MIT     MIT license
  * @version		0.1
  */
@@ -21,9 +21,9 @@ module csr_array(
 	output [31:0] csr_rd_data,
 	output [31:2] csr_mtvec_ex,
 	input g_interrupt,
-	input g_interrupt_1shot,
-	input post_jump_cmd_cond,
+	input post_jump_cmd_cond, // old?
 	input illegal_ops_ex,
+    input [31:0] illegal_ops_inst, // new
 	input g_exception,
 	input [1:0] g_interrupt_priv,
 	input [1:0] g_current_priv,
@@ -32,13 +32,20 @@ module csr_array(
 	input cmd_mret_ex,
 	input cmd_sret_ex,
 	input cmd_uret_ex,
+    output reg csr_rmie, // new
 	output csr_meie,
 	output csr_mtie,
 	output csr_msie,
     input cmd_ecall_ex,
-	input [31:2] pc_excep,
+	//input cmd_ebreak_ex,
+	input [31:2] pc_ex,
 	input stall,
-	input frc_cntr_val_leq
+    input csr_radr_en_mon, // new
+    input [11:0] csr_radr_mon, // new
+    input [11:0] csr_wadr_mon, // new
+    input csr_we_mon, // new
+    input [31:0] csr_wdata_mon, // new
+    output [31:0] csr_rdata_mon // new
 	);
 
 // csr address definition
@@ -46,9 +53,12 @@ module csr_array(
 `define CSR_MSTATUS_ADR 12'h300
 `define CSR_MISA_ADR 12'h301
 `define CSR_MTVEC_ADR 12'h305
+`define CSR_MSCRACH_ADR 12'h340
 `define CSR_MEPC_ADR 12'h341
 `define CSR_MCAUSE_ADR 12'h342
+`define CSR_MTVAL_ADR 12'h343
 `define CSR_MSTATUSH_ADR 12'h310
+`define CSR_SSCRACH_ADR 12'h140
 `define CSR_SEPC_ADR 12'h141
 `define CSR_MIE_ADR 12'h304
 `define CSR_MIP_ADR 12'h344
@@ -70,15 +80,21 @@ wire cmd_rc = (csr_op2_ex[1:0] == 2'b11);
 
 // address decode
 
-wire adr_mstatus = (csr_ofs_ex == `CSR_MSTATUS_ADR);
-wire adr_misa = (csr_ofs_ex == `CSR_MISA_ADR);
-wire adr_mtvec = (csr_ofs_ex == `CSR_MTVEC_ADR);
-wire adr_mepc = (csr_ofs_ex == `CSR_MEPC_ADR);
-wire adr_sepc = (csr_ofs_ex == `CSR_SEPC_ADR);
-wire adr_mcause = (csr_ofs_ex == `CSR_MCAUSE_ADR);
-wire adr_mstatush = (csr_ofs_ex == `CSR_MSTATUSH_ADR);
-wire adr_mip = (csr_ofs_ex == `CSR_MIP_ADR);
-wire adr_mie = (csr_ofs_ex == `CSR_MIE_ADR);
+wire [11:0] csr_ofs_ex_pm = (csr_radr_en_mon) ? csr_radr_mon :
+                            (csr_we_mon) ? csr_wadr_mon : csr_ofs_ex;
+
+wire adr_mstatus = (csr_ofs_ex_pm == `CSR_MSTATUS_ADR);
+wire adr_misa = (csr_ofs_ex_pm == `CSR_MISA_ADR);
+wire adr_mtvec = (csr_ofs_ex_pm == `CSR_MTVEC_ADR);
+wire adr_mscrach = (csr_ofs_ex_pm == `CSR_MSCRACH_ADR);
+wire adr_sscrach = (csr_ofs_ex_pm == `CSR_SSCRACH_ADR);
+wire adr_mepc = (csr_ofs_ex_pm == `CSR_MEPC_ADR);
+wire adr_sepc = (csr_ofs_ex_pm == `CSR_SEPC_ADR);
+wire adr_mcause = (csr_ofs_ex_pm == `CSR_MCAUSE_ADR);
+wire adr_mtval = (csr_ofs_ex_pm == `CSR_MTVAL_ADR);
+wire adr_mstatush = (csr_ofs_ex_pm == `CSR_MSTATUSH_ADR);
+wire adr_mip = (csr_ofs_ex_pm == `CSR_MIP_ADR);
+wire adr_mie = (csr_ofs_ex_pm == `CSR_MIE_ADR);
 
 // read data selector
 wire [31:0] csr_mstatus;
@@ -86,25 +102,42 @@ reg [31:0] csr_mstatush;
 wire [31:0] csr_misa = `CSR_MISA_DATA;
 reg [31:0] csr_mtvec;
 reg [31:2] csr_mepc;
-reg [31:0] csr_mcause;
+reg [6:0] csr_mcause;
+reg [31:0] csr_mtval;
 //wire [31:2] csr_sepc_i = 30'd0;
 assign csr_sepc_ex = 30'd0;
-wire [31:0] csr_mip;
+wire [31:0] csr_mip = 32'h0000_0888;
 wire [31:0] csr_mie;
+reg [31:0] csr_mscrach;
+reg [31:0] csr_sscrach;
 
 wire [31:0] csr_rsel = adr_mstatus ? csr_mstatus :
                        adr_misa ? csr_misa :
-                       adr_mtvec ? csr_mtvec :
+                       adr_mtvec ? { csr_mtvec, 2'b00 } :
                        adr_mepc ? { csr_mepc, 2'b00 } :
                        adr_sepc ? csr_sepc_ex :
-                       adr_mcause ? csr_mcause :
+                       adr_mcause ?  { csr_mcause[6], 25'd0, csr_mcause[5:0] } :
+                       adr_mtval ? csr_mtval :
                        adr_mstatush ? csr_mstatush :
                        adr_mip ? csr_mip :
                        adr_mie ? csr_mie :
+                       adr_mscrach ? csr_mscrach :
+                       adr_sscrach ? csr_sscrach :
                        32'd0;
 
-//immidiate
 assign csr_rd_data = csr_rsel;
+assign csr_rdata_mon = csr_rsel;
+
+//reg [31:0] csrrw_swap_value;
+
+//always @ ( posedge clk or negedge rst_n) begin
+    //if (~rst_n)
+        //csrrw_swap_value <= 32'd0;
+    //else if ( cmd_csr_ex )
+        //csrrw_swap_value <= csr_rsel;
+//end
+
+//assign csr_rd_data = csrrw_swap_value;
 
 // wirte data selector 
 wire [31:0] wdata_rw = immidiate ? { 27'd0, csr_uimm_ex } : rs1_sel;
@@ -125,13 +158,17 @@ reg csr_spie;
 reg [1:0] csr_mpp;
 reg csr_spp;
 
-wire frc_cntr_val_leq_1shot;
-
 // MIE[3] : Machine mode Global Interrupt enable
-wire m_interrupt = (g_interrupt_1shot | frc_cntr_val_leq_1shot) & (g_interrupt_priv == `M_MODE);
+//wire m_interrupt = g_interrupt & (g_interrupt_priv == `M_MODE);
+//wire m_interrupt =  (interrupts_in_pc_state & (g_interrupt_priv == `M_MODE) | cmd_ecall_ex | cmd_ebreak_ex ) & cpu_stat_pc & csr_rmie | g_exception;
+wire m_interrupt =  (g_interrupt & (g_interrupt_priv == `M_MODE) | cmd_ecall_ex) & csr_rmie | g_exception;
 wire rmie_wr = m_interrupt | cmd_mret_ex;
-wire rmie_value = m_interrupt ? 1'b0 :
-                 cmd_mret_ex ? csr_mpie : csr_rmie;
+//wire rmie_value = m_interrupt ? 1'b0 :
+                 //cmd_mret_ex ? csr_mpie : csr_rmie;
+wire pc_int_ecall_syn_end = 1'b0; // temp fixed
+wire rmie_value = pc_int_ecall_syn_end ? 1'b0 :
+                  cmd_mret_ex ? csr_mpie :
+                  m_interrupt ? 1'b0 : csr_rmie;
 
 always @ ( posedge clk or negedge rst_n) begin 
 	if (~rst_n) begin
@@ -143,6 +180,9 @@ always @ ( posedge clk or negedge rst_n) begin
 	else if (mstatus_wr) begin
 		csr_rmie <= wdata_all[3];
 	end
+    else if (csr_we_mon & adr_mstatus) begin
+        csr_rmie <= csr_wdata_mon[3];
+    end
 end
 
 // MPIE[7] : Machine mode Previouse Interrupt Enable
@@ -160,11 +200,18 @@ always @ ( posedge clk or negedge rst_n) begin
 	else if (mstatus_wr) begin
 		csr_mpie <= wdata_all[7];
 	end
+    else if (csr_we_mon & adr_mstatus) begin
+        csr_mpie <= csr_wdata_mon[7];
+    end
 end
 
 // MPP[12:11] : Machine mode Previouse Privilege
 wire mpp_wr = m_interrupt | cmd_mret_ex;
-wire [1:0] mpp_value = m_interrupt ? g_current_priv :
+//wire [1:0] mpp_value = m_interrupt ? g_current_priv :
+                       //cmd_mret_ex ? `M_MODE : // currently only M_MODE support
+                       //csr_mpp;
+wire [1:0] mpp_value = pc_int_ecall_syn_end ? csr_mpp :
+                       m_interrupt ? g_current_priv :
                        cmd_mret_ex ? `M_MODE : // currently only M_MODE support
                        csr_mpp;
 
@@ -178,10 +225,14 @@ always @ ( posedge clk or negedge rst_n) begin
 	else if (mstatus_wr) begin
 		csr_mpp <= wdata_all[12:11];
 	end
+    else if (csr_we_mon & adr_mstatus) begin
+        csr_mpp <= csr_wdata_mon[12:11];
+    end
 end
 
 // SIE[1] : Supervisor mode Global Interrupt enable : currently not used
-wire s_interrupt = (g_interrupt_1shot | frc_cntr_val_leq) & (g_interrupt_priv == `S_MODE);
+//wire s_interrupt = g_interrupt & (g_interrupt_priv == `S_MODE);
+wire s_interrupt = g_interrupt & (g_interrupt_priv == `S_MODE) & csr_sie;
 wire sie_wr = s_interrupt | cmd_sret_ex;
 wire sie_value = s_interrupt ? 1'b0 :
                  cmd_sret_ex ? csr_spie : csr_sie;
@@ -196,6 +247,9 @@ always @ ( posedge clk or negedge rst_n) begin
 	else if (mstatus_wr) begin
 		csr_sie <= wdata_all[1];
 	end
+    else if (csr_we_mon & adr_mstatus) begin
+        csr_sie <= csr_wdata_mon[1];
+    end
 end
 
 // SPIE[5] : Supervisor mode Previouse Interrupt Enable
@@ -213,6 +267,9 @@ always @ ( posedge clk or negedge rst_n) begin
 	else if (mstatus_wr) begin
 		csr_spie <= wdata_all[5];
 	end
+    else if (csr_we_mon & adr_mstatus) begin
+        csr_spie <= csr_wdata_mon[5];
+    end
 end
 
 
@@ -235,6 +292,9 @@ always @ ( posedge clk or negedge rst_n) begin
 		//csr_spp <= wdata_all[8];
 		csr_spp <= 1'b0;
 	end
+    else if (csr_we_mon & adr_mstatus) begin
+        csr_spp <= csr_wdata_mon[8];
+    end
 end
 
 assign csr_mstatus = { 18'd0, csr_mpp, 2'b00, csr_spp, 1'b0, csr_mpie,
@@ -248,7 +308,7 @@ assign csr_mstatus = { 18'd0, csr_mpp, 2'b00, csr_spp, 1'b0, csr_mpie,
 
 // MISA : currently implimented as read-only
 
-wire [30:0] mcause_code;
+wire [5:0] mcause_code;
 
 // mtvec
 always @ ( posedge clk or negedge rst_n) begin   
@@ -256,12 +316,39 @@ always @ ( posedge clk or negedge rst_n) begin
 		csr_mtvec <= 32'd0;
 	end
 	else if ((~stall)&(cmd_csr_ex)&(adr_mtvec)) begin
-		csr_mtvec <= wdata_all[31:0];
+		csr_mtvec <= wdata_all;
 	end
+    else if (csr_we_mon & adr_mtvec) begin
+        csr_mtvec <= csr_wdata_mon;
+    end
 end
 
-assign csr_mtvec_ex = (csr_mtvec[1:0] == 2'd0) ? csr_mtvec[31:2] :
-                      (csr_mtvec[1:0] == 2'd1) ? csr_mtvec[31:2] + mcause_code[29:0] : 30'd0;
+//assign csr_mtvec_ex = csr_mtvec[31:2];
+assign csr_mtvec_ex = (csr_mtvec[1:0] == 2'd0) ? csr_mtvec[31:2] : csr_mtvec[31:2] + { 24'd0, mcause_code[5:0] };
+
+//assign pc_csr_mtvec = csr_mtvec[31:2];
+
+// mscrach
+// scrach register for m-mode
+always @ ( posedge clk or negedge rst_n) begin
+    if (~rst_n)
+        csr_mscrach <= 32'd0;
+    else if ((cmd_csr_ex)&(adr_mscrach))
+        csr_mscrach <= wdata_all;
+    else if (csr_we_mon & adr_mscrach)
+        csr_mscrach <= csr_wdata_mon;
+end
+
+// sscrach
+// scrach register for s-mode
+always @ ( posedge clk or negedge rst_n) begin
+    if (~rst_n)
+        csr_sscrach <= 32'd0;
+    else if ((cmd_csr_ex)&(adr_sscrach))
+        csr_sscrach <= wdata_all;
+    else if (csr_we_mon & adr_sscrach)
+        csr_sscrach <= csr_wdata_mon;
+end
 
 
 // mepc
@@ -272,36 +359,73 @@ always @ ( posedge clk or negedge rst_n) begin
 	if (~rst_n) begin
 		csr_mepc <= 30'd0;
 	end
-	else if (cmd_ecall_ex | m_interrupt | g_exception) begin
+	else if ( m_interrupt ) begin
 		csr_mepc <= sel_pc_ex;
 	end
 	else if ((~stall)&(cmd_csr_ex)&(adr_mepc)) begin
 		csr_mepc <= wdata_all[31:2];
 	end
+    else if (csr_we_mon & adr_mepc) begin
+        csr_mepc <= csr_wdata_mon[31:2];
+    end
 end
 
 assign csr_mepc_ex = csr_mepc[31:2];
 
 // mcause
 // conditions
-wire interrupt_bit = g_interrupt | frc_cntr_val_leq;
+wire interrupt_bit = g_interrupt;
+//wire interrupt_bit = g_interrupt | frc_cntr_val_leq;
 // just impliment Machine mode Ecall and inteeupt
-assign mcause_code = g_interrupt ? 31'd11 :
-                    frc_cntr_val_leq ? 31'd7 :
-                    illegal_ops_ex ? 31'd2 :
-                    cmd_ecall_ex ?  31'd3 : 31'd0;
-wire mcause_write = cmd_ecall_ex | g_interrupt_1shot | g_exception | frc_cntr_val_leq_1shot | illegal_ops_ex;
+//wire [30:0] mcause_code = g_interrupt ? 31'd11 :
+						  //illegal_ops_ex ? 31'd2 :
+                          //cmd_ecall_ex ?  31'd3 : 31'd0;
+
+assign mcause_code = g_interrupt ? 6'd11 :
+                     //frc_cntr_val_leq ? 6'd7 :
+                     cmd_ecall_ex ?  6'd11 :
+                     //cmd_ebreak_ex ?  6'd3 :
+                     illegal_ops_ex ? 6'd2 : 6'h3f;
+
+wire [31:0] sel_tval = (g_interrupt) ? 32'd0 :
+                       illegal_ops_ex ? illegal_ops_inst : 32'd0;
+//wire [31:0] sel_tval = (g_interrupt | frc_cntr_val_leq) ? 32'd0 :
+                       //cmd_ebreak_ex ? { pc_ebreak, 2'd0 } :
+
+
+//wire mcause_write = cmd_ecall_ex | g_interrupt | g_exception;
+//wire mcause_write = (cmd_ecall_ex | cmd_ebreak_ex | g_interrupt) & csr_rmie | g_exception;
+wire mcause_write = (cmd_ecall_ex | g_interrupt) & csr_rmie | g_exception;
 
 always @ ( posedge clk or negedge rst_n) begin   
 	if (~rst_n) begin
-		csr_mcause <= 32'd0;
+		csr_mcause <= 7'd0;
 	end
 	else if (mcause_write) begin
 		csr_mcause <= { interrupt_bit, mcause_code };
 	end
 	else if ((~stall)&(cmd_csr_ex)&(adr_mcause)) begin
-		csr_mcause <= wdata_all;
+		csr_mcause <= { wdata_all[31], wdata_all[5:0] };
 	end
+    else if (csr_we_mon & adr_mcause) begin
+        csr_mcause <= { csr_wdata_mon[31], csr_wdata_mon[5:0] };
+    end
+end
+
+// mtval
+always @ ( posedge clk or negedge rst_n) begin
+    if (~rst_n) begin
+        csr_mtval <= 32'd0;
+    end
+    else if (mcause_write) begin
+        csr_mtval <= sel_tval;
+    end
+    else if ((cmd_csr_ex)&(adr_mtval)) begin
+        csr_mtval <= wdata_all;
+    end
+    else if (csr_we_mon & adr_mtval) begin
+        csr_mtval <= csr_wdata_mon;
+    end
 end
 
 // mstatush
@@ -314,6 +438,9 @@ always @ ( posedge clk or negedge rst_n) begin
 	else if ((~stall)&(cmd_csr_ex)&(adr_mstatush)) begin
 		csr_mstatush <= { wdata_all[31:6], 2'b00, wdata_all[3:0] };
 	end
+    else if (csr_we_mon & adr_mstatush) begin
+        csr_mstatush <= { csr_wdata_mon[31:6], 2'b00, csr_wdata_mon[3:0] };
+    end
 end
 
 // currently unuesd the privileges
@@ -321,22 +448,22 @@ end
 // medelg, mideleg  is not need when the CPU dows not support S-MODE
 
 // mip resister : currently read only register because of only M-mode is supported
-// MEIP,MTIP,MSIP is set to 1 others are set to 0
-
-
-// mip register
-assign csr_mip = { 4'd0, g_interrupt, 3'd0, frc_cntr_val_leq, 3'd0, g_exception, 3'd0 };
+//assign csr_mip = { 20'd0, g_interrupt, 3'd0, frc_cntr_val_leq, 3'd0, g_exception, 3'd0 };
+assign csr_mip = { 20'd0, g_interrupt, 3'd0, 1'b0, 3'd0, g_exception, 3'd0 };
 
 // mie register
 reg [2:0] csr_mie_bits;
 
-always @ ( posedge clk or negedge rst_n) begin   
-	if (~rst_n) begin
-		csr_mie_bits <= 32'd0;
-	end
-	else if ((~stall)&(cmd_csr_ex)&(adr_mie)) begin
-		csr_mie_bits <= { wdata_all[11], wdata_all[7], wdata_all[3] };
-	end
+always @ ( posedge clk or negedge rst_n) begin
+    if (~rst_n) begin
+        csr_mie_bits <= 32'd0;
+    end
+    else if ((cmd_csr_ex)&(adr_mie)) begin
+        csr_mie_bits <= { wdata_all[11], wdata_all[7], wdata_all[3] };
+    end
+    else if (csr_we_mon & adr_mie) begin
+        csr_mie_bits <= { csr_wdata_mon[11], csr_wdata_mon[7], csr_wdata_mon[3] };
+    end
 end
 
 assign csr_mie = { 4'd0, csr_mie_bits[2], 3'd0, csr_mie_bits[1], 3'd0, csr_mie_bits[0], 3'd0 };
@@ -345,28 +472,18 @@ assign csr_meie = csr_mie_bits[2];
 assign csr_mtie = csr_mie_bits[1];
 assign csr_msie = csr_mie_bits[0];
 
+
 // pc control for mepc
 reg [31:2] post_pc_ex;
 
-always @ ( posedge clk or negedge rst_n) begin
-	if (~rst_n)
+always @ ( posedge clk or negedge rst_n) begin   
+	if (~rst_n) begin
 		post_pc_ex <= 30'd0;
-	else
-		post_pc_ex <= pc_excep;
+	end
+	else 
+		post_pc_ex <= pc_ex;
 end
 
-assign sel_pc_ex = post_jump_cmd_cond ? post_pc_ex : pc_excep;
-
-// make 1shot of frc_cntr_val_leq
-reg frc_cntr_val_leq_dly;
-
-always @ ( posedge clk or negedge rst_n) begin
-	if (~rst_n)
-		frc_cntr_val_leq_dly <= 1'b0;
-	else
-		frc_cntr_val_leq_dly <= frc_cntr_val_leq;
-end
-
-assign frc_cntr_val_leq_1shot = frc_cntr_val_leq & ~frc_cntr_val_leq_dly;
+assign sel_pc_ex = post_jump_cmd_cond ? post_pc_ex : pc_ex;
 
 endmodule

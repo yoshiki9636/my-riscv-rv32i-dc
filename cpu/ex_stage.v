@@ -57,7 +57,6 @@ module ex_stage(
     input illegal_ops_ex,
 	input [4:0] rd_adr_ex,
 	input wbk_rd_reg_ex,
-	
 	// from forwarding
 	input hit_rs1_idex_ex,
 	input hit_rs1_idma_ex,
@@ -90,7 +89,6 @@ module ex_stage(
 	output [31:2] csr_sepc_ex,
 	// from somewhere...
 	input g_interrupt,
-	input g_interrupt_1shot,
 	input [1:0] g_interrupt_priv,
 	input [1:0] g_current_priv,
     input post_jump_cmd_cond,
@@ -98,7 +96,16 @@ module ex_stage(
     output csr_meie,
     output csr_mtie,
     output csr_msie,
-    input frc_cntr_val_leq,
+	// new signals
+	input [31:0] illegal_ops_inst, // new
+	output csr_rmie, // new
+    input csr_radr_en_mon, // new
+    input [11:0] csr_radr_mon, // new
+    input [11:0] csr_wadr_mon, // new
+    input csr_we_mon, // new
+    input [31:0] csr_wdata_mon, // new
+    output [31:0] csr_rdata_mon, // new
+	
 	// to ID
 	output reg jmp_purge_ma,
 	output jmp_purge_ex,
@@ -222,7 +229,8 @@ wire [31:0] jump_adr = adr_s1 + adr_s2;
 // csrs , ecall
 wire [31:0] csr_rd_data;
 
-csr_array csr_array (
+
+csr_array csr_array(
 	.clk(clk),
 	.rst_n(rst_n),
 	.cmd_csr_ex(cmd_csr_ex),
@@ -233,25 +241,30 @@ csr_array csr_array (
 	.csr_rd_data(csr_rd_data),
 	.csr_mtvec_ex(csr_mtvec_ex),
 	.g_interrupt(g_interrupt),
-	.g_interrupt_1shot(g_interrupt_1shot),
-	.g_interrupt_priv(g_interrupt_priv),
-	.g_current_priv(g_current_priv),
 	.post_jump_cmd_cond(post_jump_cmd_cond),
 	.illegal_ops_ex(illegal_ops_ex),
+	.illegal_ops_inst(illegal_ops_inst), // new
 	.g_exception(g_exception),
+	.g_interrupt_priv(g_interrupt_priv),
+	.g_current_priv(g_current_priv),
 	.csr_mepc_ex(csr_mepc_ex),
 	.csr_sepc_ex(csr_sepc_ex),
-    .cmd_mret_ex(cmd_mret_ex),
-    .cmd_sret_ex(cmd_sret_ex),
-    .cmd_uret_ex(cmd_uret_ex),
-    .csr_meie(csr_meie),
-    .csr_mtie(csr_mtie),
-    .csr_msie(csr_msie),
-	//.csr_mie(csr_mie),
-    .cmd_ecall_ex(cmd_ecall_ex),
-	.pc_excep(pc_ex),
+	.cmd_mret_ex(cmd_mret_ex),
+	.cmd_sret_ex(cmd_sret_ex),
+	.cmd_uret_ex(cmd_uret_ex),
+	.csr_rmie(csr_rmie), // new
+	.csr_meie(csr_meie),
+	.csr_mtie(csr_mtie),
+	.csr_msie(csr_msie),
+	.cmd_ecall_ex(cmd_ecall_ex),
+	.pc_ex(pc_ex),
 	.stall(stall),
-	.frc_cntr_val_leq(frc_cntr_val_leq)
+	.csr_radr_en_mon(csr_radr_en_mon), // new
+	.csr_radr_mon(csr_radr_mon), // new
+	.csr_wadr_mon(csr_wadr_mon), // new
+	.csr_we_mon(csr_we_mon), // new
+	.csr_wdata_mon(csr_wdata_mon), // new
+	.csr_rdata_mon(csr_rdata_mon) // new
 	);
 
 // exception block
