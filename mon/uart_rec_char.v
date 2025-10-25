@@ -84,13 +84,13 @@ begin
 		8'h65 : data_decoder = 27'b000_0000_0000_0100_0000_0000_0000; // e
 		8'h66 : data_decoder = 27'b000_0000_0000_1000_0000_0000_0000; // f
 		8'h67 : data_decoder = 27'b000_0000_0001_0000_0000_0000_0000; // g : go PC to address (run program)
-		8'h03 : data_decoder = 27'b000_0000_0010_0000_0000_0000_0000; // Ctrl-c : quit,stop,finish
+		8'h03 : data_decoder = 27'b000_0000_0010_0000_0000_0000_0000; // Ctri-c : quit,stop,finish
 		8'h77 : data_decoder = 27'b000_0000_0100_0000_0000_0000_0000; // w : write data memory
 		8'h72 : data_decoder = 27'b000_0000_1000_0000_0000_0000_0000; // r : read data memory and dump
 		8'h74 : data_decoder = 27'b000_0001_0000_0000_0000_0000_0000; // t : trushed memory and 0 clear
-		8'h73 : data_decoder = 27'b000_0010_0000_0000_0000_0000_0000; // s : step execution
-		8'h70 : data_decoder = 27'b000_0100_0000_0000_0000_0000_0000; // p : read instruction memory
-		8'h69 : data_decoder = 27'b000_1000_0000_0000_0000_0000_0000; // i : write instruction memory		
+		8'h73 : data_decoder = 27'b000_0010_0000_0000_0000_0000_0000; // s : set break point
+		8'h70 : data_decoder = 27'b000_0100_0000_0000_0000_0000_0000; // p : read IO
+		8'h69 : data_decoder = 27'b000_1000_0000_0000_0000_0000_0000; // i : write IO
 		8'h6a : data_decoder = 27'b001_0000_0000_0000_0000_0000_0000; // j : print PC
 		8'h7a : data_decoder = 27'b010_0000_0000_0000_0000_0000_0000; // z : flush all D-cache
 		8'h0d : data_decoder = 27'b100_0000_0000_0000_0000_0000_0000; // CR : change to CRLF
@@ -145,7 +145,7 @@ wire cmd_crlf = decode_bits[26] & data_en;
 
 // command format
 // g : goto PC address ( run program until quit ) : format:  g <start addess>
-// Ctrl-c : quit from any command                 : format:  Ctrl-c
+// q : quit from any command                      : format:  q
 // w : write date to memory                       : format:  w <start adderss> <data> ....<data> q
 // r : read data from memory                      : format:  r <start address> <end adderss>
 // t : trashed memory data and 0 clear            : format:  t
