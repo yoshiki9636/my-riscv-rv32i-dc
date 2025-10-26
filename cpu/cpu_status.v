@@ -21,6 +21,7 @@ module cpu_status(
 	input cpu_start,
 	input [31:2] start_adr,
 	input quit_cmd,
+	output reg cpu_run_state,
 	// to CPU
 	output pc_start,
 	output reg [31:2] start_adr_lat,
@@ -47,7 +48,7 @@ always @ (posedge clk or negedge rst_n) begin
 		start_adr_lat <= start_adr;
 end
 
-reg cpu_run_state;
+//reg cpu_run_state;
 reg cpu_run_state_lat;
 reg cpu_start_lat;
 

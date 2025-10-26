@@ -71,8 +71,8 @@ begin
 		end
 		`REQC_MBOUT: begin
     		case(a_ready)
-				2'b0: reqc_m_decode = `REQC_MBOUT;
-				2'b1: reqc_m_decode = `REQC_MIDLE;
+				1'b0: reqc_m_decode = `REQC_MBOUT;
+				1'b1: reqc_m_decode = `REQC_MIDLE;
 				default: reqc_m_decode = `REQC_MDEFO;
     		endcase
 		end
@@ -112,6 +112,7 @@ wire [145:0] in_id_data = { id_cntr, in_mask, in_data };
 wire [145:0] out_id_data;
 wire empty_rq;
 wire qfull_rq_dmy;
+wire qfull_rq_dmy2;
 wire empty_rq_dmy;
 wire [31:0] out_addr;
 
@@ -140,7 +141,7 @@ sfifo
     .clk(clk),
     .rst_n(rst_n),
     .wen(start_rq),
-    .wqfull(qfull_rq),
+    .wqfull(qfull_rq_dmy2),
     .wdata(in_id_data),
     .rnext(ren_id_data),
     .rqempty(empty_rq_dmy),

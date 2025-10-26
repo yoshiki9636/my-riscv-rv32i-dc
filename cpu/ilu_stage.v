@@ -28,7 +28,7 @@ module ilu_stage
     //output ic_st_ok,
 	// IC controls
 	output ic_tag_hit_id,
-	output ic_st_wt_id,
+	//output ic_st_wt_id,
 	// tiny AXI read bus i/f
 	output icr_start_rq,
 	output [31:0] ic_rin_addr,
@@ -56,6 +56,7 @@ wire [27:IWIDTH+2] ic_tag_wadr;
 wire [IWIDTH+1:4] ic_index_wadr;
 wire [27:IWIDTH+2] ic_tag_radr;
 wire ic_cache_valid_id;
+wire ic_tag_wen;
 
 ic_tag_1r1w #(.IRWIDTH(IWIDTH-2)) ic_tag_1r1w (
 	.clk(clk),
@@ -115,7 +116,7 @@ reg [IWIDTH+1:4] ic_index_adr_dly;
 
 always @ (posedge clk or negedge rst_n) begin
     if (~rst_n)
-        ic_index_adr_dly <= { (IWIDTH-3){ 1'b0 }};
+        ic_index_adr_dly <= { (IWIDTH-2){ 1'b0 }};
 	//else if (~ic_stall & ~ic_stall_fin )
 	else
         ic_index_adr_dly <= ic_index_adr;
@@ -213,7 +214,7 @@ assign ic_sel_tag = ((ic_miss_current != `ICMS_LDRD)&(ic_miss_current != `ICMS_I
 //assign ic_st_ok = (dc_miss_current != `ICMS_MEMR);
 
 // store data write timing
-assign ic_st_wt_id = (ic_miss_current != `ICMS_ICWT);
+//assign ic_st_wt_id = (ic_miss_current != `ICMS_ICWT);
 
 // load issue timing
 assign ic_stall_fin = (ic_miss_current == `ICMS_ICW3);

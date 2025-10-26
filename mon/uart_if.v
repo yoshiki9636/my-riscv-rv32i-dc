@@ -25,7 +25,8 @@ module uart_if(
 	output tx_fifo_full,
 	output tx_fifo_overrun,
 	output tx_fifo_underrun,
-	output [2:0] rx_fifo_rcntrs
+	output [2:0] rx_fifo_rcntrs,
+	input [15:0] uart_term
 
 	);
 	
@@ -62,8 +63,12 @@ module uart_if(
 //`define TERM 109
 //`define HARF 54
 // clk 50MHz, 921600bps
-`define TERM 54
-`define HARF 27
+//`define TERM 54
+//`define HARF 27
+
+// clk 100MHz, 921600bps
+//`define TERM 109
+//`define HARF 54
 
 
 
@@ -150,9 +155,9 @@ always @ (posedge clk or negedge rst_n) begin
 	if (~rst_n)
 		sample_cntr <= 16'd0;
 	else if (start_trg)
-		sample_cntr <= `HARF;
+		sample_cntr <= {1'b0, uart_term[15:1]};
 	else if (start_ok | get_bit)
-		sample_cntr <= `TERM;
+		sample_cntr <= uart_term;
 	else if (sample_cntr == 16'd0)
 		sample_cntr <= 16'd0;
 	else
@@ -359,7 +364,7 @@ always @ (posedge clk or negedge rst_n) begin
 	if (~rst_n)
 		tx_cycle_cntr <= 16'd0;
 	else if (tx_start_cycle)
-		tx_cycle_cntr <= `TERM;
+		tx_cycle_cntr <= uart_term;
 	else if (tx_cycle_cntr == 16'd0)
 		tx_cycle_cntr <= 16'd0;
 	else
@@ -404,7 +409,7 @@ reg [9:0] tx_out_data;
 
 always @ (posedge clk or negedge rst_n) begin
 	if (~rst_n)
-		tx_out_data <= 9'd1;
+		tx_out_data <= 10'd1;
 	else if (tx_cntr_start)
 		tx_out_data <= { 1'b1, tx_rdata, 1'b0 };
 	else if (tx_cntr_next)

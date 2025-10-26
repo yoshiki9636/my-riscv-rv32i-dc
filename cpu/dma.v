@@ -81,7 +81,7 @@ always @ ( posedge clk or negedge rst_n) begin
 end
 
 assign dma_io_rdata = status_re ? { 16'd0, 14'd0, write_run, read_run } :
-					  io_start_adr_re ? { 10'd0, io_start_adr, 2'b00 } :
+					  io_start_adr_re ? { 12'd0, io_start_adr, 2'b00 } :
 					  mem_start_adr_re ? { { 30-DWIDTH{1'b0}}, mem_start_adr, 2'b00 } :
 					  dcntr_re ? {  { 31-DWIDTH{1'b0}}, dcntr } : dma_io_rdata_in;
 
@@ -270,7 +270,7 @@ assign dataram_wdata_ma = ibus32_rdata;
 assign dma_we_ma = read_run_l2;
 assign dma_re_ma = write_run;
 
-assign dataram_wadr_ma = { 2'd0, mem_w_adr };
-assign dataram_radr_ma = { 2'd0, mem_r_adr };
+assign dataram_wadr_ma = { 1'd0, mem_w_adr };
+assign dataram_radr_ma = { 1'd0, mem_r_adr };
 
 endmodule

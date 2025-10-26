@@ -38,7 +38,7 @@ begin
 		2'd1: ld_byte_aligner = ld_data_wb[15:8];
 		2'd2: ld_byte_aligner = ld_data_wb[23:16];
 		2'd3: ld_byte_aligner = ld_data_wb[31:24];
-		default: ld_byte_aligner = 4'd0;
+		default: ld_byte_aligner = 8'd0;
 	endcase
 end
 endfunction
@@ -54,7 +54,7 @@ begin
 	case(adr_ofs)
 		1'd0: ld_half_aligner = ld_data_wb[15:0];
 		1'd1: ld_half_aligner = ld_data_wb[31:16];
-		default: ld_half_aligner = 32'd0;
+		default: ld_half_aligner = 16'd0;
 	endcase
 end
 endfunction

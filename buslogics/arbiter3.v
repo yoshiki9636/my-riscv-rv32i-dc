@@ -42,7 +42,7 @@ wire finish = finish0 | finish1 | finish2;
 // round robin state machine
 reg [2:0] arbit3_current;
 
-function [10:0] arbit3_decode;
+function [2:0] arbit3_decode;
 input [2:0] arbit3_current;
 input req0;
 input req1;

@@ -180,7 +180,7 @@ reg [3:0] next_rid_lat;
 
 always @ (posedge clk or negedge rst_n) begin
     if (~rst_n)
-        next_rid_lat <= 3'd0;
+        next_rid_lat <= 4'd0;
     else if ( next_rrq )
         next_rid_lat <= next_rid;
 end

@@ -106,16 +106,16 @@ reg [6:0] csr_mcause;
 reg [31:0] csr_mtval;
 //wire [31:2] csr_sepc_i = 30'd0;
 assign csr_sepc_ex = 30'd0;
-wire [31:0] csr_mip = 32'h0000_0888;
+wire [31:0] csr_mip;
 wire [31:0] csr_mie;
 reg [31:0] csr_mscrach;
 reg [31:0] csr_sscrach;
 
 wire [31:0] csr_rsel = adr_mstatus ? csr_mstatus :
                        adr_misa ? csr_misa :
-                       adr_mtvec ? { csr_mtvec, 2'b00 } :
+                       adr_mtvec ? csr_mtvec :
                        adr_mepc ? { csr_mepc, 2'b00 } :
-                       adr_sepc ? csr_sepc_ex :
+                       adr_sepc ? { csr_sepc_ex, 2'b00 } :
                        adr_mcause ?  { csr_mcause[6], 25'd0, csr_mcause[5:0] } :
                        adr_mtval ? csr_mtval :
                        adr_mstatush ? csr_mstatush :
@@ -151,7 +151,7 @@ wire [31:0] wdata_all = cmd_rw ? wdata_rw :
 // mstatus
 wire mstatus_wr =(~stall)&(cmd_csr_ex)&(adr_mstatus);
 
-reg csr_rmie;
+//reg csr_rmie;
 reg csr_sie;
 reg csr_mpie;
 reg csr_spie;
@@ -276,9 +276,9 @@ end
 // SPP[8] : Supervisor mode Previouse Privilege
 // cueerntly fixed 0 because it dows not support S-mode
 wire spp_wr = s_interrupt | cmd_sret_ex;
-wire spp_value = s_interrupt ? g_current_priv :
-                 cmd_sret_ex ? `U_MODE : // need to check when use the value
-                 csr_spp;
+//wire [1:0] spp_value = s_interrupt ? g_current_priv :
+                 //cmd_sret_ex ? `U_MODE : // need to check when use the value
+                 //csr_spp;
 
 always @ ( posedge clk or negedge rst_n) begin 
 	if (~rst_n) begin
@@ -456,7 +456,7 @@ reg [2:0] csr_mie_bits;
 
 always @ ( posedge clk or negedge rst_n) begin
     if (~rst_n) begin
-        csr_mie_bits <= 32'd0;
+        csr_mie_bits <= 3'd0;
     end
     else if ((cmd_csr_ex)&(adr_mie)) begin
         csr_mie_bits <= { wdata_all[11], wdata_all[7], wdata_all[3] };
@@ -466,7 +466,7 @@ always @ ( posedge clk or negedge rst_n) begin
     end
 end
 
-assign csr_mie = { 4'd0, csr_mie_bits[2], 3'd0, csr_mie_bits[1], 3'd0, csr_mie_bits[0], 3'd0 };
+assign csr_mie = { 20'd0, csr_mie_bits[2], 3'd0, csr_mie_bits[1], 3'd0, csr_mie_bits[0], 3'd0 };
 
 assign csr_meie = csr_mie_bits[2];
 assign csr_mtie = csr_mie_bits[1];

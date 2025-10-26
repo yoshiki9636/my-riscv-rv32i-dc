@@ -78,7 +78,7 @@ reg [3:0] finish_id_lat;
 
 always @ (posedge clk or negedge rst_n) begin
     if (~rst_n)
-        finish_id_lat <= 3'd0;
+        finish_id_lat <= 4'd0;
     else if ( finish_wd )
         finish_id_lat <= finish_id;
 end

@@ -26,7 +26,7 @@ wire [31:0] ram_rdata1;
 wire [31:0] ram_rdata2;
 wire [31:0] ram_rdata3;
 
-assign ram_rdata_all = {ram_rdata3, ram_rdata2, ram_rdata1, ram_rdata0};
+//assign ram_rdata_all = {ram_rdata3, ram_rdata2, ram_rdata1, ram_rdata0};
 
 reg [1:0] ram_rd_sel;
 always @ (posedge clk or negedge rst_n) begin

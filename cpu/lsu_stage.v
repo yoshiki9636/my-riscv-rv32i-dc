@@ -75,6 +75,7 @@ wire [27:DWIDTH+2] dc_tag_wadr;
 wire [DWIDTH+1:4] dc_index_wadr;
 wire [27:DWIDTH+2] dc_tag_radr;
 wire dc_cache_valid_ma;
+wire tag_wen;
 
 tag_1r1w #(.DRWIDTH(DWIDTH-2)) tag_1r1w (
 	.clk(clk),
@@ -326,7 +327,7 @@ end
 
 assign dcflush_running = dcflush_cntr_not0 | dcflush_cntr_not0_dly;
 
-wire dcflush_wreq_pre = dcflush_running & (dcflush_cntr_dly != dcflush_cntr_not0_dly);
+wire dcflush_wreq_pre = dcflush_running & dcflush_cntr_not0_dly;
 
 always @ (posedge clk or negedge rst_n) begin
     if (~rst_n)

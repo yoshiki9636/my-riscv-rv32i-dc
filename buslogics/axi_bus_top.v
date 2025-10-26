@@ -326,7 +326,7 @@ assign ic_arready = arready;
 assign dc_arready = arready;
 assign uart_arready = arready;
 assign arid = sel_rd[0] ? dc_arid : sel_rd[1] ? uart_arid : sel_rd[2] ? ic_arid : 4'd0;
-assign araddr = sel_rd[0] ? dc_araddr : sel_rd[1] ? uart_araddr : sel_rd[2] ? ic_araddr : 1'b0;
+assign araddr = sel_rd[0] ? dc_araddr : sel_rd[1] ? uart_araddr : sel_rd[2] ? ic_araddr : 32'd0;
     // read data
 assign ic_rvalid = rvalid;
 assign dc_rvalid = rvalid;

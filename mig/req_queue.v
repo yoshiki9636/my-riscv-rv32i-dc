@@ -49,8 +49,8 @@ always @ (posedge mclk or negedge mrst_n) begin
 		collision_selw  <= 1'b0;
 end
 
-assign selr = (collision ? ~collision_selw : rcmd_wen) & ~wqfull;
-assign selw = (collision ?  collision_selw : wcmd_wen) & ~wqfull;
+wire selr = (collision ? ~collision_selw : rcmd_wen) & ~wqfull;
+wire selw = (collision ?  collision_selw : wcmd_wen) & ~wqfull;
 
 assign qw_rd_bwt_addr = selr ? { 1'b1, raddr } :
                         selw ? { 1'b0, waddr } : 33'd0;
@@ -118,7 +118,7 @@ end
 reg rwait;
 assign wqfull = (ppcntr >= 4'd8);
 
-assign rqempty_pre = (ppcntr == 4'd0);
+wire rqempty_pre = (ppcntr == 4'd0);
 assign rqempty = rqempty_pre | rwait;
 
 // wait cycle

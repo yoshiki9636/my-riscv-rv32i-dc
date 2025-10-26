@@ -72,6 +72,13 @@ module id_stage(
 	output [4:0] inst_rs2_id,
 	output inst_rs1_valid,
 	output inst_rs2_valid,
+	// to monitor
+    input rf_radr_en_mon,
+    input [4:0] rf_radr_mon,
+    input [4:0] rf_wadr_mon,
+    input rf_we_mon,
+    input [31:0] rf_wdata_mon,
+    output [31:0] rf_rdata_mon,
 	// stall
 	input stall,
 	input stall_1shot,
@@ -328,6 +335,8 @@ assign inst_rs1_valid = cmd_alui_id | cmd_alui_shamt_id | cmd_alu_id | cmd_csr_i
 
 assign inst_rs2_valid = cmd_alu_id | cmd_st_id | cmd_br_id;
 
+wire [4:0] inst_rs1_mon = rf_radr_en_mon ? rf_radr_mon : inst_rs1;
+
 // zero register
 
 wire rs1_zero = ( inst_rs1 == 5'd0);
@@ -353,19 +362,26 @@ end
 wire [31:0] ram_data1;
 wire [31:0] ram_data2;
 
+// selrctor for monitor
+
+wire wbk_rd_reg_wb_mon = wbk_rd_reg_wb | rf_we_mon;
+wire [4:0] rd_adr_wb_mon = wbk_rd_reg_wb ? rd_adr_wb : rf_wadr_mon;
+wire [31:0] wbk_data_wb_mon = wbk_rd_reg_wb ? wbk_data_wb : rf_wdata_mon;
 
 // register file
 
 rf_2r1w rf_2r1w (
 	.clk(clk),
-	.ram_radr1(inst_rs1),
+	.ram_radr1(inst_rs1_mon),
 	.ram_rdata1(ram_data1),
 	.ram_radr2(inst_rs2),
 	.ram_rdata2(ram_data2),
-	.ram_wadr(rd_adr_wb),
-	.ram_wdata(wbk_data_wb),
-	.ram_wen(wbk_rd_reg_wb)
+	.ram_wadr(rd_adr_wb_mon),
+	.ram_wdata(wbk_data_wb_mon),
+	.ram_wen(wbk_rd_reg_wb_mon)
 	);
+
+assign rf_rdata_mon = ram_data1;
 
 // roll back
 wire [31:0] rs1_data_st = ram_data1 & { 32{ ~rs1_zero_ex }};
@@ -439,8 +455,8 @@ always @ (posedge clk or negedge rst_n) begin
         br_ofs_ex <= 12'd0;
         cmd_fence_ex <= 1'b0;
         cmd_fencei_ex <= 1'b0;
-        fence_succ_ex <= 5'd0;
-        fence_pred_ex <= 5'd0;
+        fence_succ_ex <= 4'd0;
+        fence_pred_ex <= 4'd0;
         cmd_sfence_ex <= 1'b0;
         cmd_csr_ex <= 1'b0;
         csr_ofs_ex <= 12'd0;
@@ -483,8 +499,8 @@ always @ (posedge clk or negedge rst_n) begin
         br_ofs_ex <= 12'd0;
         cmd_fence_ex <= 1'b0;
         cmd_fencei_ex <= 1'b0;
-        fence_succ_ex <= 5'd0;
-        fence_pred_ex <= 5'd0;
+        fence_succ_ex <= 4'd0;
+        fence_pred_ex <= 4'd0;
         cmd_sfence_ex <= 1'b0;
         cmd_csr_ex <= 1'b0;
         csr_ofs_ex <= 12'd0;

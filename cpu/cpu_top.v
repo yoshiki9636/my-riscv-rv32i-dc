@@ -20,6 +20,7 @@ module cpu_top
 	input cpu_start,
 	input quit_cmd,
 	input [31:2] start_adr,
+	output cpu_run_state,
 
 	input [DWIDTH+1:2] d_ram_radr,
 	input [DWIDTH+1:2] d_ram_wadr,
@@ -57,6 +58,22 @@ module cpu_top
 	input ic_rdat_m_valid,
     input ic_finish_mrd, // not used
 	input start_icflush,
+
+    // from/to csr monitor
+    input csr_radr_en_mon,
+    input [11:0] csr_radr_mon,
+    input [11:0] csr_wadr_mon,
+    input csr_we_mon,
+    input [31:0] csr_wdata_mon,
+    output [31:0] csr_rdata_mon,
+
+    // from/to RF monitor
+    input rf_radr_en_mon,
+    input [4:0] rf_radr_mon,
+    input [4:0] rf_wadr_mon,
+    input rf_we_mon,
+    input [31:0] rf_wdata_mon,
+    output [31:0] rf_rdata_mon,
 
 	output dcw_start_rq,
 	output [31:0] dcw_in_addr,
@@ -226,14 +243,15 @@ wire ic_tag_hit_id;
 
 // new singals
 wire csr_rmie; // new
-wire csr_radr_en_mon = 1'b0; // new
-wire [11:0] csr_radr_mon = 12'd0; // new
-wire [11:0] csr_wadr_mon = 12'd0; // new
-wire csr_we_mon = 1'b0; // new
-wire [31:0] csr_wdata_mon = 12'd0; // new
-wire [31:0] csr_rdata_mon; // new
+//wire csr_radr_en_mon; // new
+//wire [11:0] csr_radr_mon; // new
+//wire [11:0] csr_wadr_mon; // new
+//wire csr_we_mon; // new
+//wire [31:0] csr_wdata_mon; // new
+//wire [31:0] csr_rdata_mon; // new
 
 wire [31:2] start_adr_lat;
+wire stall_1shot_dly;
 
 cpu_status cpu_status (
 	.clk(clk),
@@ -244,6 +262,7 @@ cpu_status cpu_status (
 	.cpu_start(cpu_start),
 	.start_adr(start_adr),
 	.quit_cmd(quit_cmd),
+	.cpu_run_state(cpu_run_state),
 	.stall(stall),
 	.stall_1shot(stall_1shot),
 	.stall_1shot_dly(stall_1shot_dly),
@@ -366,6 +385,12 @@ id_stage id_stage (
 	.inst_rs2_id(inst_rs2_id),
 	.inst_rs1_valid(inst_rs1_valid),
 	.inst_rs2_valid(inst_rs2_valid),
+    .rf_radr_en_mon(rf_radr_en_mon),
+    .rf_radr_mon(rf_radr_mon),
+    .rf_wadr_mon(rf_wadr_mon),
+    .rf_we_mon(rf_we_mon),
+    .rf_wdata_mon(rf_wdata_mon),
+    .rf_rdata_mon(rf_rdata_mon),
 	.stall(stall),
 	.stall_1shot(stall_1shot),
 	.stall_dly(stall_dly),
