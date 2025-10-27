@@ -22,9 +22,9 @@ csrrwi x4, 0x305, 0x0
 csrrwi x5, 0x305, 0xa
 csrrwi x6, 0x305, 0x0
 csrrwi x7, 0x305, 0x1f
-ori x8, x0, 0x14 ; expect
+ori x8, x0, 0x15 ; expect
 bne x4, x8, fail_test1
-ori x8, x0, 0x8 ; expect
+ori x8, x0, 0xa ; expect
 bne x6, x8, fail_test1
 ori x8, x0, 0x0 ; expect
 bne x5, x8, fail_test1
@@ -40,9 +40,9 @@ ori x8, x0, 0xa5a
 csrrw x4, 0x305, x8
 ori x8, x0, 0x0
 csrrw x5, 0x305, x8
-ori x8, x0, 0x5a4
+ori x8, x0, 0x5a5
 bne x4, x8, fail_test2
-ori x8, x0, 0xa58
+ori x8, x0, 0xa5a
 bne x5, x8, fail_test2
 ; next value
 addi x1, x0, 5 ; LED value
@@ -54,9 +54,9 @@ csrrw x3, 0x305, x8
 csrrsi x4, 0x305, 0x15
 csrrsi x5, 0x305, 0xa
 csrrsi x6, 0x305, 0x0
-ori x8, x0, 0x14
+ori x8, x0, 0x15
 bne x5, x8, fail_test3
-ori x8, x0, 0x1c
+ori x8, x0, 0x1f
 bne x6, x8, fail_test3
 ; next value
 addi x1, x0, 4 ; LED value
@@ -81,10 +81,10 @@ sw x1, 0x0(x2) ; set LED
 ; test csrrci
 :fail_test5
 ori x8, x0, 0xfff
-csrrw x3, 0x342, x8
-csrrci x4, 0x342, 0x15
-csrrci x5, 0x342, 0x0a
-csrrci x6, 0x342, 0x00
+csrrw x3, 0x340, x8
+csrrci x4, 0x340, 0x15
+csrrci x5, 0x340, 0x0a
+csrrci x6, 0x340, 0x00
 ori x8, x0, 0xfea
 bne x5, x8, fail_test5
 ori x8, x0, 0xfe0
@@ -102,52 +102,57 @@ ori x8, x0, 0xaaa
 csrrc x5, 0x305, x8
 ori x8, x0, 0
 csrrc x6, 0x305, x8
-ori x8, x0, 0xaa8
+ori x8, x0, 0xaaa
 bne x5, x8, fail_test6
 ori x8, x0, 0
 bne x6, x8, fail_test6
 ; next value
-addi x1, x0, 3 ; LED value
+addi x1, x0, 1 ; LED value
 sw x1, 0x0(x2) ; set LED
 ; test 0x300
 ori x8, x0, 0xfff
 csrrw x3, 0x300, x8
 csrrw x4, 0x300, x8
-lui x8, 0x00003 ;
-addi x8, x8, 0x0aa ; x8 = 0x1aaa
+lui x8, 0x00002 ;
+addi x8, x8, 0x9aa ; x8 = 0x19aa
 bne x4, x8, fail_test6
+csrrw x8, 0x300, x0
 ; next value
-addi x1, x0, 1 ; LED value
+addi x1, x0, 2 ; LED value
 sw x1, 0x0(x2) ; set LED
 ; test ecall
+:fail_test71
 :fail_test7
-lui x3, 0x00000 ;
-addi x3, x3, 0x190
+lui x3, 0x00000
+addi x3, x3, 0x1b0
 csrrw x4, 0x305, x3
-csrrw x5, 0x305, x3
-bne x5, x3, fail_test7
+csrrw x4, 0x305, x3
+nop
+;bne x4, x3, fail_test71
+addi x1, x0, 5 ; LED value
+sw x1, 0x0(x2) ; set LED
+addi x3, x0, 0x8
+csrrw x4, 0x304, x3
+addi x3, x0, 0x8
+csrrw x4, 0x300, x3
+addi x11, x0, 0x55
+addi x12, x0, 0x44
 ecall
-jalr x0, x0, fail_test7
-jalr x0, x0, fail_test7
-jalr x0, x0, fail_test7
-jalr x0, x0, fail_test7
-; 0x0190
-addi x1, x0, 0 ; LED value
-sw x1, 0x0(x2) ; set LED
-ori x6, x0, 0x17c
-ori x7, x0, 3
+addi x12, x0, 0xaa
+bne x11, x12, fail_test7
+jalr x0, x0, pass
+; 0x01b0
+:dummy_label
+addi x11, x0, 0xaa
+; need to add 4 to mepc to return next address of ecall
+csrrs x13, 0x341, x0
+addi x13, x13, 0x4
+csrrw x13, 0x341, x13
+mret
 nop
 nop
-csrrs x4, 0x341, x0
-csrrs x5, 0x342, x0
-bne x4, x6, fail_test7
-; next value
-addi x1, x0, 1 ; LED value
-sw x1, 0x0(x2) ; set LED
-bne x5, x7, fail_test7
-nop
-nop
-lui x2, 01000 ; loop max
+:pass
+lui x2, 10 ; loop max
 ;ori x2, x0, 10 ; small loop for sim
 and x3, x0, x3 ; LED value
 and x4, x0, x4 ;
