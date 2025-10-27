@@ -77,6 +77,7 @@ module uart_logics (
 	input trush_end_set,
 	output trush_running,
 	//input start_step,
+	input quit_cmd,
 	input pgm_start_set,
 	input pgm_end_set,
 	input pgm_stop,
@@ -358,7 +359,16 @@ always @ (posedge clk or negedge rst_n) begin
 		data_0 <= csr_rdata_mon;
 end
 
-assign rdata_snd = pc_print_sel ? pc_data : data_0;
+reg [31:0] pc_data_lat;
+
+always @ (posedge clk or negedge rst_n) begin
+	if (~rst_n)
+		pc_data_lat <= 32'd0;
+	else if (quit_cmd)
+		pc_data_lat <= pc_data;
+end
+
+assign rdata_snd = pc_print_sel ? pc_data_lat : data_0;
 //assign rdata_snd = pc_print_sel ? 32'hdeadbeef : data_0;
 
 // trashing memory data

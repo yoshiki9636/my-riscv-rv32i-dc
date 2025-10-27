@@ -263,6 +263,7 @@ uart_logics uart_logics (
 	.trush_start_set(trush_start_set),
 	.trush_end_set(trush_end_set),
 	.trush_running(trush_running),
+	.quit_cmd(quit_cmd),
 	.pgm_start_set(pgm_start_set),
 	.pgm_end_set(pgm_end_set),
 	.pgm_stop(pgm_stop),
