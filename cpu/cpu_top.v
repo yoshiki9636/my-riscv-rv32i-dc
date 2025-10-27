@@ -254,7 +254,7 @@ wire [31:2] start_adr_lat;
 wire stall_1shot_dly;
 
 wire [31:0] pc_data_dmy;
-assign pc_data = pc_ex;
+assign pc_data = { pc_ex, 2'b0 };
 
 cpu_status cpu_status (
 	.clk(clk),
