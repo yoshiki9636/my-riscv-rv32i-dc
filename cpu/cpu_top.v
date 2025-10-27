@@ -253,6 +253,9 @@ wire csr_rmie; // new
 wire [31:2] start_adr_lat;
 wire stall_1shot_dly;
 
+wire [31:0] pc_data_dmy;
+assign pc_data = pc_ex;
+
 cpu_status cpu_status (
 	.clk(clk),
 	.rst_n(rst_n),
@@ -326,7 +329,7 @@ if_stage #(.IWIDTH(IWIDTH)) if_stage (
 	.ic_stall_fin(ic_stall_fin),
 	.ic_stall_fin2(ic_stall_fin2),
 	.stall_ld_add(stall_ld_add),
-	.pc_data(pc_data)
+	.pc_data(pc_data_dmy)
 	);
 
 id_stage id_stage (
