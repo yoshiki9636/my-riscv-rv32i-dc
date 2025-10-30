@@ -141,7 +141,6 @@ end
 // ram read address
 reg [31:2] cmd_read_end;
 reg [32:2] cmd_read_adr;
-//reg [1:0] dread_dsel;
 
 wire dump_end;
 wire radr_cntup;
@@ -160,13 +159,15 @@ wire cmd_read_adr_for_ioreg = (cmd_read_adr[31:30] == 2'b11);
 wire cmd_read_adr_for_csr   = (cmd_read_adr[31:30] == 2'b10);
 wire cmd_read_adr_for_rf    = (cmd_read_adr[31:30] == 2'b00);
 
-//always @ (posedge clk or negedge rst_n) begin
-	//if (~rst_n)
-		//dread_dsel <= 2'd0;
-	//else
-		//dread_dsel <= cmd_read_adr[3:2];
-//end
-wire [1:0] dread_dsel = cmd_read_adr[3:2];
+reg [1:0] dread_dsel;
+
+always @ (posedge clk or negedge rst_n) begin
+	if (~rst_n)
+		dread_dsel <= 2'd0;
+	else if (u_read_req)
+		dread_dsel <= cmd_read_adr[3:2];
+end
+//wire [1:0] dread_dsel = cmd_read_adr[3:2];
 
 always @ (posedge clk or negedge rst_n) begin
 	if (~rst_n)
