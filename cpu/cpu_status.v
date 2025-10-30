@@ -26,6 +26,7 @@ module cpu_status(
 	output pc_start,
 	output reg [31:2] start_adr_lat,
 	output pc_valid_id,
+	output cpu_stopping,
 	output stall,
 	output stall_ex,
 	output stall_ma,
@@ -47,6 +48,25 @@ always @ (posedge clk or negedge rst_n) begin
 	else if ( cpu_start )
 		start_adr_lat <= start_adr;
 end
+
+// quit_cmd -> finish
+reg [2:8] cpu_stopping_cntr;
+
+always @ (posedge clk or negedge rst_n) begin
+	if (~rst_n)
+		cpu_stopping_cntr <= 3'd0;
+	else if (~init_calib_complete)
+		cpu_stopping_cntr <= 3'd0;	
+	else if (quit_cmd)
+		cpu_stopping_cntr <= 3'd7;	
+	else if (cpu_stopping_cntr == 3'd0)
+		cpu_stopping_cntr <= 3'd0;	
+	else if (~dc_stall)
+		cpu_stopping_cntr <= cpu_stopping_cntr - 3'd1;
+end
+
+assign cpu_stopping = (cpu_stopping_cntr != 3'd0);
+
 
 //reg cpu_run_state;
 reg cpu_run_state_lat;
@@ -85,7 +105,8 @@ always @ (posedge clk or negedge rst_n) begin
 		cpu_start_lat <= 1'b1;
 end
 
-assign pc_start = init_calib_complete & ((cpu_run_state & ~cpu_run_state_lat) | cpu_start_lat);
+//assign pc_start = init_calib_complete & ((cpu_run_state & ~cpu_run_state_lat) | cpu_start_lat);
+assign pc_start = init_calib_complete & cpu_run_state & ~cpu_run_state_lat;
 
 
 //wire cpu_running = cpu_run_state; 
@@ -122,8 +143,10 @@ assign stall_1shot_dly = stall_dly & ~stall_dly2;
 
 // pipeline reset signal
 
-wire start_reset = cpu_start & ~cpu_run_state;
-wire end_reset = quit_cmd & cpu_run_state;
+wire start_reset = 1'b0;
+//wire start_reset = cpu_start & ~cpu_run_state;
+wire end_reset = 1'b0;
+//wire end_reset = quit_cmd & cpu_run_state;
 
 
 always @ (posedge clk or negedge rst_n) begin

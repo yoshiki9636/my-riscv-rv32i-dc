@@ -68,9 +68,10 @@ module ma_stage
 	// stall
 	input stall,
 	input stall_1shot,
-	input stall_1shot_dly,
+	input stall_1shot_dly, // not used
 	input stall_dly,
-	input stall_dly2,
+	input stall_dly2, // not used
+	input cpu_stopping,
 	input rst_pipe_ma
 
 	);
@@ -219,7 +220,8 @@ end
 
 //assign ld_data_wb = data_rdata_wb;
 //assign ld_data_wb = stall_dly2 ? ld_data_roll : data_rdata_wb;
-assign ld_data_wb = stall_dly ? ld_data_roll : data_rdata_wb;
+//assign ld_data_wb = stall_dly ? ld_data_roll : data_rdata_wb;
+assign ld_data_wb = (stall_dly & ~cpu_stopping) ? ld_data_roll : data_rdata_wb;
 assign d_ram_rdata = data_rdata_wb;
 
 // FF to WB
@@ -245,7 +247,7 @@ always @ ( posedge clk or negedge rst_n) begin
 		ld_code_wb <= ldst_code_ma;
 		rd_adr_wb <= rd_adr_ma;
 		rd_data_wb <= rd_data_ma;
-		wbk_rd_reg_wb <= stall ? dc_stall_fin2 : wbk_rd_reg_ma;
+		wbk_rd_reg_wb <= (stall & ~cpu_stopping) ? dc_stall_fin2 : wbk_rd_reg_ma;
 		//wbk_rd_reg_wb <= ~stall & wbk_rd_reg_ma;
 	end
 end

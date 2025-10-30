@@ -195,6 +195,7 @@ wire stall_ld_ma;
 wire wbk_rd_reg_ex;
 wire wbk_rd_reg_ma;
 wire wbk_rd_reg_wb;
+wire cpu_stopping;
 
 wire stall_ld_add;
 
@@ -266,6 +267,10 @@ cpu_status cpu_status (
 	.start_adr(start_adr),
 	.quit_cmd(quit_cmd),
 	.cpu_run_state(cpu_run_state),
+	.pc_start(pc_start),
+	.start_adr_lat(start_adr_lat),
+	.pc_valid_id(pc_valid_id),
+	.cpu_stopping(cpu_stopping),
 	.stall(stall),
 	.stall_1shot(stall_1shot),
 	.stall_1shot_dly(stall_1shot_dly),
@@ -274,9 +279,6 @@ cpu_status cpu_status (
 	.stall_ex(stall_ex),
 	.stall_ma(stall_ma),
 	.stall_wb(stall_wb),
-	.pc_start(pc_start),
-	.start_adr_lat(start_adr_lat),
-	.pc_valid_id(pc_valid_id),
 	.rst_pipe(rst_pipe),
 	.rst_pipe_id(rst_pipe_id),
 	.rst_pipe_ex(rst_pipe_ex),
@@ -547,6 +549,7 @@ ma_stage #(.DWIDTH(DWIDTH)) ma_stage (
 	.stall_1shot_dly(stall_1shot_dly),
 	.stall_dly(stall_dly),
 	.stall_dly2(stall_dly2),
+	.cpu_stopping(cpu_stopping),
 	.rst_pipe_ma(rst_pipe_ma)
 	);
 
