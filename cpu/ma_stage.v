@@ -38,6 +38,7 @@ module ma_stage
 	input ram_wen_all,
 	input dc_stall_fin2,
 	input dc_st_ok,
+	input dc_wb_mask,
 	// dc controls
     input dc_tag_hit_ma,
     input dc_st_wt_ma,
@@ -221,7 +222,8 @@ end
 //assign ld_data_wb = data_rdata_wb;
 //assign ld_data_wb = stall_dly2 ? ld_data_roll : data_rdata_wb;
 //assign ld_data_wb = stall_dly ? ld_data_roll : data_rdata_wb;
-assign ld_data_wb = (stall_dly & ~cpu_stopping) ? ld_data_roll : data_rdata_wb;
+//assign ld_data_wb = (stall_dly & ~cpu_stopping) ? ld_data_roll : data_rdata_wb; // for test
+assign ld_data_wb = (1'b0) ? ld_data_roll : data_rdata_wb;
 assign d_ram_rdata = data_rdata_wb;
 
 // FF to WB
@@ -247,7 +249,8 @@ always @ ( posedge clk or negedge rst_n) begin
 		ld_code_wb <= ldst_code_ma;
 		rd_adr_wb <= rd_adr_ma;
 		rd_data_wb <= rd_data_ma;
-		wbk_rd_reg_wb <= (stall & ~cpu_stopping) ? dc_stall_fin2 : wbk_rd_reg_ma;
+		wbk_rd_reg_wb <= wbk_rd_reg_ma & ~dc_wb_mask;
+		//wbk_rd_reg_wb <= (stall & ~cpu_stopping) ? dc_stall_fin2 : wbk_rd_reg_ma;
 		//wbk_rd_reg_wb <= ~stall & wbk_rd_reg_ma;
 	end
 end

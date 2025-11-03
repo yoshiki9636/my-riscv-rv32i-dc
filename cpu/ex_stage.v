@@ -72,6 +72,7 @@ module ex_stage(
 	// to MA
 	//input dc_stall,
 	input dc_stall_fin,
+	//input dc_stall_early,
     output reg cmd_ld_ma,
     output reg cmd_st_ma,
 	output reg [4:0] rd_adr_ma,
@@ -110,6 +111,7 @@ module ex_stage(
 	output reg jmp_purge_ma,
 	output jmp_purge_ex,
 	// stall
+	//input dc_stall_1shot_re,
 	input stall,
 	input stall_1shot,
 	input stall_dly,
@@ -342,8 +344,14 @@ end
 
 // roll back for dc_stall
 wire cmd_st_tmp;
+reg [4:0] rd_adr_roll;
 reg [31:0] st_data_roll;
 reg [31:0] rd_data_roll;
+reg [2:0] ldst_code_roll;
+reg  cmd_ld_roll;
+reg  cmd_st_roll;
+reg  wbk_rd_reg_roll;
+reg  jmp_purge_roll;
 //wire stall_ldst_pre = (cmd_ld_pur | cmd_st_tmp) ? stall : stall_dly;
 //wire stall_ldst_pre = (cmd_ld_pur|cmd_st_tmp) ? stall : stall_dly;
 //wire stall_ldst_pre = (stall & cmd_st_tmp) |  (stall_dly & cmd_ld_pur);
@@ -351,20 +359,33 @@ wire stall_ldst_pre = (stall & cmd_st_tmp) |  (stall & cmd_ld_pur);
 
 always @ ( posedge clk or negedge rst_n) begin   
 	if (~rst_n) begin
+		rd_adr_roll <= 5'd0;
         st_data_roll <= 32'd0;
         rd_data_roll <= 32'd0;
+        ldst_code_roll <= 3'd0;
+        cmd_ld_roll <= 1'b0;
+        cmd_st_roll <= 1'b0;
+		wbk_rd_reg_roll <= 1'b0;
+		jmp_purge_roll <= 1'b0;
 	end
-	else if (rst_pipe) begin
-        st_data_roll <= 32'd0;
-        rd_data_roll <= 32'd0;
-	end
+	//else if (rst_pipe) begin
+        //st_data_roll <= 32'd0;
+        //rd_data_roll <= 32'd0;
+	//end
 	//else if (~dc_stall | dc_stall_fin)
 	//else if (~stall | dc_stall_fin)
 	//else if (~stall & ~dc_stall_fin)
 	//else if (~stall & ~stall_dly)
 	else if (stall_1shot) begin
+	//else if (stall_1shot | dc_stall_1shot_re) begin
+		rd_adr_roll <= rd_adr_ex;
         st_data_roll <= st_data_ex_pre;
         rd_data_roll <= rd_data_ex_pre;
+        ldst_code_roll <= alu_code_ex;
+        cmd_ld_roll <= cmd_ld_pur;
+        cmd_st_roll <= cmd_st_tmp;
+		wbk_rd_reg_roll <= wbk_rd_reg_tmp;
+		jmp_purge_roll <= jmp_purge_ex;
 	end
 end
 
@@ -376,14 +397,23 @@ end
 //wire stall_ldst = (stall_dly |  stall_dly2) & ~(cmd_ld_ma|cmd_st_ma);
 
 //wire stall_ldst = (stall_dly & cmd_st_ma) |  (stall_dly2 & cmd_ld_ma);
-wire stall_ldst = (stall_dly & cmd_st_ma) |  (stall_dly & cmd_ld_ma);
+wire stall_ldst = (stall_dly & cmd_st_ma) |  (stall_dly & cmd_ld_ma); // for debug test
+//wire stall_ldst = stall_dly; // for debug test
+//wire stall_ldst = 1'b0; // for debug test
+//wire stall_ldst = stall & stall_dly; // for debug test
 //assign rd_data_ex = stall_ldst ? rd_data_roll : rd_data_ex_pre;
 
 //assign rd_data_ex = (stall | stall_dly2) ? rd_data_roll : rd_data_ex_pre;
 //assign rd_data_ex = (stall | stall_dly) ? rd_data_roll : rd_data_ex_pre;
 //assign rd_data_ex = rd_data_ex_pre;
+wire [4:0] rd_adr_ex_post = (stall_ldst) ? rd_adr_roll : rd_adr_ex;
 assign rd_data_ex = (stall_ldst) ? rd_data_roll : rd_data_ex_pre;
 wire [31:0] st_data_ex = (stall_ldst) ? st_data_roll : st_data_ex_pre;
+wire [2:0] ldst_code_ex = (stall_ldst) ? ldst_code_roll : alu_code_ex;
+wire cmd_ld_ex_post = (stall_ldst) ? cmd_ld_roll : cmd_ld_pur;
+wire cmd_st_ex_post = (stall_ldst) ? cmd_st_roll : cmd_st_tmp;
+wire wbk_rd_reg_ex_post = (stall_ldst) ? wbk_rd_reg_roll : wbk_rd_reg_tmp;
+wire jmp_purge_ex_post =  (stall_ldst) ? jmp_purge_roll : jmp_purge_ex;
 
 // jamp/br
 
@@ -411,35 +441,46 @@ assign cmd_st_tmp = cmd_st_ex & ~jmp_purge_ma;
 
 always @ ( posedge clk or negedge rst_n) begin   
 	if (~rst_n) begin
-        cmd_st_ma <= 1'b0;
-		rd_adr_ma <= 5'd0;
-		rd_data_ma <= 32'd0;
-		st_data_ma <= 32'd0;
-		ldst_code_ma <= 3'd0;
 		jmp_purge_ma <= 1'b0;
-        cmd_ld_ma <= 1'b0;
-		wbk_rd_reg_ma <= 1'b0;
 	end
-	else if (rst_pipe) begin
-        cmd_st_ma <= 1'b0;
-		rd_adr_ma <= 5'd0;
-		rd_data_ma <= 32'd0;
-		st_data_ma <= 32'd0;
-		ldst_code_ma <= 3'd0;
-		jmp_purge_ma <= 1'b0;
-        cmd_ld_ma <= 1'b0;
-		wbk_rd_reg_ma <= 1'b0;
-	end
+	//else if (rst_pipe) begin
+        //cmd_st_ma <= 1'b0;
+		//rd_adr_ma <= 5'd0;
+		//rd_data_ma <= 32'd0;
+		//st_data_ma <= 32'd0;
+		//ldst_code_ma <= 3'd0;
+		//jmp_purge_ma <= 1'b0;
+        //cmd_ld_ma <= 1'b0;
+		//wbk_rd_reg_ma <= 1'b0;
+	//end
+	//else if (~dc_stall_early) begin
 	else if (~stall) begin
 	//else if (~(stall_dly|stall)) begin
-        cmd_st_ma <= cmd_st_tmp;
-		rd_adr_ma <= rd_adr_ex;
-		rd_data_ma <= rd_data_ex;
-		st_data_ma <= st_data_ex;
-		ldst_code_ma <= alu_code_ex;
-		jmp_purge_ma <= jmp_purge_ex;
-	    cmd_ld_ma <= cmd_ld_pur;
-		wbk_rd_reg_ma <= wbk_rd_reg_tmp;
+		jmp_purge_ma <= jmp_purge_ex_post;
+	end
+end
+
+always @ ( posedge clk or negedge rst_n) begin   
+	if (~rst_n) begin
+		rd_adr_ma <= 5'd0;
+		rd_data_ma <= 32'd0;
+		st_data_ma <= 32'd0;
+		ldst_code_ma <= 3'd0;
+        cmd_ld_ma <= 1'b0;
+        cmd_st_ma <= 1'b0;
+		wbk_rd_reg_ma <= 1'b0;
+	end
+	//else if (~dc_stall_early) begin
+	else if (~stall) begin
+		rd_adr_ma <= rd_adr_ex_post;
+		rd_data_ma <= rd_data_ex; // for debug test
+		st_data_ma <= st_data_ex; // for debug test
+		//rd_data_ma <= rd_data_ex_pre; // for debug test
+		//st_data_ma <= st_data_ex_pre; // for debug test
+		ldst_code_ma <= ldst_code_ex;
+	    cmd_ld_ma <= cmd_ld_ex_post;
+        cmd_st_ma <= cmd_st_ex_post;
+		wbk_rd_reg_ma <= wbk_rd_reg_ex_post;
 	end
 end
 

@@ -82,7 +82,7 @@ end
 wire ic_tag_equal = (ic_tag_adr_id == ic_tag_radr);
 assign ic_tag_hit_id = ic_tag_equal & ic_cache_valid_id & pc_valid_id;
 wire ic_tag_empty_id = ~ic_cache_valid_id & pc_valid_id;
-wire ic_tag_misshit_id = ~ic_tag_equal & ic_cache_valid_id & pc_valid_id;
+wire ic_tag_miss_id = ~ic_tag_equal & ic_cache_valid_id & pc_valid_id;
 
 // dirty / valid bits
 //reg [(2**(IWIDTH-2))-1:0] ic_ent_dirty_bit_id;
@@ -123,9 +123,9 @@ always @ (posedge clk or negedge rst_n) begin
 end
 
 //assign ic_cache_valid_id = ic_ent_valid_bit_id[dc_cache_dirty_adr];
-//wire ic_cache_dirty_id = ic_ent_dirty_bit_id[dc_cache_dirty_adr] & ic_tag_misshit_id;
+//wire ic_cache_dirty_id = ic_ent_dirty_bit_id[dc_cache_dirty_adr] & ic_tag_miss_id;
 assign ic_cache_valid_id = ic_ent_valid_bit_id[ic_index_adr_dly];
-//wire ic_cache_dirty_id = ic_ent_dirty_bit_id[dc_index_adr_dly] & ic_tag_misshit_id;
+//wire ic_cache_dirty_id = ic_ent_dirty_bit_id[dc_index_adr_dly] & ic_tag_miss_id;
 
 // ic state machine
 
@@ -144,14 +144,14 @@ reg [2:0] ic_miss_current;
 function [2:0] ic_miss_decode;
 input [2:0] ic_miss_current;
 input ic_tag_empty_id;
-input ic_tag_misshit_id;
+input ic_tag_miss_id;
 //input ic_cache_dirty_id;
 //input icw_finish_wresp;
 input ic_rdat_m_valid;
 begin
     case(ic_miss_current)
 		`ICMS_IDLE: begin
-    		casex({ic_tag_empty_id, ic_tag_misshit_id})
+    		casex({ic_tag_empty_id, ic_tag_miss_id})
 				2'b1x: ic_miss_decode = `ICMS_MEMR;
 				2'b01: ic_miss_decode = `ICMS_MEMR;
 				2'b00: ic_miss_decode = `ICMS_IDLE;
@@ -176,7 +176,7 @@ begin
 end
 endfunction
 
-wire [2:0] ic_miss_next = ic_miss_decode( ic_miss_current, ic_tag_empty_id, ic_tag_misshit_id, ic_rdat_m_valid );
+wire [2:0] ic_miss_next = ic_miss_decode( ic_miss_current, ic_tag_empty_id, ic_tag_miss_id, ic_rdat_m_valid );
 
 always @ (posedge clk or negedge rst_n) begin
     if (~rst_n)
@@ -202,13 +202,13 @@ always @ (posedge clk or negedge rst_n) begin
         ic_curric_ent_radr_keeper <= 32'd0;
 	else if (rst_pipe)
         ic_curric_ent_radr_keeper <= 32'd0;
-	else if ((ic_miss_current == `ICMS_IDLE) & (ic_tag_misshit_id | ic_tag_empty_id))
+	else if ((ic_miss_current == `ICMS_IDLE) & (ic_tag_miss_id | ic_tag_empty_id))
 		//ic_curric_ent_radr_keeper <= {pc_if, 2'd0};
 		ic_curric_ent_radr_keeper <= {pc_if_dly, 2'd0};
 end
 
 // core stall singal
-assign ic_stall = ((ic_miss_current != `ICMS_LDRD)&(ic_miss_current != `ICMS_IDLE)) | ((ic_tag_misshit_id | ic_tag_empty_id)&(ic_miss_current != `ICMS_LDRD));
+assign ic_stall = ((ic_miss_current != `ICMS_LDRD)&(ic_miss_current != `ICMS_IDLE)) | ((ic_tag_miss_id | ic_tag_empty_id)&(ic_miss_current != `ICMS_LDRD));
 //assign ic_stall = (ic_miss_current != `ICMS_IDLE);
 assign ic_sel_tag = ((ic_miss_current != `ICMS_LDRD)&(ic_miss_current != `ICMS_IDLE)) ;
 //assign ic_st_ok = (dc_miss_current != `ICMS_MEMR);
@@ -264,15 +264,24 @@ end
 
 wire ic_memr_stat = (ic_miss_current == `ICMS_MEMR);
 reg ic_memr_stat_dly;
+reg ic_memr_stat_dly2;
+reg ic_memr_stat_dly3; // just debug test
 
 always @ (posedge clk or negedge rst_n) begin
-    if (~rst_n)
+    if (~rst_n) begin
         ic_memr_stat_dly <= 1'b0;
-	else
+        ic_memr_stat_dly2 <= 1'b0;
+        ic_memr_stat_dly3 <= 1'b0;
+	end
+	else begin
         ic_memr_stat_dly <= ic_memr_stat;
+        ic_memr_stat_dly2 <= ic_memr_stat_dly;
+        ic_memr_stat_dly3 <= ic_memr_stat_dly2;
+	end
 end
 
-assign icr_start_rq = ic_memr_stat & ~ic_memr_stat_dly;
+//assign icr_start_rq = ic_memr_stat & ~ic_memr_stat_dly;
+assign icr_start_rq = ic_memr_stat_dly2 & ~ic_memr_stat_dly3;
 
 //assign ic_rin_addr = { pc_if, 2'd0 } ;
 assign ic_rin_addr = ic_curric_ent_radr_keeper;

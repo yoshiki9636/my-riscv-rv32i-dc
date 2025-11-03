@@ -30,6 +30,7 @@ module lsu_stage
     output dc_stall_fin2,
     output dc_stall_fin,
     output dc_st_ok,
+	output dc_wb_mask,
 	// DC controls
 	output dc_tag_hit_ma,
 	output dc_st_wt_ma,
@@ -67,9 +68,11 @@ reg [31:0] current_radr_keeper;
 wire dc_sel_tag; //=((dc_miss_current != `DCMS_LDRD)&(dc_miss_current != `DCMS_IDLE)&(dc_miss_current != `DCMS_MEMW)) ;
 reg [27:DWIDTH+2] dc_tag_adr_ma;
 //wire [27:DWIDTH+2] dc_tag_adr_ex = dc_stall_dly ? current_radr_keeper[27:DWIDTH+2] : rd_data_ex[27:DWIDTH+2];
-wire [27:DWIDTH+2] dc_tag_adr_ex = dc_sel_tag ? current_radr_keeper[27:DWIDTH+2] : rd_data_ex[27:DWIDTH+2];
+//wire [27:DWIDTH+2] dc_tag_adr_ex = dc_sel_tag ? current_radr_keeper[27:DWIDTH+2] : rd_data_ex[27:DWIDTH+2];
+wire [27:DWIDTH+2] dc_tag_adr_ex = dc_sel_tag ? rd_data_ma[27:DWIDTH+2] : rd_data_ex[27:DWIDTH+2];
 wire [DWIDTH+1:4] dc_index_adr = dcflush_running ? dcflush_cntr :
-                                 dc_sel_tag ? current_radr_keeper[DWIDTH+1:4] : rd_data_ex[DWIDTH+1:4];
+                                 dc_sel_tag ? rd_data_ma[DWIDTH+1:4] : rd_data_ex[DWIDTH+1:4];
+                                 //dc_sel_tag ? current_radr_keeper[DWIDTH+1:4] : rd_data_ex[DWIDTH+1:4];
                                  //dc_stall_dly ? current_radr_keeper[DWIDTH+1:4] : rd_data_ex[DWIDTH+1:4];
 wire [27:DWIDTH+2] dc_tag_wadr;
 wire [DWIDTH+1:4] dc_index_wadr;
@@ -102,7 +105,7 @@ wire cmd_ldst_ma = (cmd_ld_ma | cmd_st_ma) & (rd_data_ma[31:30] != 2'b11) ;
 wire dc_tag_equal = (dc_tag_adr_ma == dc_tag_radr);
 assign dc_tag_hit_ma = dc_tag_equal & dc_cache_valid_ma & cmd_ldst_ma;
 wire dc_tag_empty_ma = ~dc_cache_valid_ma & cmd_ldst_ma;
-wire dc_tag_misshit_ma = ~dc_tag_equal & dc_cache_valid_ma & cmd_ldst_ma;
+wire dc_tag_miss_ma = ~dc_tag_equal & dc_cache_valid_ma & cmd_ldst_ma;
 
 // dirty / valid bits
 reg [(2**(DWIDTH-2))-1:0] ent_dirty_bit_ma;
@@ -111,7 +114,10 @@ reg [(2**(DWIDTH-2))-1:0] ent_valid_bit_ma;
 //wire [27:13] dc_cache_dirty_adr = rd_data_ma[12:4];
 //wire [DWIDTH+1:4] dc_cache_dirty_adr = rd_data_ma[DWIDTH+1:4];
 //wire [DWIDTH+1:4] dc_cache_dirty_adr = current_radr_keeper[DWIDTH+1:4];
-wire [DWIDTH+1:4] dc_cache_dirty_adr = dc_index_adr;
+reg [DWIDTH+1:4] dc_index_adr_dly;
+
+//wire [DWIDTH+1:4] dc_cache_dirty_adr = dc_index_adr;
+wire [DWIDTH+1:4] dc_cache_dirty_adr = dc_index_adr_dly;
 
 always @ (posedge clk or negedge rst_n) begin
     if (~rst_n)
@@ -131,10 +137,9 @@ always @ (posedge clk or negedge rst_n) begin
     else if (dc_cache_clr_bits | start_dcflush | rst_pipe)
         ent_valid_bit_ma <= { (2**(DWIDTH-2)){ 1'b0 }};
     else if (tag_wen)
-        ent_valid_bit_ma[dc_index_wadr] <= 1'b1;
+        //ent_valid_bit_ma[dc_index_wadr] <= 1'b1;
+        ent_valid_bit_ma[dc_index_adr_dly] <= 1'b1;
 end
-
-reg [DWIDTH+1:4] dc_index_adr_dly;
 
 always @ (posedge clk or negedge rst_n) begin
     if (~rst_n)
@@ -144,9 +149,9 @@ always @ (posedge clk or negedge rst_n) begin
 end
 
 //assign dc_cache_valid_ma = ent_valid_bit_ma[dc_cache_dirty_adr];
-//wire dc_cache_dirty_ma = ent_dirty_bit_ma[dc_cache_dirty_adr] & dc_tag_misshit_ma;
+//wire dc_cache_dirty_ma = ent_dirty_bit_ma[dc_cache_dirty_adr] & dc_tag_miss_ma;
 assign dc_cache_valid_ma = ent_valid_bit_ma[dc_index_adr_dly];
-wire dc_cache_dirty_ma = ent_dirty_bit_ma[dc_index_adr_dly] & dc_tag_misshit_ma;
+wire dc_cache_dirty_ma = ent_dirty_bit_ma[dc_index_adr_dly] & dc_tag_miss_ma;
 
 // dc state machine
 
@@ -165,14 +170,14 @@ reg [2:0] dc_miss_current;
 function [2:0] dc_miss_decode;
 input [2:0] dc_miss_current;
 input dc_tag_empty_ma;
-input dc_tag_misshit_ma;
+input dc_tag_miss_ma;
 input dc_cache_dirty_ma;
 input dcw_finish_wresp;
 input rdat_m_valid;
 begin
     case(dc_miss_current)
 		`DCMS_IDLE: begin
-    		casex({dc_tag_empty_ma, dc_tag_misshit_ma, dc_cache_dirty_ma})
+    		casex({dc_tag_empty_ma, dc_tag_miss_ma, dc_cache_dirty_ma})
 				3'b1xx: dc_miss_decode = `DCMS_MEMR;
 				3'b00x: dc_miss_decode = `DCMS_IDLE;
 				3'b011: dc_miss_decode = `DCMS_MEMW;
@@ -204,7 +209,7 @@ begin
 end
 endfunction
 
-wire [2:0] dc_miss_next = dc_miss_decode( dc_miss_current, dc_tag_empty_ma, dc_tag_misshit_ma, dc_cache_dirty_ma, dcw_finish_wresp, rdat_m_valid );
+wire [2:0] dc_miss_next = dc_miss_decode( dc_miss_current, dc_tag_empty_ma, dc_tag_miss_ma, dc_cache_dirty_ma, dcw_finish_wresp, rdat_m_valid );
 
 always @ (posedge clk or negedge rst_n) begin
     if (~rst_n)
@@ -222,12 +227,12 @@ always @ (posedge clk or negedge rst_n) begin
         current_radr_keeper <= 32'd0;
 	else if (rst_pipe)
         current_radr_keeper <= 32'd0;
-	else if ((dc_miss_current == `DCMS_IDLE) & (dc_tag_misshit_ma | dc_tag_empty_ma))
+	else if ((dc_miss_current == `DCMS_IDLE) & (dc_tag_miss_ma | dc_tag_empty_ma))
 		current_radr_keeper <= rd_data_ma;
 end
 
 // core stall singal
-assign dc_stall = ((dc_miss_current != `DCMS_LDRD)&(dc_miss_current != `DCMS_IDLE)) | ((dc_tag_misshit_ma | dc_tag_empty_ma)&(dc_miss_current != `DCMS_LDRD));
+assign dc_stall = ((dc_miss_current != `DCMS_LDRD)&(dc_miss_current != `DCMS_IDLE)) | ((dc_tag_miss_ma | dc_tag_empty_ma)&(dc_miss_current != `DCMS_LDRD));
 assign dc_sel_tag = ((dc_miss_current != `DCMS_LDRD)&(dc_miss_current != `DCMS_IDLE)&(dc_miss_current != `DCMS_MEMW)) ;
 assign dc_st_ok = ((dc_miss_current != `DCMS_MEMW)&(dc_miss_current != `DCMS_MEMR));
 
@@ -237,6 +242,8 @@ assign dc_st_wt_ma = (dc_miss_current != `DCMS_DCWT);
 // load issue timing
 assign dc_stall_fin = (dc_miss_current == `DCMS_DCW3);
 assign dc_stall_fin2 = (dc_miss_current == `DCMS_LDRD);
+//assign dc_wb_mask = dc_stall_fin2 & cmd_ld_ma & (dc_tag_miss_ma | dc_tag_empty_ma);
+assign dc_wb_mask = 1'b0;
 
 always @ (posedge clk or negedge rst_n) begin
     if (~rst_n)
