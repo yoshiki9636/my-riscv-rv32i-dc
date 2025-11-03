@@ -233,7 +233,7 @@ end
 
 // core stall singal
 assign dc_stall = ((dc_miss_current != `DCMS_LDRD)&(dc_miss_current != `DCMS_IDLE)) | ((dc_tag_miss_ma | dc_tag_empty_ma)&(dc_miss_current != `DCMS_LDRD));
-assign dc_sel_tag = ((dc_miss_current != `DCMS_LDRD)&(dc_miss_current != `DCMS_IDLE)&(dc_miss_current != `DCMS_MEMW)) ;
+assign dc_sel_tag = ((dc_miss_current != `DCMS_LDRD)&(dc_miss_current != `DCMS_IDLE)) ;
 assign dc_st_ok = ((dc_miss_current != `DCMS_MEMW)&(dc_miss_current != `DCMS_MEMR));
 
 // store data write timing

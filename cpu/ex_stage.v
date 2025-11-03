@@ -352,6 +352,7 @@ reg  cmd_ld_roll;
 reg  cmd_st_roll;
 reg  wbk_rd_reg_roll;
 reg  jmp_purge_roll;
+wire wbk_rd_reg_tmp;
 //wire stall_ldst_pre = (cmd_ld_pur | cmd_st_tmp) ? stall : stall_dly;
 //wire stall_ldst_pre = (cmd_ld_pur|cmd_st_tmp) ? stall : stall_dly;
 //wire stall_ldst_pre = (stall & cmd_st_tmp) |  (stall_dly & cmd_ld_pur);
@@ -434,7 +435,7 @@ assign ecall_condition_ex = ~stall & ~jmp_purge_ma & (cmd_ecall_ex | illegal_ops
 // purge signal
 assign jmp_purge_ex = jmp_condition_ex | ecall_condition_ex;
 
-wire wbk_rd_reg_tmp = wbk_rd_reg_ex & ~jmp_purge_ma & ~illegal_ops_ex;
+assign wbk_rd_reg_tmp = wbk_rd_reg_ex & ~jmp_purge_ma & ~illegal_ops_ex;
 assign cmd_st_tmp = cmd_st_ex & ~jmp_purge_ma;
 
 // FF to MA

@@ -103,16 +103,17 @@ always @ (posedge clk or negedge rst_n) begin
 end
 */
 
+reg [IWIDTH+1:4] ic_index_adr_dly;
+
 always @ (posedge clk or negedge rst_n) begin
     if (~rst_n)
         ic_ent_valid_bit_id <= { (2**(IWIDTH-2)){ 1'b0 }};
     else if (start_icflush | rst_pipe)
         ic_ent_valid_bit_id <= { (2**(IWIDTH-2)){ 1'b0 }};
     else if (ic_tag_wen)
-        ic_ent_valid_bit_id[ic_index_wadr] <= 1'b1;
+        //ic_ent_valid_bit_id[ic_index_wadr] <= 1'b1;
+        ic_ent_valid_bit_id[ic_index_adr_dly] <= 1'b1;
 end
-
-reg [IWIDTH+1:4] ic_index_adr_dly;
 
 always @ (posedge clk or negedge rst_n) begin
     if (~rst_n)
