@@ -4,7 +4,7 @@
 #define PI 3.14159265358
 #define N 128 //データ個数
 //#define LP 10
-#define LP 1000000
+#define LP 1000
 #define LP2 200
 // workaround for libm_nano.a
 int __errno;
@@ -135,6 +135,10 @@ int double_print( char* cbuf, double value, int digit ) {
 		mug *= 10.0;
 	}
 	mug /= 10.0;
+	if (value < 1.0) {
+		buf[cntr++] = 0;
+		buf[cntr++] = 0xff; // for preiod
+	}
 	for(int i = 0; i < digit; i++) {	
 		unsigned char a =(unsigned char)(value / mug);
 		buf[cntr++] = a;
