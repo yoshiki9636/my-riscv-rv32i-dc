@@ -399,6 +399,7 @@ end
 
 //wire stall_ldst = (stall_dly & cmd_st_ma) |  (stall_dly2 & cmd_ld_ma);
 wire stall_ldst = (stall_dly & cmd_st_ma) |  (stall_dly & cmd_ld_ma); // for debug test
+wire stall_ldst_0 = 1'b0;
 //wire stall_ldst = stall_dly; // for debug test
 //wire stall_ldst = 1'b0; // for debug test
 //wire stall_ldst = stall & stall_dly; // for debug test
@@ -411,10 +412,10 @@ wire [4:0] rd_adr_ex_post = (stall_ldst) ? rd_adr_roll : rd_adr_ex;
 assign rd_data_ex = (stall_ldst) ? rd_data_roll : rd_data_ex_pre;
 wire [31:0] st_data_ex = (stall_ldst) ? st_data_roll : st_data_ex_pre;
 wire [2:0] ldst_code_ex = (stall_ldst) ? ldst_code_roll : alu_code_ex;
-wire cmd_ld_ex_post = (stall_ldst) ? cmd_ld_roll : cmd_ld_pur;
-wire cmd_st_ex_post = (stall_ldst) ? cmd_st_roll : cmd_st_tmp;
-wire wbk_rd_reg_ex_post = (stall_ldst) ? wbk_rd_reg_roll : wbk_rd_reg_tmp;
-wire jmp_purge_ex_post =  (stall_ldst) ? jmp_purge_roll : jmp_purge_ex;
+wire cmd_ld_ex_post = (stall_ldst_0) ? cmd_ld_roll : cmd_ld_pur;
+wire cmd_st_ex_post = (stall_ldst_0) ? cmd_st_roll : cmd_st_tmp;
+wire wbk_rd_reg_ex_post = (stall_ldst_0) ? wbk_rd_reg_roll : wbk_rd_reg_tmp;
+wire jmp_purge_ex_post =  (stall_ldst_0) ? jmp_purge_roll : jmp_purge_ex;
 
 // jamp/br
 

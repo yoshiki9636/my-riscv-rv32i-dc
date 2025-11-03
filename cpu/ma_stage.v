@@ -249,7 +249,7 @@ always @ ( posedge clk or negedge rst_n) begin
 		ld_code_wb <= ldst_code_ma;
 		rd_adr_wb <= rd_adr_ma;
 		rd_data_wb <= rd_data_ma;
-		wbk_rd_reg_wb <= wbk_rd_reg_ma & ~dc_wb_mask;
+		wbk_rd_reg_wb <= ~(stall & ~cpu_stopping) & wbk_rd_reg_ma & ~dc_wb_mask;
 		//wbk_rd_reg_wb <= (stall & ~cpu_stopping) ? dc_stall_fin2 : wbk_rd_reg_ma;
 		//wbk_rd_reg_wb <= ~stall & wbk_rd_reg_ma;
 	end
