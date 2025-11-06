@@ -9,7 +9,7 @@ RISC-V RV32I instruction set CPU for study
 This RTL logics and operating environment of RISC-V RV32I instruction set is for aiming at woking on Seed FPGA board Arty A7.
 It is confirmed to work at 50MHz.
 
-1.1 Limitations of Version 0.4
+1.1 Limitations of Version 0.5
 - Added implementation of external interrupts (standalone) and mret using the interrupt pin compared to 0.2.
 - ver 0.3 : added illegal operations exception.
 - Privilege is M-mode only.
@@ -18,7 +18,9 @@ It is confirmed to work at 50MHz.
 - Memory is separated by INSTRUCTION and DATA. Each is 1K Words in size.
 - I/O has 12-pin 4 sets of RGB LED.
 - Support uart output using I/O
-- support D cache with 128MB DRAM.
+- support I and D caches with 128MB DRAM.
+- 16 byte cache line size.
+- No snoop function between I cache and D cache.
 
 2. simple usage
   
@@ -26,15 +28,59 @@ First, please do a git clone.
   
 2.1 RTL simulation
 We have confirmed the operation with Modelsim 10.5b, which is distributed for Intel FPGAs.
-Since only basic verilog descriptions are used, it would work with most simulators.
+~Since only basic verilog descriptions are used, it would work with most simulators.~
+Now we need to use mig SDRAM i/f model which require some special RTLs for simulation in Modelsim.
+
   
 (1) Create the ssim/ directory and copy the contents of cpu/ fpga/ io/ mon/ sim/.
+
+(2) copy files (ddr3_model.sv ddr3_model_parameters.vh) from Vivado working directory as below to ssim/.
+    <project directory>/<project directory>_sim/sim_1/behav/xsim/
+
+(3) Add below 2 lines on 103 line of ddr3_model.sv file.
+
+	`define MAX_MEM
+	`define mem_init
+
+(4) Do 'run implementation' adn 'run simulation' on Vivado onece for create simulation files.
+
+(5) Do tools>complie simulation libraries on Vivado with below parameters. It would take long time.
+	Simulator : ModelSim Simulator
+	Languare: Verilog
+	Library: Unisim
+	Family: Arty A7
+	Advanced
+	Complied library location: **/compile_simlib/models (please find directy...)
+	Simulator executable path: **/modelsim_ase/win32aloe (please find in model sim exceution file)
+	check 'Comple AMD IP'
+	check 'Verbose'
+
+(6) Do file>export>Export simulation. Please set save location as you like.
+
+(7) Copy many simulation files from export directory to ssim/
+
+	cp <export directory>/modelsim/modelsim.ini ssim/
+	cp <export directory>/modelsim/glbl.v ssim/
+	cp -r <export directory>/modelsim/srcs/sources_1/ip/* ssim/
+
+(8) Edit simtop_v.v to select start address as 0x100 since mig write data to 0x0 after reset.
+
+(9) Compile all verilog files
+
+(10) Run simulation with command line (Transcript) ad below
+
+	vsim -L secureip -L unisims_ver work.glbl work.simtop
   
-(2) Use riscv-asm1.pl in the asm/ directory and create a test instruction sequence test.txt. copy it to ssim/.
-　　Example:. /risc-vasm1.pl lchika.asm > test.txt
-  
-(3) Run the verilog simulator in ssim/.
-  
+(11) Use riscv-asm1.pl in the asm/ directory and create a test instruction sequence lchika.txt.
+     -p 0x100 means setting start address as 0x100 (this option can use upto 0x100).
+     It should 
+	Example:. /risc-vasm1.pl -p 0x100 lchika.asm > lchika.asm
+
+(12) Use ../tools/concat_ddr.pl -p 0x100 to create mem_init.txt and copy it to ssim/
+
+(13) Run simulation. This simulation takes long time because time scale is very small and mig has log start sequence.
+
+
 2.3 Tang Primer Synthesis & run
 
 Currently this logic does not work wit Tang Primer because of capacity shortage.
@@ -73,14 +119,22 @@ Here is a note on how to synthesize when using the Digilent Arty A7, using Xilin
 	command format
 	g : goto PC address ( run program until quit ) : format: g <start addess>
 	Ctrl-c : quit from any command : format: Ctrl-c
-	w : write date to memory : format: w <start adderss> <data> ....<data> Ctrl-c
-	r : read data from memory : format: r <start address> <end adderss>
-	t : trashed memory data and 0 clear : format: t
-	s : program step execution : format: s
-	p : read instruction memory : format: p <start address> <end adderss>
-	i : write instruction memory : format: i <start adderss> <data> ....<data> Ctrl-c
+	w : write date to SDRAM : format: w <start adderss> <data> ....<data> Ctrl-c
+	r : read data from SDRAM : format: r <start address> <end adderss>
+	t : trashed memory data and 0 clear : format: t <start address> <end adderss>
+	s : program break point set : format: s <break address>
+		Setting address : using even number address
+		Unsetting address : using odd number address
+	p : read IO regs/csr/RF : format: p <start address> <end adderss>
+		address : upper 2bits == 2'b11 : I/O registers
+		address : upper 2bits == 2'b10 : csr registers 
+		address : upper 2bits == 2'b00 : Register Files
+	i : write IO regs/csr/RF : format: i <start adderss> <data> ....<data> Ctrl-c
+		address : upper 2bits == 2'b11 : I/O registers
+		address : upper 2bits == 2'b10 : csr registers 
+		address : upper 2bits == 2'b00 : Register Files
 	j : print current PC value : format: j
-	z : parge D cache : format:  z
+	z : parge D cache : format:  z // currently not woring
 
 2.5 How to run C bare-metal programs
 
@@ -101,6 +155,8 @@ make
 
 Various files such as binaries can be created, but all that is needed is XX.hex. Then, read XX.hex using the i command as in step 2. At this time, some programs (most of them) require an image on the D memory side as well, so use the w000000000 command to load the image on the D memory side as well. Execution is done g00000000.
 Some programs use functions such as sprintf, which requires the -u _print_float option, especially for floating-point sprintf. cmpl2.sh is a script that handles this, so please use that one. (The object size is dramatically larger.) In this case, there is a little problem with the display, and some floating-point numbers cannot be displayed properly. The cause is under investigation.
+
+If you want to use printf with double valuable, please use cmpl2.sh instead and use *.2.hex file.
 
 
 ----------
@@ -404,9 +460,9 @@ Digilent Arty A7を使う場合の合成方法のメモです。Xilinx Vivadoを
 　　
 (2) Vivadoを立ち上げ、projectを作成、ssynの中のRTLを指定し、constraintsとして、riscv_io_pins.xdcを指定します。　　
 
-(3) MMCMの追加が必要なので、IPカタログから追加します。周波数は入力100MHz、出力90MHzで動作を確認しております。
+(3) MMCMの追加が必要なので、IPカタログから追加します。周波数は入力100MHz、出力50MHzで動作を確認しております。
 　　
-(3.1) ssyn/uart_if.vの周波数設定を90MHzにします。  
+(3.1) ssyn/uart_if.vの周波数設定を50MHzにします。  
   
 (4) Vivadoのお作法で合成以下を行い、Arty A7に書き込みます。
   
@@ -426,17 +482,24 @@ Digilent Arty A7を使う場合の合成方法のメモです。Xilinx Vivadoを
 
 (12) 実行の停止もCtrl-cで停止します。それ以外のコマンドは、以下の通りです。  
   
-	command format
-	g : goto PC address ( run program until quit ) : format:  g <start addess>
-	Ctrl-c : quit from any command                 : format:  Ctrl-c
-	w : write date to memory                       : format:  w <start adderss> <data> ....<data> Ctrl-c
-	r : read data from memory                      : format:  r <start address> <end adderss>
-	t : trashed memory data and 0 clear            : format:  t
-	s : program step execution                     : format:  s
-	p : read instruction memory                    : format:  p <start address> <end adderss>
-	i : write instruction memory                   : format:  i <start adderss> <data> ....<data> Ctrl-c
-	j : print current PC value                     : format:  j
-	z : parge D cache                              : format:  z
+    g : goto PC address ( run program until quit ) : format: g <start addess>
+    Ctrl-c : quit from any command : format: Ctrl-c
+    w : write date to SDRAM : format: w <start adderss> <data> ....<data> Ctrl-c
+    r : read data from SDRAM : format: r <start address> <end adderss>
+    t : trashed memory data and 0 clear : format: t <start address> <end adderss>
+    s : program break point set : format: s <break address>
+        Setting address : using even number address
+        Unsetting address : using odd number address
+    p : read IO regs/csr/RF : format: p <start address> <end adderss>
+        address : upper 2bits == 2'b11 : I/O registers
+        address : upper 2bits == 2'b10 : csr registers
+        address : upper 2bits == 2'b00 : Register Files
+    i : write IO regs/csr/RF : format: i <start adderss> <data> ....<data> Ctrl-c
+        address : upper 2bits == 2'b11 : I/O registers
+        address : upper 2bits == 2'b10 : csr registers
+        address : upper 2bits == 2'b00 : Register Files
+    j : print current PC value : format: j
+    z : parge D cache : format:  z // currently not woring
 
 2.5 ベアメタルCプログラム動作方法
 
