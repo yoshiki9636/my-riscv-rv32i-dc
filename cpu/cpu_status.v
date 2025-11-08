@@ -50,7 +50,7 @@ always @ (posedge clk or negedge rst_n) begin
 end
 
 // quit_cmd -> finish
-reg [2:8] cpu_stopping_cntr;
+reg [2:0] cpu_stopping_cntr;
 
 always @ (posedge clk or negedge rst_n) begin
 	if (~rst_n)
