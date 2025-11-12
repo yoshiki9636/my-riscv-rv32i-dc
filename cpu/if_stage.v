@@ -67,6 +67,7 @@ module if_stage
 	input ic_stall_fin,
 	input ic_stall_fin2,
 	output reg stall_ld_add,
+	//output dc_stall_patch,
 	output [31:0] pc_data
 	);
 
@@ -131,12 +132,14 @@ always @ (posedge clk or negedge rst_n) begin
 		pc_id_pre <= pc_if;
 end
 
+wire inst_collision_smpl1;
+
 always @ (posedge clk or negedge rst_n) begin   
 	if (~rst_n)
         pc_collision <= 30'd0;
 	else if (rst_pipe)
         pc_collision <= 30'd0;	
-	else if (stall_1shot & stall_ld_ex )
+	else if ((stall_1shot & stall_ld_ex)|inst_collision_smpl1)
         pc_collision <= pc_id;
 end
 
@@ -184,6 +187,23 @@ reg [2:0] ic_after_dc;
 
 wire ic_stall_1shot = ic_stall & ~ic_stall_dly;
 
+wire inst_roll_smpl_tim1;
+wire inst_roll_smpl_tim2;
+wire inst_roll_smpl_tim3;
+
+always @ (posedge clk or negedge rst_n) begin   
+	if (~rst_n)
+        inst_roll <= 32'h0000_0013;
+	else if (rst_pipe)
+        inst_roll <= 32'h0000_0013;	
+	else if (inst_roll_smpl_tim1|inst_roll_smpl_tim2|inst_roll_smpl_tim3)
+        inst_roll <= inst_rdata_id;
+	else if (~ic_stall & ( stall_1shot | ~stall_dly & stall_ld ))
+        inst_roll <= inst_rdata_id;
+end
+
+
+/*
 always @ (posedge clk or negedge rst_n) begin   
 	if (~rst_n)
         inst_roll <= 32'h0000_0013;
@@ -217,6 +237,7 @@ always @ (posedge clk or negedge rst_n) begin
 	else if (~ic_stall & ( stall_1shot | ~stall_dly & stall_ld ))
         inst_roll <= inst_rdata_id;
 end
+*/
 
 reg post_jump_cmd_c2;
 reg stall_ld_ex_smpl;
@@ -235,7 +256,7 @@ always @ (posedge clk or negedge rst_n) begin
         inst_collision <= 32'h0000_0013;
 	else if (rst_pipe)
         inst_collision <= 32'h0000_0013;	
-	else if (stall_1shot & stall_ld_ex )
+	else if ((stall_1shot & stall_ld_ex)|inst_collision_smpl1)
         inst_collision <= inst_roll;
 end
 
@@ -246,7 +267,7 @@ always @ (posedge clk or negedge rst_n) begin
         use_collision <= 1'b0;
 	else if (dc_stall_fin2)
         use_collision <= 1'b0;
-	else if (stall_1shot & stall_ld_ex )
+	else if ((stall_1shot & stall_ld_ex)|inst_collision_smpl1)
         use_collision <= 1'b1;
 end
 
@@ -273,6 +294,7 @@ always @ (posedge clk or negedge rst_n) begin
 	else if (ic_stall_1shot & stall_1shot)
         //ic_after_dc <= 3'b010;
         ic_after_dc <= 3'b110;
+	//else if (~ic_stall & stall & (ic_after_dc == 3'b000))
 	else if (~ic_stall & stall & (ic_after_dc == 3'b000))
         ic_after_dc <= 3'b001;
 	else if (ic_stall & stall & (ic_after_dc == 3'b001))
@@ -302,6 +324,7 @@ always @ (posedge clk or negedge rst_n) begin
         //ic_after_dc <= 2'b00;
 end
 
+/*
                  //((dc_after_ic == 3'b111) & dc_stall_fin2) ? inst_rdata_id : // 
 assign inst_id = ((ic_after_dc == 3'b011) & ic_stall_fin2) ? use_collision ? inst_collision : inst_roll : // for ic stall after dc stall
                  ((dc_after_ic == 3'b011) & dc_stall_fin2) ? use_collision ? inst_collision : inst_roll : // 
@@ -310,6 +333,20 @@ assign inst_id = ((ic_after_dc == 3'b011) & ic_stall_fin2) ? use_collision ? ins
                  //((ic_stall|ic_stall_dly)&dc_stall_fin2) ? inst_roll : // 1shot ok dc stall inside ic stall
                  (ic_stall|ic_stall_dly) ? 32'h0000_0013 : // nop for icache stall
                  use_collision  ?  inst_collision : // for load store btb
+                 (stall_dly | stall_ld_ex) ? inst_roll : // for load bypass pattern without store
+                 inst_rdata_id; // other condisitons
+*/
+wire dc_fin_after_ic;
+wire ic_fin_after_dc;
+wire syn_fin;
+
+assign inst_id =
+                 use_collision  ?  inst_collision : // for load store btb
+                 dc_fin_after_ic ? inst_roll : //ok
+                 ic_fin_after_dc ? inst_roll : //ok
+                 (stall_ld_ex_smpl & ic_stall_fin2) ? inst_roll :
+                 syn_fin ? 32'h0000_0013 : // nop for icache stall //ok?
+                 (ic_stall|ic_stall_dly) ? 32'h0000_0013 : // nop for icache stall //ok
                  (stall_dly | stall_ld_ex) ? inst_roll : // for load bypass pattern without store
                  inst_rdata_id; // other condisitons
 
@@ -337,5 +374,149 @@ end
 
 assign post_jump_cmd_cond = post_jump_cmd_c;
 
+// patch for ic_stall & dc_stall
+
+//assign dc_stall_patch = ~ic_stall & (dc_after_ic == 3'd6) & (ic_after_dc == 3'd3);
+
+
+// icdc stall state machine
+
+`define IDST_IDLE 4'b0000
+`define IDST_ISND 4'b0001
+`define IDST_ISWD 4'b0010
+`define IDST_ISAF 4'b0011
+`define IDST_DSNI 4'b0101
+`define IDST_DSWI 4'b0110
+`define IDST_DSAF 4'b0111
+`define IDST_SYWB 4'b1110
+`define IDST_SYAI 4'b1111
+`define IDST_SYAD 4'b1101
+
+
+// Request channel manager state machine
+reg [3:0] cache_miss_current;
+
+function [3:0] cache_miss_decode;
+input [3:0] cache_miss_current;
+input ic_stall;
+input dc_stall;
+begin
+    case(cache_miss_current)
+		`IDST_IDLE: begin
+    		casex({ic_stall, dc_stall})
+				2'b11: cache_miss_decode = `IDST_SYWB;
+				2'b10: cache_miss_decode = `IDST_ISND;
+				2'b01: cache_miss_decode = `IDST_DSNI;
+				2'b00: cache_miss_decode = `IDST_IDLE;
+				default: cache_miss_decode = `IDST_IDLE;
+    		endcase
+		end
+		`IDST_ISND: begin
+    		casex({ic_stall, dc_stall})
+				2'b11: cache_miss_decode = `IDST_ISWD;
+				2'b10: cache_miss_decode = `IDST_ISND;
+				2'b01: cache_miss_decode = `IDST_DSNI;
+				2'b00: cache_miss_decode = `IDST_IDLE;
+				default: cache_miss_decode = `IDST_IDLE;
+    		endcase
+		end
+		`IDST_ISWD: begin
+    		casex({ic_stall, dc_stall})
+				2'b11: cache_miss_decode = `IDST_ISWD;
+				2'b10: cache_miss_decode = `IDST_ISWD; // not occured
+				2'b01: cache_miss_decode = `IDST_DSAF;
+				2'b00: cache_miss_decode = `IDST_IDLE; // not occured
+				default: cache_miss_decode = `IDST_IDLE;
+    		endcase
+		end
+		`IDST_ISAF: begin
+    		casex({ic_stall, dc_stall})
+				2'b11: cache_miss_decode = `IDST_ISWD;
+				2'b10: cache_miss_decode = `IDST_ISAF;
+				2'b01: cache_miss_decode = `IDST_DSNI; // not occuerd
+				2'b00: cache_miss_decode = `IDST_IDLE;
+				default: cache_miss_decode = `IDST_IDLE;
+    		endcase
+		end
+
+		`IDST_DSNI: begin
+    		casex({ic_stall, dc_stall})
+				2'b11: cache_miss_decode = `IDST_DSWI;
+				2'b10: cache_miss_decode = `IDST_ISND;
+				2'b01: cache_miss_decode = `IDST_DSNI;
+				2'b00: cache_miss_decode = `IDST_IDLE;
+				default: cache_miss_decode = `IDST_IDLE;
+    		endcase
+		end
+		`IDST_DSWI: begin
+    		casex({ic_stall, dc_stall})
+				2'b11: cache_miss_decode = `IDST_DSWI;
+				2'b10: cache_miss_decode = `IDST_ISAF;
+				2'b01: cache_miss_decode = `IDST_DSAF; // not occured but occured
+				2'b00: cache_miss_decode = `IDST_IDLE; // not occured
+				default: cache_miss_decode = `IDST_IDLE;
+    		endcase
+		end
+		`IDST_DSAF: begin
+    		casex({ic_stall, dc_stall})
+				2'b11: cache_miss_decode = `IDST_DSWI; // not occured
+				2'b10: cache_miss_decode = `IDST_ISAF; // not occured
+				2'b01: cache_miss_decode = `IDST_DSAF;
+				2'b00: cache_miss_decode = `IDST_IDLE;
+				default: cache_miss_decode = `IDST_IDLE;
+    		endcase
+		end
+
+		`IDST_SYWB: begin
+    		casex({ic_stall, dc_stall})
+				2'b11: cache_miss_decode = `IDST_SYWB;
+				2'b10: cache_miss_decode = `IDST_SYAI;
+				2'b01: cache_miss_decode = `IDST_SYAD;
+				2'b00: cache_miss_decode = `IDST_IDLE; // not occured
+				default: cache_miss_decode = `IDST_IDLE;
+    		endcase
+		end
+		`IDST_SYAI: begin
+    		casex({ic_stall, dc_stall})
+				2'b11: cache_miss_decode = `IDST_ISWD; // not occured
+				2'b10: cache_miss_decode = `IDST_SYAI; 
+				2'b01: cache_miss_decode = `IDST_DSNI; // not occured
+				2'b00: cache_miss_decode = `IDST_IDLE;
+				default: cache_miss_decode = `IDST_IDLE;
+    		endcase
+		end
+		`IDST_SYAD: begin
+    		casex({ic_stall, dc_stall})
+				2'b11: cache_miss_decode = `IDST_ISWD; // not occured
+				2'b10: cache_miss_decode = `IDST_ISND; // not occured 
+				2'b01: cache_miss_decode = `IDST_SYAD;
+				2'b00: cache_miss_decode = `IDST_IDLE;
+				default: cache_miss_decode = `IDST_IDLE;
+    		endcase
+		end
+
+		default: cache_miss_decode = `IDST_IDLE;
+   	endcase
+end
+endfunction
+
+wire [3:0] cache_miss_next = cache_miss_decode( cache_miss_current, ic_stall, stall );
+
+always @ (posedge clk or negedge rst_n) begin
+    if (~rst_n)
+        cache_miss_current <= `IDST_IDLE;
+    else
+        cache_miss_current <= cache_miss_next;
+end
+
+assign dc_fin_after_ic = (cache_miss_current == `IDST_DSAF) & ic_stall_fin2;
+assign ic_fin_after_dc = (cache_miss_current == `IDST_ISAF) & ic_stall_fin2;
+assign syn_fin         = (cache_miss_current == `IDST_SYAI) & ic_stall_fin2;
+
+assign inst_roll_smpl_tim1 = (cache_miss_next == `IDST_DSNI)&(cache_miss_current == `IDST_IDLE);
+assign inst_roll_smpl_tim2 = (cache_miss_next == `IDST_DSAF)&(cache_miss_current == `IDST_ISWD);
+assign inst_roll_smpl_tim3 = (cache_miss_next == `IDST_SYAD)&(cache_miss_current == `IDST_SYWB);
+
+assign inst_collision_smpl1 = (cache_miss_next == `IDST_ISWD)&(cache_miss_current == `IDST_ISAF);
 
 endmodule
