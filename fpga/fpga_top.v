@@ -13,7 +13,7 @@
 
 module fpga_top
     #(parameter IWIDTH = 13,
-      parameter DWIDTH = 13)
+      parameter DWIDTH = 6)
     (
 	input clkin,
 	input rst_n,
@@ -117,32 +117,67 @@ wire app_rd_data_valid; // input
 wire [DWIDTH+1:2] d_ram_radr = { DWIDTH{ 1'b0 }};
 wire [DWIDTH+1:2] d_ram_wadr = { DWIDTH{ 1'b0 }};
 wire [31:0] d_ram_rdata;
-wire [31:0] d_ram_wdata = 12'd0;
+wire [31:0] d_ram_wdata = 32'd0;
 wire d_ram_wen = 1'b0;
 wire d_read_sel = 1'b0;
 
-wire [IWIDTH+1:2] i_ram_radr;
-wire [IWIDTH+1:2] i_ram_wadr;
+wire [IWIDTH+1:2] i_ram_radr = 0;
+wire [IWIDTH+1:2] i_ram_wadr = 0;
 wire [31:0] i_ram_rdata;
-wire [31:0] i_ram_wdata;
-wire i_ram_wen;
-wire i_read_sel;
+wire [31:0] i_ram_wdata = 0;
+wire i_ram_wen = 0;
+wire i_read_sel = 0;
 
-wire dma_io_we;
-wire [15:2] dma_io_wadr;
-wire [31:0] dma_io_wdata;
-wire [15:2] dma_io_radr;
-wire dma_io_radr_en;
+//wire dma_io_we;
+//wire [15:2] dma_io_wadr;
+//wire [31:0] dma_io_wdata;
+//wire [15:2] dma_io_radr;
+//wire dma_io_radr_en;
+// io bus for cpu
+wire dma_io_we_c; // output
+wire [15:2] dma_io_wadr_c; // output
+wire [31:0] dma_io_wdata_c; // output
+wire [15:2] dma_io_radr_c; // output
+wire dma_io_radr_en_c; // output
+// io bus for uart
+wire dma_io_we_u; // output
+wire [15:2] dma_io_wadr_u; // output
+wire [31:0] dma_io_wdata_u; // output
+wire [15:2] dma_io_radr_u; // output
+wire dma_io_radr_en_u; // output
+
+// io bus logics
+wire dma_io_we = dma_io_we_c | dma_io_we_u;
+wire [15:2] dma_io_wadr = dma_io_we_u ? dma_io_wadr_u : dma_io_wadr_c;
+wire [31:0] dma_io_wdata = dma_io_we_u ? dma_io_wdata_u : dma_io_wdata_c;
+wire dma_io_radr_en = dma_io_radr_en_c | dma_io_radr_en_u;
+wire [15:2] dma_io_radr = dma_io_radr_en_u ? dma_io_radr_u : dma_io_radr_c;
+
 wire [31:0] dma_io_rdata;
 wire [31:0] dma_io_rdata_in = 32'd0;
 wire [31:0] dma_io_rdata_in_2;
-wire [31:0] dma_io_rdata_in_3;
 wire ibus_ren;
 wire [19:2] ibus_radr;
 wire [15:0] ibus32_rdata = 16'd0;
 wire ibus_wen;
 wire [19:2] ibus_wadr;
 wire [15:0] ibus32_wdata;
+
+// csr monitor bus
+wire csr_radr_en_mon; // output
+wire [11:0] csr_radr_mon; // output
+wire [11:0] csr_wadr_mon; // output
+wire csr_we_mon; // output
+wire [31:0] csr_wdata_mon; // output
+wire [31:0] csr_rdata_mon; // input
+
+// register file monitor bus
+wire rf_radr_en_mon; // output
+wire [4:0] rf_radr_mon; // output
+wire [4:0] rf_wadr_mon; // output
+wire rf_we_mon; // output
+wire [31:0] rf_wdata_mon; // output
+wire [31:0] rf_rdata_mon; // input
 
 wire [31:2] start_adr;
 wire cpu_start;
@@ -175,13 +210,11 @@ wire tx_fifo_underrun;
 
 // for uart output
 wire [7:0] uart_io_char;
-wire  uart_io_we;
-wire  uart_io_full;
-
-// for free run counter signals
-wire csr_mtie;
-wire frc_cntr_val_leq;
-wire interrupt_clear;
+wire uart_io_we;
+wire uart_io_full;
+wire rout_en;
+wire [7:0] rout;
+wire rx_disable_echoback = 1'b0;
 
 `ifdef ARTY_A7
 wire locked;
@@ -211,8 +244,8 @@ wire clk_ref_i = clk_200mhz; // input
 wire ui_clk;
 wire ui_clk_sync_rst;
 //wire mrst_n = rst_n;
-assign mclk = ui_clk;
-assign mrst_n = ~ui_clk_sync_rst;
+wire mclk = ui_clk;
+wire mrst_n = ~ui_clk_sync_rst;
 //wire mrst_n = rst_n;
 
 // MIG interface
@@ -232,6 +265,10 @@ wire [7:0] calib_tap_val = 8'd0; // input
 wire calib_tap_load_done = 1'b0; // input
 wire sys_rst = rst_n; // input
 
+wire cpu_run_state;
+
+wire [15:0] uart_term = 16'd54;
+
 cpu_top #(.DWIDTH(DWIDTH), .IWIDTH(IWIDTH)) cpu_top (
 	.clk(clk),
 	.rst_n(rst_n),
@@ -239,12 +276,15 @@ cpu_top #(.DWIDTH(DWIDTH), .IWIDTH(IWIDTH)) cpu_top (
 	.cpu_start(cpu_start),
 	.quit_cmd(quit_cmd),
 	.start_adr(start_adr),
+	.cpu_run_state(cpu_run_state),
+
 	.d_ram_radr(d_ram_radr),
 	.d_ram_wadr(d_ram_wadr),
 	.d_ram_rdata(d_ram_rdata),
 	.d_ram_wdata(d_ram_wdata),
 	.d_ram_wen(d_ram_wen),
 	.d_read_sel(d_read_sel),
+
 	.i_ram_radr(i_ram_radr),
 	.i_ram_wadr(i_ram_wadr),
 	.i_ram_rdata(i_ram_rdata),
@@ -252,11 +292,11 @@ cpu_top #(.DWIDTH(DWIDTH), .IWIDTH(IWIDTH)) cpu_top (
 	.i_ram_wen(i_ram_wen),
 	.i_read_sel(i_read_sel),
 	.pc_data(pc_data),
-	.dma_io_we(dma_io_we),
-	.dma_io_wadr(dma_io_wadr),
-	.dma_io_wdata(dma_io_wdata),
-	.dma_io_radr(dma_io_radr),
-	.dma_io_radr_en(dma_io_radr_en),
+	.dma_io_we(dma_io_we_c),
+	.dma_io_wadr(dma_io_wadr_c),
+	.dma_io_wdata(dma_io_wdata_c),
+	.dma_io_radr(dma_io_radr_c),
+	.dma_io_radr_en(dma_io_radr_en_c),
 	//.dma_io_rdata_in(dma_io_rdata_in),
 	.dma_io_rdata_in(dma_io_rdata),
 	.ibus_ren(ibus_ren),
@@ -274,6 +314,20 @@ cpu_top #(.DWIDTH(DWIDTH), .IWIDTH(IWIDTH)) cpu_top (
 	.ic_finish_mrd(ic_finish_mrd),
 	.start_icflush(start_dcflush), // same timing
 
+    .csr_radr_en_mon(csr_radr_en_mon),
+    .csr_radr_mon(csr_radr_mon),
+    .csr_wadr_mon(csr_wadr_mon),
+    .csr_we_mon(csr_we_mon),
+    .csr_wdata_mon(csr_wdata_mon),
+    .csr_rdata_mon(csr_rdata_mon),
+
+    .rf_radr_en_mon(rf_radr_en_mon),
+    .rf_radr_mon(rf_radr_mon),
+    .rf_wadr_mon(rf_wadr_mon),
+    .rf_we_mon(rf_we_mon),
+    .rf_wdata_mon(rf_wdata_mon),
+    .rf_rdata_mon(rf_rdata_mon),
+
 	.dcw_start_rq(dc_wstart_rq),
 	.dcw_in_addr(dc_win_addr),
 	.dcw_in_mask(dc_in_mask),
@@ -287,9 +341,6 @@ cpu_top #(.DWIDTH(DWIDTH), .IWIDTH(IWIDTH)) cpu_top (
 	.finish_mrd(dc_finish_mrd),
 	.start_dcflush(start_dcflush),
 	.dcflush_running(dcflush_running),
-	.interrupt_clear(interrupt_clear),
-	.csr_mtie(csr_mtie),
-	.frc_cntr_val_leq(frc_cntr_val_leq),
 	.interrupt_0(interrupt_0)
 	);
 
@@ -393,8 +444,6 @@ dram_top dram_top (
 	.rlast(rlast)
 	);
 
-
-
 mig_7series_0 mig_7series_0 (
 	.ddr3_dq(ddr3_dq),
 	.ddr3_dqs_n(ddr3_dqs_n),
@@ -462,37 +511,67 @@ dummy_mig dummy_mig (
 	);
 */
 
-uart_top #(.DWIDTH(DWIDTH), .IWIDTH(IWIDTH)) uart_top (
-    .clk(clk),
-    .rst_n(rst_n),
-    .rx(rx),
-    .tx(tx),
+uart_top uart_top (
+	.clk(clk),
+	.rst_n(rst_n),
+	.rx(rx),
+	.tx(tx),
+
     .d_ram_radr(uart_rin_addr),
     .d_ram_wadr(uart_win_addr),
     .d_ram_rdata(uart_rdat_m_data),
     .d_ram_wdata(uart_in_wdata),
     .d_ram_wen(uart_wstart_rq),
-	.uart_finish_wresp(uart_finish_wresp),
-    .d_read_sel(uart_d_read_sel),
+    .uart_finish_wresp(uart_finish_wresp),
+    //.d_read_sel(uart_d_read_sel),
     .d_ram_mask(uart_in_mask),
-    .dread_start(uart_rstart_rq),
+    .u_read_req(uart_rstart_rq),
     .read_valid(uart_rdat_m_valid),
-    .i_ram_radr(i_ram_radr),
-    .i_ram_wadr(i_ram_wadr),
-    .i_ram_rdata(i_ram_rdata),
-    .i_ram_wdata(i_ram_wdata),
-    .i_ram_wen(i_ram_wen),
-    .i_read_sel(i_read_sel),
-    .pc_data(pc_data),
-    .cpu_start(cpu_start),
-	.start_dcflush(start_dcflush),
-    .quit_cmd(quit_cmd),
-	.dcflush_running(dcflush_running),
-    .start_adr(start_adr),
-    .uart_io_char(uart_io_char),
-    .uart_io_we(uart_io_we),
-    .uart_io_full(uart_io_full)
-    );
+	//.d_ram_radr(d_ram_radr),
+	//.dread_start(dread_start),
+	//.d_ram_rdata(d_ram_rdata),
+	//.read_valid(read_valid),
+	//.d_ram_wadr(d_ram_wadr),
+	//.d_ram_wdata(d_ram_wdata),
+	//.d_ram_mask(d_ram_mask),
+	//.d_ram_wen(d_ram_wen),
+	//.uart_finish_wresp(uart_finish_wresp),
+	//.d_read_sel(d_read_sel),
+
+	.dma_io_we(dma_io_we_u),
+	.dma_io_wadr(dma_io_wadr_u),
+	.dma_io_wdata(dma_io_wdata_u),
+	.dma_io_radr(dma_io_radr_u),
+	.dma_io_radr_en(dma_io_radr_en_u),
+	.dma_io_rdata_in(dma_io_rdata),
+
+	.csr_radr_en_mon(csr_radr_en_mon),
+	.csr_radr_mon(csr_radr_mon),
+	.csr_wadr_mon(csr_wadr_mon),
+	.csr_we_mon(csr_we_mon),
+	.csr_wdata_mon(csr_wdata_mon),
+	.csr_rdata_mon(csr_rdata_mon),
+
+	.rf_radr_en_mon(rf_radr_en_mon),
+	.rf_radr_mon(rf_radr_mon),
+	.rf_wadr_mon(rf_wadr_mon),
+	.rf_we_mon(rf_we_mon),
+	.rf_wdata_mon(rf_wdata_mon),
+	.rf_rdata_mon(rf_rdata_mon),
+
+	.pc_data(pc_data),
+	.cpu_start(cpu_start),
+	.cpu_run_state(cpu_run_state),
+	.quit_cmd(quit_cmd),
+	.start_adr(start_adr),
+	.uart_io_char(uart_io_char),
+	.uart_io_we(uart_io_we),
+	.uart_io_full(uart_io_full),
+	.uart_term(uart_term),
+	.rout_en(rout_en),
+	.rout(rout),
+	.rx_disable_echoback(rx_disable_echoback)
+	);
 
 io_led io_led (
 	.clk(clk),
@@ -503,7 +582,7 @@ io_led io_led (
 	.dma_io_radr(dma_io_radr),
 	.dma_io_radr_en(dma_io_radr_en),
 	.dma_io_rdata_in(dma_io_rdata_in_2),
-	.dma_io_rdata(dma_io_rdata_in_3),
+	.dma_io_rdata(dma_io_rdata),
 	.rgb_led(rgb_led),
 	.rgb_led1(rgb_led1),
 	.rgb_led2(rgb_led2),
@@ -524,20 +603,5 @@ io_uart_out io_uart_out (
     .uart_io_we(uart_io_we),
     .uart_io_full(uart_io_full)
     );
-
-io_frc io_frc (
-	.clk(clk),
-	.rst_n(rst_n),
-	.dma_io_we(dma_io_we),
-	.dma_io_wadr(dma_io_wadr),
-	.dma_io_wdata(dma_io_wdata),
-	.dma_io_radr(dma_io_radr),
-	.dma_io_radr_en(dma_io_radr_en),
-	.dma_io_rdata_in(dma_io_rdata_in_3),
-	.dma_io_rdata(dma_io_rdata),
-	.csr_mtie(csr_mtie),
-	.frc_cntr_val_leq(frc_cntr_val_leq),
-	.interrupt_clear(interrupt_clear)
-	);
 
 endmodule
