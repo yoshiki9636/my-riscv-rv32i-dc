@@ -3,7 +3,7 @@
 #include <string.h>
 
 //#define LP 10
-#define LP 1000000
+#define LP 1000
 #define LP2 200
 // workaround for using libm_nano.a
 int __errno;

@@ -5,7 +5,7 @@
 //#include <string.h>
 
 //#define LP 10
-#define LP 1000000
+#define LP 1000
 #define LP2 200
 #define NUM_NODE 4
 #define NUM_EDGE 5
@@ -46,11 +46,11 @@ struct _node_list {
 
 int __errno;
 
-char* heap_end = (char*)0x02000000;
+char* heap_end = (char*)0x8000;
 //void _sbrk_r(void) {}
 char* _sbrk(int incr) {
- char* heap_low = (char*)0x02000000;
- char* heap_top = (char*)0x03000000;
+ char* heap_low = (char*)0x8000;
+ char* heap_top = (char*)0xc000;
  char *prev_heap_end;
  
  if (heap_end == 0) {
@@ -110,14 +110,14 @@ int main() {
 	edge_bottom->next = NULL;
 	t_EDGE_LIST* edge_entry = edge_bottom;
 
-	for (int i = 0; i < 1000; i++) {
+	for (int i = 0; i < 100; i++) {
 		t_NODE_LIST* node_tmp = (t_NODE_LIST*)malloc(sizeof(t_NODE_LIST));
-		node_tmp->na = i+0x20000;
+		node_tmp->na = i+200000;
 		node_tmp->next = node_entry;
 		node_entry = node_tmp;
 
 		t_EDGE_LIST* edge_tmp = (t_EDGE_LIST*)malloc(sizeof(t_EDGE_LIST));
-		edge_tmp->ea = i+0x30000;
+		edge_tmp->ea = i+30000;
 		edge_tmp->next = edge_entry;
 		edge_entry = edge_tmp;
 	}
@@ -126,16 +126,16 @@ int main() {
 	while ( node_entry->next != NULL) {
 		int aa = node_entry->na;
 		*led = aa & 0x7777;
-		//int length = int_print( cbuf, aa, 0 );
-		//uprint( cbuf, length, 2 );
+		int length = int_print( cbuf, aa, 0 );
+		uprint( cbuf, length, 2 );
 		node_entry = node_entry->next;
 	}
 
 	while ( edge_entry->next != NULL) {
 		int aa = edge_entry->ea;
 		*led = aa & 0x7777;
-		//int length = int_print( cbuf, aa, 0 );
-		//uprint( cbuf, length, 2 );
+		int length = int_print( cbuf, aa, 0 );
+		uprint( cbuf, length, 2 );
 		edge_entry = edge_entry->next;
 	}
 	

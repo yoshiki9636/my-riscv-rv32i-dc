@@ -1,9 +1,9 @@
 #include <stdio.h>
 
-#define LP 1
-//#define LP 1000000
-//#define LP2 200
-#define LP2 1
+//#define LP 1
+#define LP 1000
+#define LP2 200
+//#define LP2 1
 void pass();
 void fail(unsigned int val1, unsigned int val2, unsigned int val3, unsigned int val4, unsigned int val5);
 int wait();

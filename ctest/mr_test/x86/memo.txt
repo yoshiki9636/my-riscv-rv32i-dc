@@ -1,0 +1,1 @@
+gcc -Wall -o miller_rabin2 miller_rabin2.c -lgmp
