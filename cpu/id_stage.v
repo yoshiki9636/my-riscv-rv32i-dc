@@ -9,6 +9,8 @@
  * @version		0.2 add part of csr instructions
  */
 
+//`define SUPPORT_M
+
 module id_stage(
 	input clk,
 	input rst_n,
@@ -60,6 +62,19 @@ module id_stage(
 	output reg wbk_rd_reg_ex,
     output reg illegal_ops_ex,
     output reg [31:0] inst_ex,
+`ifdef SUPPORT_M
+	output reg cmd_mul_ex,
+	output reg cmd_mulh_ex,
+	output reg cmd_mulhsu_ex,
+	output reg cmd_mulhu_ex,
+	output reg cmd_div_ex,
+	output reg cmd_divu_ex,
+	output reg cmd_rem_ex,
+	output reg cmd_remu_ex,
+	output reg cmd_mul_decode_ex,
+	output reg cmd_div_decode_ex,
+	output reg cmd_rem_decode_ex,
+`endif // SUPPORT_M
 	// from EX
 	input jmp_purge_ma,
 	input jmp_purge_ex,
@@ -243,6 +258,33 @@ wire dc_op4_00101 = dc_op4[3];
 
 wire dc_op5_01 = (inst_op5 == 2'b01);
 
+`ifdef SUPPORT_M
+// decode opecode and zero for M
+
+wire dc_notc = (inst_set == 2'b11);
+wire dc_op5_m = (inst_op5 == 2'b01);
+wire dc_op3_m = (inst_op3 == 5'd0);
+wire dc_op1_m = (inst_op1 == 5'b01100);
+
+wire mcmd_decode = dc_notc & dc_op5_m & dc_op3_m & dc_op1_m;
+
+// microcode signals
+
+wire cmd_mul_id    = dc_op2_000 & mcmd_decode;
+wire cmd_mulh_id   = dc_op2_001 & mcmd_decode;
+wire cmd_mulhsu_id = dc_op2_010 & mcmd_decode;
+wire cmd_mulhu_id  = dc_op2_011 & mcmd_decode;
+wire cmd_div_id    = dc_op2_100 & mcmd_decode;
+wire cmd_divu_id   = dc_op2_101 & mcmd_decode;
+wire cmd_rem_id    = dc_op2_110 & mcmd_decode;
+wire cmd_remu_id   = dc_op2_111 & mcmd_decode;
+
+wire cmd_mul_decode_id = cmd_mul_id & ~inst_op2[14];
+wire cmd_div_decode_id = cmd_div_id | cmd_divu_id;
+wire cmd_rem_decode_id = cmd_rem_id | cmd_remu_id;
+
+`endif // SUPPORT_M
+
 // microcode signals
 
 // load, auipc
@@ -308,12 +350,22 @@ wire cmd_wfi_id    = cmd_ec_id & dc_op3_00010 & dc_op4_00101;
 // nop command
 wire cmd_nop = (inst_id == 32'h0000_0013);
 // all command except nop
+
+`ifdef SUPPORT_M
+wire cmd_all_except_nop = mcmd_decode |
+	cmd_lui_id | cmd_auipc_id | cmd_ld_id | cmd_alui_id | cmd_alui_shamt_id
+	| cmd_alu_id | cmd_alu_add_id | cmd_alu_sub_id | cmd_st_id | cmd_jal_id
+	| cmd_jalr_id | cmd_br_id | cmd_fence_id | cmd_fencei_id | cmd_sfence_id
+	| cmd_csr_id | cmd_ec_id | cmd_ecall_id | cmd_ebreak_id | cmd_uret_id  
+	| cmd_sret_id | cmd_mret_id | cmd_wfi_id;
+`else // SUPPORT_M
 wire cmd_all_except_nop =
 	cmd_lui_id | cmd_auipc_id | cmd_ld_id | cmd_alui_id | cmd_alui_shamt_id
 	| cmd_alu_id | cmd_alu_add_id | cmd_alu_sub_id | cmd_st_id | cmd_jal_id
 	| cmd_jalr_id | cmd_br_id | cmd_fence_id | cmd_fencei_id | cmd_sfence_id
 	| cmd_csr_id | cmd_ec_id | cmd_ecall_id | cmd_ebreak_id | cmd_uret_id  
 	| cmd_sret_id | cmd_mret_id | cmd_wfi_id;
+`endif // SUPPORT_M
 
 wire illegal_ops_id = ~(cmd_nop | cmd_all_except_nop) & ~jmp_purge_ma & ~jmp_purge_ex & ~stall;
 
@@ -473,6 +525,19 @@ always @ (posedge clk or negedge rst_n) begin
 		wbk_rd_reg_ex <= 1'b0;
 		pc_ex_pre <= 30'd0;
 		inst_ex <= 32'd0;
+`ifdef SUPPORT_M
+		cmd_mul_ex <= 1'b0;
+		cmd_mulh_ex <= 1'b0;
+		cmd_mulhsu_ex <= 1'b0;
+		cmd_mulhu_ex <= 1'b0;
+		cmd_div_ex <= 1'b0;
+		cmd_divu_ex <= 1'b0;
+		cmd_rem_ex <= 1'b0;
+		cmd_remu_ex <= 1'b0;
+		cmd_mul_decode_ex <= 1'b0;
+		cmd_div_decode_ex <= 1'b0;
+		cmd_rem_decode_ex <= 1'b0;
+`endif // SUPPORT_M
      end
 	else if (rst_pipe) begin
         cmd_lui_ex <= 1'b0;
@@ -516,6 +581,19 @@ always @ (posedge clk or negedge rst_n) begin
 		rd_adr_ex <= 5'd0;
 		wbk_rd_reg_ex <= 1'b0;
 		pc_ex_pre <= 30'd0;
+`ifdef SUPPORT_M
+		cmd_mul_ex <= 1'b0;
+		cmd_mulh_ex <= 1'b0;
+		cmd_mulhsu_ex <= 1'b0;
+		cmd_mulhu_ex <= 1'b0;
+		cmd_div_ex <= 1'b0;
+		cmd_divu_ex <= 1'b0;
+		cmd_rem_ex <= 1'b0;
+		cmd_remu_ex <= 1'b0;
+		cmd_mul_decode_ex <= 1'b0;
+		cmd_div_decode_ex <= 1'b0;
+		cmd_rem_decode_ex <= 1'b0;
+`endif // SUPPORT_M
      end
      else if (~stall) begin
         cmd_lui_ex <= cmd_lui_id & ~stall_ld;
@@ -560,6 +638,19 @@ always @ (posedge clk or negedge rst_n) begin
 		wbk_rd_reg_ex <= wbk_rd_reg_id;
 		pc_ex_pre <= pc_id;
 		inst_ex <= inst_id;
+`ifdef SUPPORT_M
+		cmd_mul_ex <= cmd_mul_id;
+		cmd_mulh_ex <= cmd_mulh_id;
+		cmd_mulhsu_ex <= cmd_mulhsu_id;
+		cmd_mulhu_ex <= cmd_mulhu_id;
+		cmd_div_ex <= cmd_div_id;
+		cmd_divu_ex <= cmd_divu_id;
+		cmd_rem_ex <= cmd_rem_id;
+		cmd_remu_ex <= cmd_remu_id;
+		cmd_mul_decode_ex <= cmd_mul_decode_id;
+		cmd_div_decode_ex <= cmd_div_decode_id;
+		cmd_rem_decode_ex <= cmd_rem_decode_id;
+`endif // SUPPORT_M
     end
 end
 

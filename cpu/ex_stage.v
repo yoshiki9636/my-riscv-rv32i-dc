@@ -8,6 +8,8 @@
  * @version		0.1
  */
 
+//`define SUPPORT_M
+
 module ex_stage(
 	input clk,
 	input rst_n,
@@ -106,7 +108,12 @@ module ex_stage(
     input csr_we_mon, // new
     input [31:0] csr_wdata_mon, // new
     output [31:0] csr_rdata_mon, // new
-	
+
+`ifdef SUPPORT_M
+	output [31:0] rs1_sel,
+	output [31:0] rs2_sel,
+`endif // SUPPORT_M
+
 	// to ID
 	output reg jmp_purge_ma,
 	output jmp_purge_ex,
@@ -161,10 +168,15 @@ wire [31:0] rs2_fwd = hit_rs2_idex_ex ? rd_data_ma :
                       hit_rs2_idma_ex ? wbk_data_wb : wbk_data_wb2;
 
 // ALU selector
+`ifdef SUPPORT_M
+`else // SUPPORT_M
+wire [31:0] rs1_sel;
+wire [31:0] rs2_sel;
+`endif // SUPPORT_M
 
-wire [31:0] rs1_sel = ~nohit_rs1_ex ? rs1_fwd : rs1_data_ex;
+assign rs1_sel = ~nohit_rs1_ex ? rs1_fwd : rs1_data_ex;
 
-wire [31:0] rs2_sel = (cmd_ld_pur | cmd_alui_ex) ? ld_alui_ofs :
+assign rs2_sel = (cmd_ld_pur | cmd_alui_ex) ? ld_alui_ofs :
 					  cmd_st_ex ? st_ofs :
 					  cmd_alui_shamt_ex ? shamt :
 					   ~nohit_rs2_ex ? rs2_fwd : rs2_data_ex;
