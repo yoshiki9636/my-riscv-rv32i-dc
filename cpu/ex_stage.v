@@ -112,6 +112,8 @@ module ex_stage(
 `ifdef SUPPORT_M
 	output [31:0] rs1_sel,
 	output [31:0] rs2_sel,
+	input [31:0] m_result_ex,
+	input div_stat_valid,
 `endif // SUPPORT_M
 
 	// to ID
@@ -337,11 +339,20 @@ wire [31:0] alu_sel = alu_selector( alu_code,
 // Lui
 wire [31:0] lui_data = { lui_auipc_imm_ex, 12'd0 };
 
+`ifdef SUPPORT_M
+wire [31:0] rd_data_ex_pre = cmd_lui_ex ? lui_data :
+                             (cmd_jal_ex | cmd_jalr_ex) ? pcp4_ex :
+						      cmd_auipc_ex ? jump_adr :
+                              cmd_csr_ex ? csr_rd_data :
+                              div_stat_valid ? m_result_ex :
+                              alu_sel;
+`else // SUPPORT_M
 wire [31:0] rd_data_ex_pre = cmd_lui_ex ? lui_data :
                              (cmd_jal_ex | cmd_jalr_ex) ? pcp4_ex :
 						      cmd_auipc_ex ? jump_adr :
                               cmd_csr_ex ? csr_rd_data :
                               alu_sel;
+`endif // SUPPORT_M
 
 /*
 reg cmd_ld_ma_keeper;

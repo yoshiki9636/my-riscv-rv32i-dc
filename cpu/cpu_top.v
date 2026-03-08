@@ -8,6 +8,8 @@
  * @version		0.1
  */
 
+//`define SUPPORT_M
+
 module cpu_top
     #(parameter IWIDTH = 14,
       parameter DWIDTH = 14)
@@ -217,6 +219,26 @@ wire [15:2] dataram_radr_ma;
 wire [15:0] dataram_rdata_wb;
 wire [31:0] dma_io_rdata;
 
+// for M arch support
+`ifdef SUPPORT_M
+wire [31:0] rs1_sel; // input
+wire [31:0] rs2_sel; // input
+wire cmd_mul_ex; // input
+wire cmd_mulh_ex; // input
+wire cmd_mulhsu_ex; // input
+wire cmd_mulhu_ex; // input
+wire cmd_div_ex; // input
+wire cmd_divu_ex; // input
+wire cmd_rem_ex; // input
+wire cmd_remu_ex; // input
+wire cmd_mul_decode_ex; // input
+wire cmd_div_decode_ex; // input
+wire cmd_rem_decode_ex; // input
+wire [31:0] m_result_ex; // output
+wire div_stat_valid; // output
+wire divide_by_zero; // output // not used in risc-v
+wire div_stall; // output
+`endif // SUPPORT_M
 // LSU
 wire dc_tag_hit_ma; // output
 wire dc_st_wt_ma; // output
@@ -272,6 +294,9 @@ cpu_status cpu_status (
 	.start_adr_lat(start_adr_lat),
 	.pc_valid_id(pc_valid_id),
 	.cpu_stopping(cpu_stopping),
+`ifdef SUPPORT_M
+	.div_stall(div_stall),
+`endif // SUPPORT_M
 	.stall(stall),
 	.stall_1shot(stall_1shot),
 	.stall_1shot_dly(stall_1shot_dly),
@@ -382,6 +407,19 @@ id_stage id_stage (
 	.inst_ex(inst_ex),
 	.rd_adr_ex(rd_adr_ex),
 	.wbk_rd_reg_ex(wbk_rd_reg_ex),
+`ifdef SUPPORT_M
+	.cmd_mul_ex(cmd_mul_ex),
+	.cmd_mulh_ex(cmd_mulh_ex),
+	.cmd_mulhsu_ex(cmd_mulhsu_ex),
+	.cmd_mulhu_ex(cmd_mulhu_ex),
+	.cmd_div_ex(cmd_div_ex),
+	.cmd_divu_ex(cmd_divu_ex),
+	.cmd_rem_ex(cmd_rem_ex),
+	.cmd_remu_ex(cmd_remu_ex),
+	.cmd_mul_decode_ex(cmd_mul_decode_ex),
+	.cmd_div_decode_ex(cmd_div_decode_ex),
+	.cmd_rem_decode_ex(cmd_rem_decode_ex),
+`endif // SUPPORT_M
 	.jmp_purge_ma(jmp_purge_ma),
 	.jmp_purge_ex(jmp_purge_ex),
 	.rd_adr_wb(rd_adr_wb),
@@ -491,6 +529,12 @@ ex_stage ex_stage (
     .csr_we_mon(csr_we_mon), // new
     .csr_wdata_mon(csr_wdata_mon), // new
     .csr_rdata_mon(csr_rdata_mon), // new
+`ifdef SUPPORT_M
+    .rs1_sel(rs1_sel),
+    .rs2_sel(rs2_sel),
+	.m_result_ex(m_result_ex),
+	.div_stat_valid(div_stat_valid),
+`endif // SUPPORT_M
 	.jmp_purge_ma(jmp_purge_ma),
 	.jmp_purge_ex(jmp_purge_ex),
 	.stall(stall),
@@ -499,6 +543,30 @@ ex_stage ex_stage (
 	.stall_dly2(stall_dly2),
 	.rst_pipe(rst_pipe_ex)
 	);
+
+`ifdef SUPPORT_M
+mex_stage mex_stage (
+	.clk(clk),
+	.rst_n(rst_n),
+	.rs1_sel(rs1_sel),
+	.rs2_sel(rs2_sel),
+	.cmd_mul_ex(cmd_mul_ex),
+	.cmd_mulh_ex(cmd_mulh_ex),
+	.cmd_mulhsu_ex(cmd_mulhsu_ex),
+	.cmd_mulhu_ex(cmd_mulhu_ex),
+	.cmd_div_ex(cmd_div_ex),
+	.cmd_divu_ex(cmd_divu_ex),
+	.cmd_rem_ex(cmd_rem_ex),
+	.cmd_remu_ex(cmd_remu_ex),
+	.cmd_mul_decode_ex(cmd_mul_decode_ex),
+	.cmd_div_decode_ex(cmd_div_decode_ex),
+	.cmd_rem_decode_ex(cmd_rem_decode_ex),
+	.m_result_ex(m_result_ex),
+	.div_stat_valid(div_stat_valid),
+	.divide_by_zero(divide_by_zero), // not used in risc-v
+	.div_stall(div_stall)
+	);
+`endif // SUPPORT_M
 
 ma_stage #(.DWIDTH(DWIDTH)) ma_stage (
 	.clk(clk),
