@@ -198,8 +198,9 @@ wire [5:0] rsbits_div = 6'd31 - lbits_diff_mex1;
 //wire [31:0] div_result = quotient_mex1 >> rsbits_div;
 wire [31:0] inv_div_result = ( ~quotient_mex1 ) + 32'd1;
 wire [31:0] sign_div_result = sign_div_mx1 ? inv_div_result : quotient_mex1;
-wire [31:0] final_div_result = div_result_valid ? sign_div_result : 32'd0;
-                               //(zero_dividend | divide_by_zero | divisor_bigger_dividend) ? 32'd0 
+wire [31:0] final_div_result = divide_by_zero ? 32'hffff_ffff :
+                               div_result_valid ? sign_div_result : 32'd0;
+                               //(zero_dividend | divisor_bigger_dividend) ? 32'd0 
 
 // reminder
 
@@ -212,6 +213,7 @@ wire [31:0] rem_tmp2 = sign_rem1_mx1 ? inv_rem_tmp : rem_tmp;
 wire signed [31:0] rem_result = $signed( rem_tmp2 ) >>> $signed( lbits_rs1_mex1 );
 
 wire [31:0] final_rem_result = div_result_valid ? rem_result :
+                               divide_by_zero ? rs1_sel :
                                divisor_bigger_dividend ? rs1_sel : 32'd0;
 
 // state is valid even if divide by logic
