@@ -279,7 +279,7 @@ wire cmd_divu_id   = dc_op2_101 & mcmd_decode;
 wire cmd_rem_id    = dc_op2_110 & mcmd_decode;
 wire cmd_remu_id   = dc_op2_111 & mcmd_decode;
 
-wire cmd_mul_decode_id = cmd_mul_id & ~inst_op2[14];
+wire cmd_mul_decode_id = cmd_mul_id | cmd_mulh_id | cmd_mulhsu_id | cmd_mulhu_id;
 wire cmd_div_decode_id = cmd_div_id | cmd_divu_id;
 wire cmd_rem_decode_id = cmd_rem_id | cmd_remu_id;
 
@@ -382,10 +382,17 @@ wire wbk_rd_reg_id = ~(cmd_st_id | cmd_br_id) & dc_notc & ~jmp_purge_ma & ~stall
 assign inst_rs1_id = inst_rs1;
 assign inst_rs2_id = inst_rs2;
 
+`ifdef SUPPORT_M
+assign inst_rs1_valid = cmd_alui_id | cmd_alui_shamt_id | cmd_alu_id | cmd_csr_id |
+                        cmd_sfence_id | cmd_ld_id | cmd_st_id | cmd_jalr_id | cmd_br_id | mcmd_decode;
+
+assign inst_rs2_valid = cmd_alu_id | cmd_st_id | cmd_br_id | mcmd_decode;
+`else // SUPPORT_M
 assign inst_rs1_valid = cmd_alui_id | cmd_alui_shamt_id | cmd_alu_id | cmd_csr_id |
                         cmd_sfence_id | cmd_ld_id | cmd_st_id | cmd_jalr_id | cmd_br_id;
 
 assign inst_rs2_valid = cmd_alu_id | cmd_st_id | cmd_br_id;
+`endif // SUPPORT_M
 
 wire [4:0] inst_rs1_mon = rf_radr_en_mon ? rf_radr_mon : inst_rs1;
 
