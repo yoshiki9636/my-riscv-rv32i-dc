@@ -31,7 +31,7 @@ module mex_stage(
 
 	// to EX
 	output [31:0] m_result_ex,
-	output div_stat_valid,
+	output m_cmd_finished,
 	output divide_by_zero,
 	output div_stall
 
@@ -48,6 +48,8 @@ wire [31:0] mult_sel = cmd_mul_ex ? mult_ss[31:0] :
                        cmd_mulh_ex ? mult_ss[63:32] :
                        cmd_mulhsu_ex ? mult_su[63:32] :
                        cmd_mulhu_ex ? mult_uu[63:32] : 32'd0;
+
+wire mul_cmds = cmd_mul_ex | cmd_mulh_ex | cmd_mulhsu_ex | cmd_mulhu_ex;
 
 // div
 // setup: signed -> unsignd
@@ -224,5 +226,6 @@ assign m_result_ex = cmd_mul_decode_ex ? mult_sel :
 
 assign div_stall = div_start | (cntr[5] == 1'b0);
 
+assign m_cmd_finished = mul_cmds | div_stat_valid;
 
 endmodule

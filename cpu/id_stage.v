@@ -9,7 +9,7 @@
  * @version		0.2 add part of csr instructions
  */
 
-//`define SUPPORT_M
+`define SUPPORT_M
 
 module id_stage(
 	input clk,
@@ -261,7 +261,7 @@ wire dc_op5_01 = (inst_op5 == 2'b01);
 `ifdef SUPPORT_M
 // decode opecode and zero for M
 
-wire dc_notc = (inst_set == 2'b11);
+//wire dc_notc = (inst_set == 2'b11);
 wire dc_op5_m = (inst_op5 == 2'b01);
 wire dc_op3_m = (inst_op3 == 5'd0);
 wire dc_op1_m = (inst_op1 == 5'b01100);

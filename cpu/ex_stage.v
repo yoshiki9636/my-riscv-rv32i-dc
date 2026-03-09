@@ -8,7 +8,7 @@
  * @version		0.1
  */
 
-//`define SUPPORT_M
+`define SUPPORT_M
 
 module ex_stage(
 	input clk,
@@ -113,7 +113,7 @@ module ex_stage(
 	output [31:0] rs1_sel,
 	output [31:0] rs2_sel,
 	input [31:0] m_result_ex,
-	input div_stat_valid,
+	input m_cmd_finished,
 `endif // SUPPORT_M
 
 	// to ID
@@ -344,7 +344,7 @@ wire [31:0] rd_data_ex_pre = cmd_lui_ex ? lui_data :
                              (cmd_jal_ex | cmd_jalr_ex) ? pcp4_ex :
 						      cmd_auipc_ex ? jump_adr :
                               cmd_csr_ex ? csr_rd_data :
-                              div_stat_valid ? m_result_ex :
+                              m_cmd_finished ? m_result_ex :
                               alu_sel;
 `else // SUPPORT_M
 wire [31:0] rd_data_ex_pre = cmd_lui_ex ? lui_data :
