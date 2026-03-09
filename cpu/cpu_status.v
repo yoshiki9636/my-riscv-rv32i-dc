@@ -8,7 +8,7 @@
  * @version		0.1
  */
 
-//`define SUPPORT_M
+`define SUPPORT_M
 
 module cpu_status(
 	input clk,
@@ -164,9 +164,9 @@ wire end_reset = 1'b0;
 
 always @ (posedge clk or negedge rst_n) begin
     if (~rst_n)
-        rst_pipe <= 1'b0 ;
-	else
-		rst_pipe <= start_reset | end_reset;
+        rst_pipe <= 1'b1 ;
+	else if ( cpu_start )
+		rst_pipe <= 1'b0;
 end
 
 always @ (posedge clk or negedge rst_n) begin

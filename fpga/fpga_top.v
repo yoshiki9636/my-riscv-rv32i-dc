@@ -511,7 +511,7 @@ dummy_mig dummy_mig (
 	);
 */
 
-uart_top uart_top (
+uart_top #(.DWIDTH(DWIDTH), .IWIDTH(IWIDTH)) uart_top (
 	.clk(clk),
 	.rst_n(rst_n),
 	.rx(rx),
