@@ -290,9 +290,6 @@ cpu_status cpu_status (
 	.rst_n(rst_n),
 	.ic_stall(ic_stall),
 	.dc_stall(dc_stall),
-`ifdef SUPPORT_M
-	.div_stall(div_stall),
-`endif // SUPPORT_M
 	.init_calib_complete(init_calib_complete),
 	.cpu_start(cpu_start),
 	.start_adr(start_adr),
