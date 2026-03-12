@@ -8,8 +8,6 @@
  * @version		0.1
  */
 
-`define SUPPORT_M
-
 module cpu_status(
 	input clk,
 	input rst_n,
@@ -29,9 +27,6 @@ module cpu_status(
 	output reg [31:2] start_adr_lat,
 	output pc_valid_id,
 	output cpu_stopping,
-`ifdef SUPPORT_M
-    input div_stall,
-`endif // SUPPORT_M
 	output stall,
 	output stall_ex,
 	output stall_ma,
@@ -66,11 +61,7 @@ always @ (posedge clk or negedge rst_n) begin
 		cpu_stopping_cntr <= 3'd7;	
 	else if (cpu_stopping_cntr == 3'd0)
 		cpu_stopping_cntr <= 3'd0;	
-`ifdef SUPPORT_M
-	else if (~(dc_stall | div_stall))
-`else // SUPPORT_M
 	else if (~dc_stall)
-`endif // SUPPORT_M
 		cpu_stopping_cntr <= cpu_stopping_cntr - 3'd1;
 end
 
@@ -124,11 +115,7 @@ assign pc_start = init_calib_complete & cpu_run_state & ~cpu_run_state_lat;
 // add lsu stall
 reg stall_dly3;
 
-`ifdef SUPPORT_M
-assign stall = ~cpu_run_state | dc_stall | div_stall;
-`else // SUPPORT_M
 assign stall = ~cpu_run_state | dc_stall;
-`endif // SUPPORT_M
 //assign stall = ~cpu_run_state | ic_stall | dc_stall;
 
 always @ (posedge clk or negedge rst_n) begin

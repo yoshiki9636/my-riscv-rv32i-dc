@@ -8,6 +8,8 @@
  * @version		0.1
  */
 
+`define SUPPORT_M
+
 module ilu_stage
 	#(parameter IWIDTH = 14)
 	(
@@ -21,10 +23,22 @@ module ilu_stage
     output [IWIDTH-3:0] ic_ram_wadr_all,
     //output [127:0] ic_ram_wdata_all,
     //output ic_ram_wen_all,
+`ifdef SUPPORT_M
+    output ic_stall_fin2_add_div,
+    output ic_stall_fin_add_div,
+	output ic_stall_add_div,
+	output ic_stall_dly_add_div,
+    input div_stall,
+    input div_stall_fin,
+    input div_stall_fin2,
+    input div_stall_dly,
+`else // SUPPORT_M
     output ic_stall_fin2,
     output ic_stall_fin,
 	output ic_stall,
-	output reg ic_stall_dly,
+	output ic_stall_dly,
+`endif // SUPPORT_M
+
     //output ic_st_ok,
 	// IC controls
 	output ic_tag_hit_id,
@@ -42,6 +56,20 @@ module ilu_stage
 	input rst_pipe
 
 	);
+
+`ifdef SUPPORT_M
+// for div stall
+wire ic_stall_fin2;
+wire ic_stall_fin;
+wire ic_stall;
+reg ic_stall_dly;
+
+assign ic_stall_fin2_add_div = ic_stall_fin2 | div_stall_fin2;
+assign ic_stall_fin_add_div = ic_stall_fin | div_stall_fin;
+assign ic_stall_add_div = ic_stall | div_stall;
+assign ic_stall_dly_add_div = ic_stall_dly | div_stall_dly;
+`endif // SUPPORT_M
+
 //
 // flush counter
 //reg [IWIDTH+1:4] icflush_cntr;
@@ -342,5 +370,6 @@ end
 
 assign icw_in_addr_dcflush = { 4'd0, ic_tag_radr[27:IWIDTH+2],  icflush_cntr_dly, 4'd0 };
 */
+
 
 endmodule

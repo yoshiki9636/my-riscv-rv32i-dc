@@ -114,6 +114,8 @@ module ex_stage(
 	output [31:0] rs2_sel,
 	input [31:0] m_result_ex,
 	input m_cmd_finished,
+	input div_result_valid,
+	input [4:0] div_rd_adr_ex,
 `endif // SUPPORT_M
 
 	// to ID
@@ -381,6 +383,8 @@ wire wbk_rd_reg_tmp;
 //wire stall_ldst_pre = (stall & cmd_st_tmp) |  (stall_dly & cmd_ld_pur);
 wire stall_ldst_pre = (stall & cmd_st_tmp) |  (stall & cmd_ld_pur);
 
+wire [4:0] rd_adr_ex_with_div = div_result_valid ? div_rd_adr_ex : rd_adr_ex;
+
 always @ ( posedge clk or negedge rst_n) begin   
 	if (~rst_n) begin
 		rd_adr_roll <= 5'd0;
@@ -402,7 +406,7 @@ always @ ( posedge clk or negedge rst_n) begin
 	//else if (~stall & ~stall_dly)
 	else if (stall_1shot) begin
 	//else if (stall_1shot | dc_stall_1shot_re) begin
-		rd_adr_roll <= rd_adr_ex;
+		rd_adr_roll <= rd_adr_ex_with_div;
         st_data_roll <= st_data_ex_pre;
         rd_data_roll <= rd_data_ex_pre;
         ldst_code_roll <= alu_code_ex;
@@ -431,7 +435,7 @@ wire stall_ldst_0 = 1'b0;
 //assign rd_data_ex = (stall | stall_dly2) ? rd_data_roll : rd_data_ex_pre;
 //assign rd_data_ex = (stall | stall_dly) ? rd_data_roll : rd_data_ex_pre;
 //assign rd_data_ex = rd_data_ex_pre;
-wire [4:0] rd_adr_ex_post = (stall_ldst_0) ? rd_adr_roll : rd_adr_ex;
+wire [4:0] rd_adr_ex_post = (stall_ldst_0) ? rd_adr_roll : rd_adr_ex_with_div;
 assign rd_data_ex = (stall_ldst) ? rd_data_roll : rd_data_ex_pre;
 wire [31:0] st_data_ex = (stall_ldst) ? st_data_roll : st_data_ex_pre;
 wire [2:0] ldst_code_ex = (stall_ldst_0) ? ldst_code_roll : alu_code_ex;

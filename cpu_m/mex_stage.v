@@ -15,6 +15,7 @@ module mex_stage(
 	// from EX
 	input [31:0] rs1_sel,
 	input [31:0] rs2_sel,
+	input [4:0] rd_adr_ex,
     // microcode
 
 	input cmd_mul_ex,
@@ -33,7 +34,14 @@ module mex_stage(
 	output [31:0] m_result_ex,
 	output m_cmd_finished,
 	output divide_by_zero,
-	output div_stall
+	output div_result_valid,
+	output reg [4:0] div_rd_adr_ex,
+	// to ILU
+	output div_stall,
+	//output div_stall_1shot,
+	output div_stall_fin,
+	output div_stall_fin2,
+	output reg div_stall_dly
 
 	);
 
@@ -52,6 +60,7 @@ wire [31:0] mult_sel = cmd_mul_ex ? mult_ss[31:0] :
 wire mul_cmds = cmd_mul_ex | cmd_mulh_ex | cmd_mulhsu_ex | cmd_mulhu_ex;
 
 // div
+
 // setup: signed -> unsignd
 
 wire [31:0] inv_rs1_sel = ( ~rs1_sel ) + 32'd1;
@@ -118,6 +127,21 @@ wire [31:0] rs2_lsh = ( us_rs2_sel << lbits_rs2[4:0] );
 
 wire div_start = (cmd_div_decode_ex | cmd_rem_decode_ex) & ~( zero_dividend | divide_by_zero | divisor_bigger_dividend );
 
+reg divide_by_zero_lat;
+
+always @ ( posedge clk or negedge rst_n) begin   
+	if (~rst_n)
+		divide_by_zero_lat <= 1'b0;
+	else if (cmd_div_decode_ex | cmd_rem_decode_ex)
+		divide_by_zero_lat <= divide_by_zero;
+end
+
+always @ ( posedge clk or negedge rst_n) begin   
+	if (~rst_n)
+		div_rd_adr_ex <= 5'd0;
+	else if (cmd_div_decode_ex | cmd_rem_decode_ex)
+		div_rd_adr_ex <= rd_adr_ex;
+end
 
 // state machine
 reg [1:0] div_state;
@@ -134,7 +158,7 @@ always @ ( posedge clk or negedge rst_n) begin
 		div_state <= 2'b00;
 end
 
-wire div_result_valid = (div_state == 2'b10);
+assign div_result_valid = (div_state == 2'b10);
 
 
 reg [31:0] dividend_mex1;
@@ -200,7 +224,7 @@ wire [5:0] rsbits_div = 6'd31 - lbits_diff_mex1;
 //wire [31:0] div_result = quotient_mex1 >> rsbits_div;
 wire [31:0] inv_div_result = ( ~quotient_mex1 ) + 32'd1;
 wire [31:0] sign_div_result = sign_div_mx1 ? inv_div_result : quotient_mex1;
-wire [31:0] final_div_result = divide_by_zero ? 32'hffff_ffff :
+wire [31:0] final_div_result = divide_by_zero_lat ? 32'hffff_ffff :
                                div_result_valid ? sign_div_result : 32'd0;
                                //(zero_dividend | divisor_bigger_dividend) ? 32'd0 
 
@@ -215,17 +239,29 @@ wire [31:0] rem_tmp2 = sign_rem1_mx1 ? inv_rem_tmp : rem_tmp;
 wire signed [31:0] rem_result = $signed( rem_tmp2 ) >>> $signed( lbits_rs1_mex1 );
 
 wire [31:0] final_rem_result = div_result_valid ? rem_result :
-                               divide_by_zero ? rs1_sel :
+                               divide_by_zero_lat ? rs1_sel :
                                divisor_bigger_dividend ? rs1_sel : 32'd0;
 
 // state is valid even if divide by logic
-assign div_stat_valid =  (zero_dividend | divide_by_zero | divisor_bigger_dividend) & cmd_div_decode_ex | div_result_valid;
+wire div_stat_valid =  (zero_dividend | divide_by_zero | divisor_bigger_dividend) & cmd_div_decode_ex | div_result_valid;
 
 assign m_result_ex = cmd_mul_decode_ex ? mult_sel :
                      mode_rem_mx1 ? final_rem_result : final_div_result;
 
-assign div_stall = div_start | (cntr[5] == 1'b0);
-
 assign m_cmd_finished = mul_cmds | div_stat_valid;
+
+assign div_stall = div_start | (cntr[5] == 1'b0);
+//assign div_stall = (cntr[5] == 1'b0);
+//assign div_stall_1shot = div_start;
+assign div_stall_fin = (div_state == 2'b01) & (cntr == 6'd0) ;
+assign div_stall_fin2 = div_result_valid;
+
+always @ ( posedge clk or negedge rst_n) begin   
+	if (~rst_n)
+		div_stall_dly <= 1'b0;
+	else
+		div_stall_dly <= div_stall;
+end
+
 
 endmodule

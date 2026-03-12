@@ -237,7 +237,12 @@ wire cmd_rem_decode_ex; // input
 wire [31:0] m_result_ex; // output
 wire m_cmd_finished; // output
 wire divide_by_zero; // output // not used in risc-v
+wire div_result_valid;
+wire [4:0] div_rd_adr_ex;
 wire div_stall; // output
+wire div_stall_fin; // output
+wire div_stall_fin2; // output
+wire div_stall_dly; // output
 `endif // SUPPORT_M
 // LSU
 wire dc_tag_hit_ma; // output
@@ -285,6 +290,9 @@ cpu_status cpu_status (
 	.rst_n(rst_n),
 	.ic_stall(ic_stall),
 	.dc_stall(dc_stall),
+`ifdef SUPPORT_M
+	.div_stall(div_stall),
+`endif // SUPPORT_M
 	.init_calib_complete(init_calib_complete),
 	.cpu_start(cpu_start),
 	.start_adr(start_adr),
@@ -294,9 +302,6 @@ cpu_status cpu_status (
 	.start_adr_lat(start_adr_lat),
 	.pc_valid_id(pc_valid_id),
 	.cpu_stopping(cpu_stopping),
-`ifdef SUPPORT_M
-	.div_stall(div_stall),
-`endif // SUPPORT_M
 	.stall(stall),
 	.stall_1shot(stall_1shot),
 	.stall_1shot_dly(stall_1shot_dly),
@@ -534,6 +539,8 @@ ex_stage ex_stage (
     .rs2_sel(rs2_sel),
 	.m_result_ex(m_result_ex),
 	.m_cmd_finished(m_cmd_finished),
+	.div_result_valid(div_result_valid),
+	.div_rd_adr_ex(div_rd_adr_ex),
 `endif // SUPPORT_M
 	.jmp_purge_ma(jmp_purge_ma),
 	.jmp_purge_ex(jmp_purge_ex),
@@ -550,6 +557,7 @@ mex_stage mex_stage (
 	.rst_n(rst_n),
 	.rs1_sel(rs1_sel),
 	.rs2_sel(rs2_sel),
+	.rd_adr_ex(rd_adr_ex),
 	.cmd_mul_ex(cmd_mul_ex),
 	.cmd_mulh_ex(cmd_mulh_ex),
 	.cmd_mulhsu_ex(cmd_mulhsu_ex),
@@ -564,7 +572,12 @@ mex_stage mex_stage (
 	.m_result_ex(m_result_ex),
 	.m_cmd_finished(m_cmd_finished),
 	.divide_by_zero(divide_by_zero), // not used in risc-v
-	.div_stall(div_stall)
+	.div_result_valid(div_result_valid),
+	.div_rd_adr_ex(div_rd_adr_ex),
+	.div_stall(div_stall),
+	.div_stall_fin(div_stall_fin),
+	.div_stall_fin2(div_stall_fin2),
+	.div_stall_dly(div_stall_dly)
 	);
 `endif // SUPPORT_M
 
@@ -726,10 +739,21 @@ ilu_stage #(.IWIDTH(IWIDTH)) ilu_stage (
 	.pc_id_pre(pc_id_pre),
 	.pc_valid_id(pc_valid_id),
 	.ic_ram_wadr_all(ic_ram_wadr_all),
+`ifdef SUPPORT_M
+	.ic_stall_fin2_add_div(ic_stall_fin2),
+	.ic_stall_fin_add_div(ic_stall_fin),
+	.ic_stall_add_div(ic_stall),
+	.ic_stall_dly_add_div(ic_stall_dly),
+	.div_stall(div_stall),
+	.div_stall_fin(div_stall_fin),
+	.div_stall_fin2(div_stall_fin2),
+	.div_stall_dly(div_stall_dly),
+`else // SUPPORT_M
 	.ic_stall_fin2(ic_stall_fin2),
 	.ic_stall_fin(ic_stall_fin),
 	.ic_stall(ic_stall),
 	.ic_stall_dly(ic_stall_dly),
+`endif // SUPPORT_M
 	.ic_tag_hit_id(ic_tag_hit_id),
 	//.ic_st_wt_id(ic_st_wt_id),
 	.icr_start_rq(icr_start_rq),
