@@ -236,7 +236,7 @@ wire cmd_div_decode_ex; // input
 wire cmd_rem_decode_ex; // input
 wire [31:0] m_result_ex; // output
 wire m_cmd_finished; // output
-wire divide_by_zero; // output // not used in risc-v
+//wire divide_by_zero; // output // not used in risc-v
 wire div_result_valid;
 wire [4:0] div_rd_adr_ex;
 wire div_stall; // output
@@ -568,7 +568,7 @@ mex_stage mex_stage (
 	.cmd_rem_decode_ex(cmd_rem_decode_ex),
 	.m_result_ex(m_result_ex),
 	.m_cmd_finished(m_cmd_finished),
-	.divide_by_zero(divide_by_zero), // not used in risc-v
+	//.divide_by_zero(divide_by_zero), // not used in risc-v
 	.div_result_valid(div_result_valid),
 	.div_rd_adr_ex(div_rd_adr_ex),
 	.div_stall(div_stall),
