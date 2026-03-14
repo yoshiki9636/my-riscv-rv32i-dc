@@ -339,8 +339,10 @@ assign inst_id = ((ic_after_dc == 3'b011) & ic_stall_fin2) ? use_collision ? ins
 wire dc_fin_after_ic;
 wire ic_fin_after_dc;
 wire syn_fin;
+wire inst_masked_in_icdc_sync_start;
 
 assign inst_id =
+                 inst_masked_in_icdc_sync_start ? 32'h0000_0013 :
                  use_collision  ?  inst_collision : // for load store btb
                  dc_fin_after_ic ? inst_roll : //ok
                  ic_fin_after_dc ? inst_roll : //ok
@@ -518,5 +520,9 @@ assign inst_roll_smpl_tim2 = (cache_miss_next == `IDST_DSAF)&(cache_miss_current
 assign inst_roll_smpl_tim3 = (cache_miss_next == `IDST_SYAD)&(cache_miss_current == `IDST_SYWB);
 
 assign inst_collision_smpl1 = (cache_miss_next == `IDST_ISWD)&(cache_miss_current == `IDST_ISAF);
+
+assign inst_masked_in_icdc_sync_start = (cache_miss_current == `IDST_SYWB);
+
+
 
 endmodule
