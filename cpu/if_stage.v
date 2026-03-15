@@ -340,9 +340,10 @@ wire dc_fin_after_ic;
 wire ic_fin_after_dc;
 wire syn_fin;
 wire inst_masked_in_icdc_sync_start;
+reg inst_mask_condition_with_jmp_lat;
 
 assign inst_id =
-                 inst_masked_in_icdc_sync_start ? 32'h0000_0013 :
+                 (inst_masked_in_icdc_sync_start | inst_mask_condition_with_jmp_lat) ? 32'h0000_0013 :
                  use_collision  ?  inst_collision : // for load store btb
                  dc_fin_after_ic ? inst_roll : //ok
                  ic_fin_after_dc ? inst_roll : //ok
@@ -523,6 +524,16 @@ assign inst_collision_smpl1 = (cache_miss_next == `IDST_ISWD)&(cache_miss_curren
 
 assign inst_masked_in_icdc_sync_start = (cache_miss_current == `IDST_SYWB);
 
+wire inst_mask_condition_with_jmp = ((cache_miss_current == `IDST_SYWB)|(cache_miss_current == `IDST_DSWI)) & jmp_condition_ex;
 
+always @ (posedge clk or negedge rst_n) begin
+    if (~rst_n)
+        inst_mask_condition_with_jmp_lat <= 1'b0;
+    else if (cache_miss_current == `IDST_IDLE)
+        inst_mask_condition_with_jmp_lat <= 1'b0;
+    else if (inst_mask_condition_with_jmp)
+        inst_mask_condition_with_jmp_lat <= 1'b1;
+end
 
 endmodule
+
