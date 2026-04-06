@@ -25,6 +25,11 @@ module fpga_top
 	output [2:0] rgb_led2,
 	output [2:0] rgb_led3,
 	//inout [7:0] gpio, // zantei
+	//output spi_sck, // zantei
+	//output [1:0] spi_csn, // zantei
+	//output spi_mosi, // zantei
+	//input spi_miso, // zantei
+
 // ddr signal
 	inout [15:0] ddr3_dq,
 	inout [1:0] ddr3_dqs_n,
@@ -155,8 +160,12 @@ wire dma_io_radr_en = dma_io_radr_en_c | dma_io_radr_en_u;
 wire [15:2] dma_io_radr = dma_io_radr_en_u ? dma_io_radr_u : dma_io_radr_c;
 
 wire [31:0] dma_io_rdata;
-wire [31:0] dma_io_rdata_in = 32'd0;
-wire [31:0] dma_io_rdata_in_2;
+wire [31:0] dma_io_rdata_in = 32'hdeadbeef; // input
+//wire [31:0] dma_io_rdata_in = 32'd0; // input
+wire [31:0] dma_io_rdata_in_2; // input
+wire [31:0] dma_io_rdata_in_3; // input
+wire [31:0] dma_io_rdata_in_4; // input
+wire [31:0] dma_io_rdata_in_5; // input
 wire ibus_ren;
 wire [19:2] ibus_radr;
 wire [15:0] ibus32_rdata = 16'd0;
@@ -215,7 +224,8 @@ wire uart_io_we;
 wire uart_io_full;
 wire rout_en;
 wire [7:0] rout;
-wire rx_disable_echoback = 1'b0;
+wire ext_uart_interrpt_1shot;
+wire rx_disable_echoback;
 
 `ifdef ARTY_A7
 wire locked;
@@ -276,6 +286,17 @@ wire [31:0] rd_data_ma;
 wire [2:0] dbg_bpoint;
 
 wire [7:0] gpio; // zantei
+
+// for free run counter signals
+wire csr_mtie;
+wire frc_cntr_val_leq;
+
+// spi select signal : not used for 5 stage 
+wire spi_select_io; // not used
+wire spi_sck; // zantei
+wire [1:0] spi_csn; // zantei
+wire spi_mosi; // zantei
+wire spi_miso = 1'b0; // zantei
 
 cpu_top #(.DWIDTH(DWIDTH), .IWIDTH(IWIDTH)) cpu_top (
 	.clk(clk),
@@ -349,10 +370,17 @@ cpu_top #(.DWIDTH(DWIDTH), .IWIDTH(IWIDTH)) cpu_top (
 	.finish_mrd(dc_finish_mrd),
 	.start_dcflush(start_dcflush),
 	.dcflush_running(dcflush_running),
-	.interrupt_0(interrupt_0),
+	//.interrupt_0(interrupt_0),
 	.cmd_ld_ma(cmd_ld_ma),
 	.cmd_st_ma(cmd_st_ma),
-	.rd_data_ma(rd_data_ma)
+	.rd_data_ma(rd_data_ma),
+	.csr_mtie(csr_mtie),
+	.frc_cntr_val_leq(frc_cntr_val_leq),
+    .csr_rmie(csr_rmie),
+    .csr_meie(csr_meie),
+    .g_interrupt_1shot(g_interrupt_1shot),
+    .g_interrupt(g_interrupt)
+
 	);
 
 axi_bus_top axi_bus_top (
@@ -598,7 +626,7 @@ io_led io_led (
 	.dma_io_radr(dma_io_radr),
 	.dma_io_radr_en(dma_io_radr_en),
 	.dma_io_rdata_in(dma_io_rdata_in_2),
-	.dma_io_rdata(dma_io_rdata),
+	.dma_io_rdata(dma_io_rdata_in_3),
 	.rgb_led(rgb_led),
 	.rgb_led1(rgb_led1),
 	.rgb_led2(rgb_led2),
@@ -620,7 +648,63 @@ io_uart_out io_uart_out (
     .dma_io_rdata(dma_io_rdata_in_2),
     .uart_io_char(uart_io_char),
     .uart_io_we(uart_io_we),
-    .uart_io_full(uart_io_full)
+    .uart_io_full(uart_io_full),
+    //.init_uart(init_uart),
+    //.uart_term(uart_term),
+    .cpu_run_state(cpu_run_state),
+    .rout_en(rout_en),
+    .rout(rout),
+    .ext_uart_interrpt_1shot(ext_uart_interrpt_1shot),
+    .rx_disable_echoback(rx_disable_echoback)
+    );
+
+io_frc io_frc (
+    .clk(clk),
+    .rst_n(rst_n),
+    .dma_io_we(dma_io_we),
+    .dma_io_wadr(dma_io_wadr),
+    .dma_io_wdata(dma_io_wdata),
+    .dma_io_radr(dma_io_radr),
+    .dma_io_radr_en(dma_io_radr_en),
+    .dma_io_rdata_in(dma_io_rdata_in_3),
+    .dma_io_rdata(dma_io_rdata_in_4),
+    .csr_mtie(csr_mtie),
+    .frc_cntr_val_leq(frc_cntr_val_leq)
+    );
+
+interrupter interrupter (
+    .clk(clk),
+    .rst_n(rst_n),
+    .interrupt_0(interrupt_0),
+    .ext_uart_interrpt_1shot(ext_uart_interrpt_1shot),
+    .csr_rmie(csr_rmie),
+    .csr_meie(csr_meie),
+    .g_interrupt_1shot(g_interrupt_1shot),
+    .g_interrupt(g_interrupt),
+    .dma_io_we(dma_io_we),
+    .dma_io_wadr(dma_io_wadr),
+    .dma_io_wdata(dma_io_wdata),
+    .dma_io_radr(dma_io_radr),
+    .dma_io_radr_en(dma_io_radr_en),
+    .dma_io_rdata_in(dma_io_rdata_in_4),
+    .dma_io_rdata(dma_io_rdata_in_5)
+    );
+
+io_spi_lite io_spi_lite(
+    .clk(clk),
+    .rst_n(rst_n),
+    .dma_io_we(dma_io_we),
+    .dma_io_wadr(dma_io_wadr),
+    .dma_io_wdata(dma_io_wdata),
+    .dma_io_radr(dma_io_radr),
+    .dma_io_radr_en(dma_io_radr_en),
+    .dma_io_rdata_in(dma_io_rdata_in_5),
+    .dma_io_rdata(dma_io_rdata),
+    .spi_select_io(spi_select_io),
+    .spi_sck(spi_sck),
+    .spi_csn(spi_csn),
+    .spi_mosi(spi_mosi),
+    .spi_miso(spi_miso)
     );
 
 endmodule

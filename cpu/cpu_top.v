@@ -91,11 +91,17 @@ module cpu_top
 	input start_dcflush,
 	output dcflush_running,
 
-	input interrupt_0,
+	//input interrupt_0,
 	// for debug port
 	output cmd_ld_ma,
 	output cmd_st_ma,
-	output [31:0] rd_data_ma
+	output [31:0] rd_data_ma,
+	output csr_mtie,
+	input frc_cntr_val_leq, // need to fix
+	output csr_meie,
+	output csr_rmie,
+	input g_interrupt_1shot, // need to fix
+	input g_interrupt // need to fix
 
 	);
 
@@ -212,9 +218,8 @@ wire [1:0] g_interrupt_priv = `M_MODE; // temp
 wire [1:0] g_current_priv = `M_MODE; // temp
 wire g_interrupt;
 wire post_jump_cmd_cond;
-wire csr_meie;
-wire csr_mtie;
-wire csr_msie;
+//wire csr_meie;
+//wire csr_msie;
 wire dma_we_ma;
 wire [15:2] dataram_wadr_ma;
 wire [15:0] dataram_wdata_ma;
@@ -275,7 +280,7 @@ wire ic_tag_hit_id;
 //wire ic_st_wt_id;
 
 // new singals
-wire csr_rmie; // new
+//wire csr_rmie; // new
 //wire csr_radr_en_mon; // new
 //wire [11:0] csr_radr_mon; // new
 //wire [11:0] csr_wadr_mon; // new
@@ -684,13 +689,13 @@ forwarding forwarding (
 	.rst_pipe(rst_pipe)
 	);
 
-interrupter interrupter (
-	.clk(clk),
-	.rst_n(rst_n),
-	.interrupt_0(interrupt_0),
-	.csr_meie(csr_meie),
-	.g_interrupt(g_interrupt)
-	);
+//interrupter interrupter (
+	//.clk(clk),
+	//.rst_n(rst_n),
+	//.interrupt_0(interrupt_0),
+	//.csr_meie(csr_meie),
+	//.g_interrupt(g_interrupt)
+	//);
 
 lsu_stage #(.DWIDTH(DWIDTH)) lsu_stage (
 	.clk(clk),
