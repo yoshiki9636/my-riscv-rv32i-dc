@@ -13,7 +13,7 @@
 
 module fpga_top
     #(parameter IWIDTH = 13,
-      parameter DWIDTH = 6)
+      parameter DWIDTH = 13)
     (
 	input clkin,
 	input rst_n,
@@ -24,6 +24,7 @@ module fpga_top
 	output [2:0] rgb_led1,
 	output [2:0] rgb_led2,
 	output [2:0] rgb_led3,
+	//inout [7:0] gpio, // zantei
 // ddr signal
 	inout [15:0] ddr3_dq,
 	inout [1:0] ddr3_dqs_n,
@@ -269,6 +270,13 @@ wire cpu_run_state;
 
 wire [15:0] uart_term = 16'd54;
 
+wire cmd_ld_ma;
+wire cmd_st_ma;
+wire [31:0] rd_data_ma;
+wire [2:0] dbg_bpoint;
+
+wire [7:0] gpio; // zantei
+
 cpu_top #(.DWIDTH(DWIDTH), .IWIDTH(IWIDTH)) cpu_top (
 	.clk(clk),
 	.rst_n(rst_n),
@@ -341,7 +349,10 @@ cpu_top #(.DWIDTH(DWIDTH), .IWIDTH(IWIDTH)) cpu_top (
 	.finish_mrd(dc_finish_mrd),
 	.start_dcflush(start_dcflush),
 	.dcflush_running(dcflush_running),
-	.interrupt_0(interrupt_0)
+	.interrupt_0(interrupt_0),
+	.cmd_ld_ma(cmd_ld_ma),
+	.cmd_st_ma(cmd_st_ma),
+	.rd_data_ma(rd_data_ma)
 	);
 
 axi_bus_top axi_bus_top (
@@ -560,6 +571,11 @@ uart_top #(.DWIDTH(DWIDTH), .IWIDTH(IWIDTH)) uart_top (
 	.rf_rdata_mon(rf_rdata_mon),
 
 	.pc_data(pc_data),
+	.cmd_ld_ma(cmd_ld_ma),
+	.cmd_st_ma(cmd_st_ma),
+	.rd_data_ma(rd_data_ma),
+	.dbg_bpoint(dbg_bpoint),
+
 	.cpu_start(cpu_start),
 	.cpu_run_state(cpu_run_state),
 	.quit_cmd(quit_cmd),
@@ -586,7 +602,10 @@ io_led io_led (
 	.rgb_led(rgb_led),
 	.rgb_led1(rgb_led1),
 	.rgb_led2(rgb_led2),
-	.rgb_led3(rgb_led3)
+	.rgb_led3(rgb_led3),
+	.dbg_bpoint(dbg_bpoint),
+	.cpu_start(cpu_start),
+	.gpio(gpio)
 	);
 
 io_uart_out io_uart_out (

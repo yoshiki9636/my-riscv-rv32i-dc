@@ -91,7 +91,11 @@ module cpu_top
 	input start_dcflush,
 	output dcflush_running,
 
-	input interrupt_0
+	input interrupt_0,
+	// for debug port
+	output cmd_ld_ma,
+	output cmd_st_ma,
+	output [31:0] rd_data_ma
 
 	);
 
@@ -111,7 +115,7 @@ wire [2:0] ldst_code_ma;
 wire [31:0] inst_id;
 wire [31:0] inst_ex;
 wire [31:0] ld_data_wb;
-wire [31:0] rd_data_ma;
+//wire [31:0] rd_data_ma;
 wire [31:0] rd_data_ex;
 wire [31:0] rd_data_wb;
 wire [31:0] rs1_data_ex;
@@ -149,14 +153,14 @@ wire cmd_fencei_ex;
 wire cmd_jal_ex;
 wire cmd_jalr_ex;
 wire cmd_ld_ex;
-wire cmd_ld_ma;
+//wire cmd_ld_ma;
 wire cmd_ld_wb;
 wire cmd_lui_ex;
 wire cmd_mret_ex;
 wire cmd_sfence_ex;
 wire cmd_sret_ex;
 wire cmd_st_ex;
-wire cmd_st_ma;
+//wire cmd_st_ma;
 wire cmd_uret_ex;
 wire cmd_wfi_ex;
 wire illegal_ops_ex;
