@@ -17,6 +17,7 @@ module ex_stage(
 	// from ID
 	input [31:0] rs1_data_ex,
 	input [31:0] rs2_data_ex,
+	input [31:2] pc_id,
 	input [31:2] pc_ex,
     // microcode
     input cmd_lui_ex,
@@ -88,10 +89,12 @@ module ex_stage(
 	output jmp_condition_ex,
 	output [31:2] csr_mtvec_ex,
     output ecall_condition_ex,
+    output mret_condition_ex,
 	output [31:2] csr_mepc_ex,
 	output [31:2] csr_sepc_ex,
 	// from somewhere...
 	input g_interrupt,
+	input g_interrupt_1shot,
 	input [1:0] g_interrupt_priv,
 	input [1:0] g_current_priv,
     input post_jump_cmd_cond,
@@ -259,6 +262,7 @@ csr_array csr_array(
 	.csr_rd_data(csr_rd_data),
 	.csr_mtvec_ex(csr_mtvec_ex),
 	.g_interrupt(g_interrupt),
+	.g_interrupt_1shot(g_interrupt_1shot),
 	.post_jump_cmd_cond(post_jump_cmd_cond),
 	.illegal_ops_ex(illegal_ops_ex),
 	.illegal_ops_inst(illegal_ops_inst), // new
@@ -275,7 +279,10 @@ csr_array csr_array(
 	.csr_mtie(csr_mtie),
 	.csr_msie(csr_msie),
 	.cmd_ecall_ex(cmd_ecall_ex),
+	.pc_id(pc_id),
 	.pc_ex(pc_ex),
+	.jmp_adr_ex(jmp_adr_ex),
+	.jmp_condition_ex(jmp_condition_ex),
 	.stall(stall),
 	.csr_radr_en_mon(csr_radr_en_mon), // new
 	.csr_radr_mon(csr_radr_mon), // new
@@ -459,12 +466,16 @@ assign jmp_condition_ex = ~stall & ~jmp_purge_ma & (
 
 // ecall
 assign ecall_condition_ex = ~stall & ~jmp_purge_ma & (cmd_ecall_ex | illegal_ops_ex);
+// mret
+assign mret_condition_ex = ~stall & ~jmp_purge_ma & (cmd_mret_ex | illegal_ops_ex);
 
 // purge signal
-assign jmp_purge_ex = jmp_condition_ex | ecall_condition_ex;
+assign jmp_purge_ex = jmp_condition_ex | ecall_condition_ex | mret_condition_ex;
 
 assign wbk_rd_reg_tmp = wbk_rd_reg_ex & ~jmp_purge_ma & ~illegal_ops_ex;
 assign cmd_st_tmp = cmd_st_ex & ~jmp_purge_ma;
+
+wire wb_mask_with_exception_interrupt = g_interrupt_1shot | g_exception;
 
 // FF to MA
 
@@ -485,7 +496,7 @@ always @ ( posedge clk or negedge rst_n) begin
 	//else if (~dc_stall_early) begin
 	else if (~stall) begin
 	//else if (~(stall_dly|stall)) begin
-		jmp_purge_ma <= jmp_purge_ex_post;
+		jmp_purge_ma <= jmp_purge_ex_post & ~ wb_mask_with_exception_interrupt;
 	end
 end
 
@@ -507,9 +518,9 @@ always @ ( posedge clk or negedge rst_n) begin
 		//rd_data_ma <= rd_data_ex_pre; // for debug test
 		//st_data_ma <= st_data_ex_pre; // for debug test
 		ldst_code_ma <= ldst_code_ex;
-	    cmd_ld_ma <= cmd_ld_ex_post;
-        cmd_st_ma <= cmd_st_ex_post;
-		wbk_rd_reg_ma <= wbk_rd_reg_ex_post;
+	    cmd_ld_ma <= cmd_ld_ex_post & ~ wb_mask_with_exception_interrupt;
+        cmd_st_ma <= cmd_st_ex_post & ~ wb_mask_with_exception_interrupt;
+		wbk_rd_reg_ma <= wbk_rd_reg_ex_post & ~ wb_mask_with_exception_interrupt;
 	end
 end
 

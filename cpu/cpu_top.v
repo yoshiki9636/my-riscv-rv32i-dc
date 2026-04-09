@@ -101,7 +101,9 @@ module cpu_top
 	output csr_meie,
 	output csr_rmie,
 	input g_interrupt_1shot, // need to fix
-	input g_interrupt // need to fix
+	input g_interrupt, // need to fix
+	output ic_stall,
+	output stall
 
 	);
 
@@ -181,6 +183,7 @@ wire inst_rs1_valid;
 wire inst_rs2_valid;
 wire jmp_condition_ex;
 wire ecall_condition_ex;
+wire mret_condition_ex;
 wire jmp_purge_ex;
 wire jmp_purge_ma;
 wire nohit_rs1_ex;
@@ -191,10 +194,10 @@ wire rst_pipe_id;
 wire rst_pipe_ex;
 wire rst_pipe_ma;
 wire rst_pipe_wb;
-wire ic_stall;
+//wire ic_stall;
 wire ic_stall_dly;
 wire dc_stall;
-wire stall;
+//wire stall;
 wire stall_1shot;
 wire stall_dly;
 wire stall_dly2;
@@ -216,7 +219,7 @@ wire [31:2] csr_sepc_ex;
 // from somewhere...
 wire [1:0] g_interrupt_priv = `M_MODE; // temp
 wire [1:0] g_current_priv = `M_MODE; // temp
-wire g_interrupt;
+//wire g_interrupt;
 wire post_jump_cmd_cond;
 //wire csr_meie;
 //wire csr_msie;
@@ -331,13 +334,15 @@ if_stage #(.IWIDTH(IWIDTH)) if_stage (
 	.jmp_condition_ex(jmp_condition_ex),
 	.jmp_adr_ex(jmp_adr_ex),
 	.ecall_condition_ex(ecall_condition_ex),
+	.mret_condition_ex(mret_condition_ex),
 	.cmd_mret_ex(cmd_mret_ex),
 	.csr_mepc_ex(csr_mepc_ex),
 	.cmd_sret_ex(cmd_sret_ex),
 	.csr_sepc_ex(csr_sepc_ex),
 	.cmd_uret_ex(cmd_uret_ex),
 	.csr_mtvec_ex(csr_mtvec_ex),
-    .g_interrupt(g_interrupt),
+    //.g_interrupt(g_interrupt),
+    .g_interrupt_1shot(g_interrupt_1shot),
     .post_jump_cmd_cond(post_jump_cmd_cond),
     .g_exception(g_exception),
 	.i_ram_radr(i_ram_radr),
@@ -460,6 +465,7 @@ ex_stage ex_stage (
 	.rst_n(rst_n),
 	.rs1_data_ex(rs1_data_ex),
 	.rs2_data_ex(rs2_data_ex),
+	.pc_id(pc_id),
 	.pc_ex(pc_ex),
 	.cmd_lui_ex(cmd_lui_ex),
 	.cmd_auipc_ex(cmd_auipc_ex),
@@ -521,10 +527,12 @@ ex_stage ex_stage (
 	.jmp_adr_ex(jmp_adr_ex),
 	.jmp_condition_ex(jmp_condition_ex),
 	.ecall_condition_ex(ecall_condition_ex),
+	.mret_condition_ex(mret_condition_ex),
 	.csr_mtvec_ex(csr_mtvec_ex),
 	.csr_mepc_ex(csr_mepc_ex),
 	.csr_sepc_ex(csr_sepc_ex),
     .g_interrupt(g_interrupt),
+    .g_interrupt_1shot(g_interrupt_1shot),
     .post_jump_cmd_cond(post_jump_cmd_cond),
     .g_interrupt_priv(g_interrupt_priv),
     .g_current_priv(g_current_priv),

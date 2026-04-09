@@ -289,6 +289,8 @@ wire [7:0] gpio; // zantei
 
 // for free run counter signals
 wire csr_mtie;
+wire csr_rmie;
+wire csr_meie;
 wire frc_cntr_val_leq;
 
 // spi select signal : not used for 5 stage 
@@ -297,6 +299,12 @@ wire spi_sck; // zantei
 wire [1:0] spi_csn; // zantei
 wire spi_mosi; // zantei
 wire spi_miso = 1'b0; // zantei
+
+// for interrupt
+wire g_interrupt_1shot;
+wire g_interrupt;
+wire ic_stall;
+wire stall;
 
 cpu_top #(.DWIDTH(DWIDTH), .IWIDTH(IWIDTH)) cpu_top (
 	.clk(clk),
@@ -379,8 +387,9 @@ cpu_top #(.DWIDTH(DWIDTH), .IWIDTH(IWIDTH)) cpu_top (
     .csr_rmie(csr_rmie),
     .csr_meie(csr_meie),
     .g_interrupt_1shot(g_interrupt_1shot),
-    .g_interrupt(g_interrupt)
-
+    .g_interrupt(g_interrupt),
+    .ic_stall(ic_stall),
+    .stall(stall)
 	);
 
 axi_bus_top axi_bus_top (
@@ -681,6 +690,8 @@ interrupter interrupter (
     .csr_meie(csr_meie),
     .g_interrupt_1shot(g_interrupt_1shot),
     .g_interrupt(g_interrupt),
+    .ic_stall(ic_stall),
+    .stall(stall),
     .dma_io_we(dma_io_we),
     .dma_io_wadr(dma_io_wadr),
     .dma_io_wdata(dma_io_wdata),

@@ -21,6 +21,7 @@ module csr_array(
 	output [31:0] csr_rd_data,
 	output [31:2] csr_mtvec_ex,
 	input g_interrupt,
+	input g_interrupt_1shot,
 	input post_jump_cmd_cond, // old?
 	input illegal_ops_ex,
     input [31:0] illegal_ops_inst, // new
@@ -38,7 +39,10 @@ module csr_array(
 	output csr_msie,
     input cmd_ecall_ex,
 	//input cmd_ebreak_ex,
+	input [31:2] pc_id,
 	input [31:2] pc_ex,
+	input [31:2] jmp_adr_ex,
+	input jmp_condition_ex,
 	input stall,
     input csr_radr_en_mon, // new
     input [11:0] csr_radr_mon, // new
@@ -161,7 +165,8 @@ reg csr_spp;
 // MIE[3] : Machine mode Global Interrupt enable
 //wire m_interrupt = g_interrupt & (g_interrupt_priv == `M_MODE);
 //wire m_interrupt =  (interrupts_in_pc_state & (g_interrupt_priv == `M_MODE) | cmd_ecall_ex | cmd_ebreak_ex ) & cpu_stat_pc & csr_rmie | g_exception;
-wire m_interrupt =  (g_interrupt & (g_interrupt_priv == `M_MODE) | cmd_ecall_ex) & csr_rmie | g_exception;
+//wire m_interrupt =  (g_interrupt & (g_interrupt_priv == `M_MODE) | cmd_ecall_ex) & csr_rmie | g_exception;
+wire m_interrupt =  (g_interrupt_1shot & (g_interrupt_priv == `M_MODE) | cmd_ecall_ex) & csr_rmie | g_exception;
 wire rmie_wr = m_interrupt | cmd_mret_ex;
 //wire rmie_value = m_interrupt ? 1'b0 :
                  //cmd_mret_ex ? csr_mpie : csr_rmie;
@@ -232,7 +237,8 @@ end
 
 // SIE[1] : Supervisor mode Global Interrupt enable : currently not used
 //wire s_interrupt = g_interrupt & (g_interrupt_priv == `S_MODE);
-wire s_interrupt = g_interrupt & (g_interrupt_priv == `S_MODE) & csr_sie;
+//wire s_interrupt = g_interrupt & (g_interrupt_priv == `S_MODE) & csr_sie;
+wire s_interrupt = g_interrupt_1shot & (g_interrupt_priv == `S_MODE) & csr_sie;
 wire sie_wr = s_interrupt | cmd_sret_ex;
 wire sie_value = s_interrupt ? 1'b0 :
                  cmd_sret_ex ? csr_spie : csr_sie;
@@ -354,13 +360,17 @@ end
 // mepc
 // capture PC when ecall occured
 wire [31:2] sel_pc_ex;
+wire [31:2] sel_pc_id;
 
 always @ ( posedge clk or negedge rst_n) begin   
 	if (~rst_n) begin
 		csr_mepc <= 30'd0;
 	end
-	else if ( m_interrupt ) begin
+	else if ( g_exception ) begin
 		csr_mepc <= sel_pc_ex;
+	end
+	else if ( m_interrupt ) begin
+		csr_mepc <= sel_pc_id; // zantei
 	end
 	else if ((~stall)&(cmd_csr_ex)&(adr_mepc)) begin
 		csr_mepc <= wdata_all[31:2];
@@ -374,6 +384,7 @@ assign csr_mepc_ex = csr_mepc[31:2];
 
 // mcause
 // conditions
+//wire interrupt_bit = g_interrupt_1shot;
 wire interrupt_bit = g_interrupt;
 //wire interrupt_bit = g_interrupt | frc_cntr_val_leq;
 // just impliment Machine mode Ecall and inteeupt
@@ -387,7 +398,8 @@ assign mcause_code = g_interrupt ? 6'd11 :
                      //cmd_ebreak_ex ?  6'd3 :
                      illegal_ops_ex ? 6'd2 : 6'h3f;
 
-wire [31:0] sel_tval = (g_interrupt) ? 32'd0 :
+//wire [31:0] sel_tval = (g_interrupt) ? 32'd0 :
+wire [31:0] sel_tval = g_interrupt ? 32'd0 :
                        illegal_ops_ex ? illegal_ops_inst : 32'd0;
 //wire [31:0] sel_tval = (g_interrupt | frc_cntr_val_leq) ? 32'd0 :
                        //cmd_ebreak_ex ? { pc_ebreak, 2'd0 } :
@@ -395,7 +407,8 @@ wire [31:0] sel_tval = (g_interrupt) ? 32'd0 :
 
 //wire mcause_write = cmd_ecall_ex | g_interrupt | g_exception;
 //wire mcause_write = (cmd_ecall_ex | cmd_ebreak_ex | g_interrupt) & csr_rmie | g_exception;
-wire mcause_write = (cmd_ecall_ex | g_interrupt) & csr_rmie | g_exception;
+//wire mcause_write = (cmd_ecall_ex | g_interrupt) & csr_rmie | g_exception;
+wire mcause_write = (cmd_ecall_ex | g_interrupt_1shot) & csr_rmie | g_exception;
 
 always @ ( posedge clk or negedge rst_n) begin   
 	if (~rst_n) begin
@@ -449,6 +462,7 @@ end
 
 // mip resister : currently read only register because of only M-mode is supported
 //assign csr_mip = { 20'd0, g_interrupt, 3'd0, frc_cntr_val_leq, 3'd0, g_exception, 3'd0 };
+//assign csr_mip = { 20'd0, g_interrupt, 3'd0, 1'b0, 3'd0, g_exception, 3'd0 };
 assign csr_mip = { 20'd0, g_interrupt, 3'd0, 1'b0, 3'd0, g_exception, 3'd0 };
 
 // mie register
@@ -477,13 +491,18 @@ assign csr_msie = csr_mie_bits[0];
 reg [31:2] post_pc_ex;
 
 always @ ( posedge clk or negedge rst_n) begin   
-	if (~rst_n) begin
+	if (~rst_n)
 		post_pc_ex <= 30'd0;
-	end
 	else 
 		post_pc_ex <= pc_ex;
 end
 
+	//input cmd_mret_ex,
 assign sel_pc_ex = post_jump_cmd_cond ? post_pc_ex : pc_ex;
+assign sel_pc_id = cmd_mret_ex ? csr_mepc_ex :
+                   jmp_condition_ex ? jmp_adr_ex : pc_ex + 32'd1; // zantei
+                   //jmp_condition_ex ? jmp_adr_ex : pc_ex; // zantei
+//assign sel_pc_id = jmp_condition_ex ? jmp_adr_ex : pc_id;
+
 
 endmodule

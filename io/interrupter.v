@@ -21,6 +21,8 @@ module interrupter(
 	input csr_rmie,
 	output g_interrupt_1shot,
 	output g_interrupt,
+	input ic_stall,
+	input stall,
 
 	input dma_io_we,
 	input [15:2] dma_io_wadr,
@@ -50,7 +52,35 @@ always @ (posedge clk or negedge rst_n) begin
 	end
 end
 
-wire ext_interrupt_0_1shot = int0_2lat & ~int0_3lat;
+// chataring
+// free cntr for sampler
+reg [19:0] ccntr;
+
+always @ (posedge clk or negedge rst_n) begin
+	if (~rst_n)
+		ccntr <= 20'd0;
+	else
+		ccntr <= ccntr + 20'd1;
+end
+
+// sampler
+reg smpl0;
+reg smpl1;
+always @ (posedge clk or negedge rst_n) begin
+	if (~rst_n)
+		smpl0 <= 1'b0;
+	else if (ccntr == 20'd0)
+		smpl0 <= int0_3lat;
+end
+
+always @ (posedge clk or negedge rst_n) begin
+	if (~rst_n)
+		smpl1 <= 1'b0;
+	else
+		smpl1 <= smpl0;
+end
+
+wire ext_interrupt_0_1shot = smpl0 & ~smpl1;
 
 
 // temporary for interrupt clear
@@ -111,7 +141,24 @@ always @ (posedge clk or negedge rst_n) begin
 		g_interrupt_dly <= g_interrupt;
 end
 
-assign g_interrupt_1shot = g_interrupt & ~g_interrupt_dly;
+wire g_interrupt_1shot_pre = g_interrupt & ~g_interrupt_dly;
+
+// 1shot stall keeper
+
+wire stall_all = ic_stall | stall;
+
+reg g_interrupt_stall_keeper;
+
+always @ (posedge clk or negedge rst_n) begin
+	if (~rst_n)
+		g_interrupt_stall_keeper <= 1'b0;
+	else if (~stall_all)
+		g_interrupt_stall_keeper <= 1'b0;
+	else if (g_interrupt_1shot_pre & stall_all)
+		g_interrupt_stall_keeper <= 1'b1;
+end
+
+assign g_interrupt_1shot = ~stall_all & ( g_interrupt_stall_keeper | g_interrupt_1shot_pre);
 
 // clear when writing 1'b0 on the status bit
 
