@@ -131,34 +131,38 @@ always @ (posedge clk or negedge rst_n) begin
 		int_status_int0 <= 1'b1;
 end
 
-assign g_interrupt = (int_status_rx | int_status_int0) & csr_rmie;
+//assign g_interrupt = (int_status_rx | int_status_int0) & csr_rmie;
+assign g_interrupt = int_status_rx | int_status_int0;
 
 reg g_interrupt_dly;
 always @ (posedge clk or negedge rst_n) begin
 	if (~rst_n)
 		g_interrupt_dly <= 1'b0;
 	else
-		g_interrupt_dly <= g_interrupt;
+		g_interrupt_dly <= g_interrupt & csr_rmie;
 end
 
-wire g_interrupt_1shot_pre = g_interrupt & ~g_interrupt_dly;
+wire g_interrupt_1shot_pre = g_interrupt & csr_rmie & ~g_interrupt_dly;
 
 // 1shot stall keeper
 
-wire stall_all = ic_stall | stall;
+//wire stall_all = ic_stall | stall;
+wire stall_all = stall;
 
 reg g_interrupt_stall_keeper;
 
 always @ (posedge clk or negedge rst_n) begin
 	if (~rst_n)
 		g_interrupt_stall_keeper <= 1'b0;
-	else if (~stall_all)
+	else if (interrupt_clear_int0 | interrupt_clear_rx)
 		g_interrupt_stall_keeper <= 1'b0;
-	else if (g_interrupt_1shot_pre & stall_all)
+	else if (~stall_all & csr_rmie)
+		g_interrupt_stall_keeper <= 1'b0;
+	else if (g_interrupt_1shot_pre & (stall_all | ~csr_rmie))
 		g_interrupt_stall_keeper <= 1'b1;
 end
 
-assign g_interrupt_1shot = ~stall_all & ( g_interrupt_stall_keeper | g_interrupt_1shot_pre);
+assign g_interrupt_1shot = ~stall_all & (g_interrupt_stall_keeper | g_interrupt_1shot_pre) & csr_meie & csr_rmie;
 
 // clear when writing 1'b0 on the status bit
 

@@ -41,8 +41,9 @@ module csr_array(
 	//input cmd_ebreak_ex,
 	input [31:2] pc_id,
 	input [31:2] pc_ex,
-	input [31:2] jmp_adr_ex,
+	input [31:2] jmp_adr_if,
 	input jmp_condition_ex,
+	input mret_condition_ex,
 	input stall,
     input csr_radr_en_mon, // new
     input [11:0] csr_radr_mon, // new
@@ -366,11 +367,9 @@ always @ ( posedge clk or negedge rst_n) begin
 	if (~rst_n) begin
 		csr_mepc <= 30'd0;
 	end
-	else if ( g_exception ) begin
-		csr_mepc <= sel_pc_ex;
-	end
 	else if ( m_interrupt ) begin
-		csr_mepc <= sel_pc_id; // zantei
+	//else if ( g_exception ) begin
+		csr_mepc <= sel_pc_ex;
 	end
 	else if ((~stall)&(cmd_csr_ex)&(adr_mepc)) begin
 		csr_mepc <= wdata_all[31:2];
@@ -401,6 +400,7 @@ assign mcause_code = g_interrupt ? 6'd11 :
 //wire [31:0] sel_tval = (g_interrupt) ? 32'd0 :
 wire [31:0] sel_tval = g_interrupt ? 32'd0 :
                        illegal_ops_ex ? illegal_ops_inst : 32'd0;
+                       //illegal_ops_ex ? { pc_ex, 2'd0 } : 32'd0; // debug
 //wire [31:0] sel_tval = (g_interrupt | frc_cntr_val_leq) ? 32'd0 :
                        //cmd_ebreak_ex ? { pc_ebreak, 2'd0 } :
 
@@ -430,6 +430,9 @@ always @ ( posedge clk or negedge rst_n) begin
     if (~rst_n) begin
         csr_mtval <= 32'd0;
     end
+    //else if (cmd_mret_ex) begin  // for debugging
+        //csr_mtval <= 32'hdeadbeef;  // for debugging
+    //end  // for debugging
     else if (mcause_write) begin
         csr_mtval <= sel_tval;
     end
@@ -493,14 +496,20 @@ reg [31:2] post_pc_ex;
 always @ ( posedge clk or negedge rst_n) begin   
 	if (~rst_n)
 		post_pc_ex <= 30'd0;
-	else 
-		post_pc_ex <= pc_ex;
+	else if ( jmp_condition_ex | mret_condition_ex )
+		post_pc_ex <= jmp_adr_if;
+		//post_pc_ex <= jmp_condition_ex ? jmp_adr_ex : pc_ex;
 end
 
+// post_jump_cmd_cond : 2 empty slots after jump command 
 	//input cmd_mret_ex,
-assign sel_pc_ex = post_jump_cmd_cond ? post_pc_ex : pc_ex;
-assign sel_pc_id = cmd_mret_ex ? csr_mepc_ex :
-                   jmp_condition_ex ? jmp_adr_ex : pc_ex + 32'd1; // zantei
+//assign sel_pc_ex = post_jump_cmd_cond ? jmp_adr_ex : pc_ex; // ayashii
+assign sel_pc_ex = post_jump_cmd_cond ? post_pc_ex : pc_ex; // ayashii
+//assign sel_pc_ex = post_jump_cmd_cond ? post_pc_ex :
+                   //jmp_condition_ex ? jmp_adr_ex : pc_ex; // zantei
+//assign sel_pc_id = cmd_mret_ex ? csr_mepc_ex :
+                   //pc_ex; // zantei
+                   //jmp_condition_ex ? jmp_adr_ex : pc_ex + 32'd1; // zantei
                    //jmp_condition_ex ? jmp_adr_ex : pc_ex; // zantei
 //assign sel_pc_id = jmp_condition_ex ? jmp_adr_ex : pc_id;
 

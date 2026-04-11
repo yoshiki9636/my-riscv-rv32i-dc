@@ -20,16 +20,18 @@ module if_stage
 	// from EX stage : jmp/br
 	input jmp_condition_ex,
 	input [31:2] jmp_adr_ex,
+	output [31:2] jmp_adr_if,
 	input ecall_condition_ex,
 	input mret_condition_ex,
+    input interrupt_condition_ex,
 	input [31:2] csr_mtvec_ex,
-	input cmd_mret_ex,
+	//input cmd_mret_ex,
 	input [31:2] csr_mepc_ex,
 	input cmd_sret_ex,
 	input [31:2] csr_sepc_ex,
 	input cmd_uret_ex,
     //input g_interrupt,
-    input g_interrupt_1shot,
+    //input g_interrupt_1shot,
 	output post_jump_cmd_cond,
 	input g_exception,
 	// from monitor
@@ -77,15 +79,19 @@ module if_stage
 // valid signal
 //assign pc_valid_id = 1'b1; // zantei
 //reg [31:2] pc_if;
-reg post_intr_ecall_exception;
+reg [1:0] post_intr_ecall_exception;
 //wire intr_ecall_exception = ecall_condition_ex | g_interrupt | g_exception ;
-wire intr_ecall_exception = ecall_condition_ex | g_interrupt_1shot | g_exception ;
-wire jump_cmd_cond = jmp_condition_ex | cmd_mret_ex | cmd_sret_ex | cmd_uret_ex;
+wire intr_ecall_exception = ecall_condition_ex | interrupt_condition_ex | g_exception ;
+wire jump_cmd_cond = (jmp_condition_ex | mret_condition_ex | cmd_sret_ex | cmd_uret_ex) & ~(|post_intr_ecall_exception);
 
-wire jmp_cond = intr_ecall_exception | ( jump_cmd_cond & ~post_intr_ecall_exception);
-wire [31:2] jmp_adr = intr_ecall_exception ? csr_mtvec_ex :
-                      mret_condition_ex ? csr_mepc_ex :
-                      cmd_sret_ex ? csr_sepc_ex : jmp_adr_ex;
+//wire jmp_cond = intr_ecall_exception | ( jump_cmd_cond & ~post_intr_ecall_exception);
+wire jmp_cond = intr_ecall_exception | jump_cmd_cond;
+wire [31:2] jmp_adr = intr_ecall_exception ? csr_mtvec_ex : jmp_adr_if;
+                      //mret_condition_ex ? csr_mepc_ex :
+                      //cmd_sret_ex ? csr_sepc_ex : jmp_adr_ex;
+
+assign jmp_adr_if = mret_condition_ex ? csr_mepc_ex :
+                    cmd_sret_ex ? csr_sepc_ex : jmp_adr_ex;
 
 reg use_collision;
 reg [31:2] pc_if_pre;
@@ -95,6 +101,8 @@ always @ (posedge clk or negedge rst_n) begin
 		pc_if_pre <= 30'd0;
 	else if (pc_start)
 		pc_if_pre <= start_adr_lat;
+	else if (interrupt_condition_ex)
+		pc_if_pre <= jmp_adr;
 	else if (stall | stall_ld)
 		pc_if_pre <= pc_if_pre;	
 	else if (jmp_cond)
@@ -359,9 +367,9 @@ assign inst_id =
 // post interrupt / ecall timing
 always @ (posedge clk or negedge rst_n) begin   
 	if (~rst_n)
-        post_intr_ecall_exception <= 1'b0;
+        post_intr_ecall_exception <= 2'd0;
 	else
-        post_intr_ecall_exception <= intr_ecall_exception;
+        post_intr_ecall_exception <= {post_intr_ecall_exception[0], intr_ecall_exception};
 end
 
 // post cump command condition
@@ -378,7 +386,7 @@ always @ (posedge clk or negedge rst_n) begin
 	end
 end
 
-assign post_jump_cmd_cond = post_jump_cmd_c;
+assign post_jump_cmd_cond = post_jump_cmd_c | post_jump_cmd_c2;
 
 // patch for ic_stall & dc_stall
 

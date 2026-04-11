@@ -86,10 +86,12 @@ module ex_stage(
 	output reg [2:0] ldst_code_ma,
     // to IF
 	output [31:2] jmp_adr_ex,
+	input [31:2] jmp_adr_if,
 	output jmp_condition_ex,
 	output [31:2] csr_mtvec_ex,
     output ecall_condition_ex,
     output mret_condition_ex,
+    output interrupt_condition_ex,
 	output [31:2] csr_mepc_ex,
 	output [31:2] csr_sepc_ex,
 	// from somewhere...
@@ -164,6 +166,7 @@ wire [31:0] jalr_ofs = {{ 20{ jalr_ofs_ex[11] }}, jalr_ofs_ex };
 wire [31:0] br_ofs = {{ 19{ br_ofs_ex[12] }}, br_ofs_ex, 1'b0 };
 
 wire cmd_ld_pur = cmd_ld_ex & ~jmp_purge_ma;
+wire cmd_st_pur = cmd_st_ex & ~jmp_purge_ma;
 //wire cmd_ld_pur = cmd_ld_ex;
 
 // forwarding selector
@@ -184,7 +187,8 @@ wire [31:0] rs2_sel;
 assign rs1_sel = ~nohit_rs1_ex ? rs1_fwd : rs1_data_ex;
 
 assign rs2_sel = (cmd_ld_pur | cmd_alui_ex) ? ld_alui_ofs :
-					  cmd_st_ex ? st_ofs :
+					  cmd_st_pur ? st_ofs :
+					  //cmd_st_ex ? st_ofs :
 					  cmd_alui_shamt_ex ? shamt :
 					   ~nohit_rs2_ex ? rs2_fwd : rs2_data_ex;
 
@@ -250,7 +254,6 @@ wire [31:0] jump_adr = adr_s1 + adr_s2;
 // csrs , ecall
 wire [31:0] csr_rd_data;
 
-
 csr_array csr_array(
 	.clk(clk),
 	.rst_n(rst_n),
@@ -262,7 +265,8 @@ csr_array csr_array(
 	.csr_rd_data(csr_rd_data),
 	.csr_mtvec_ex(csr_mtvec_ex),
 	.g_interrupt(g_interrupt),
-	.g_interrupt_1shot(g_interrupt_1shot),
+	//.g_interrupt_1shot(g_interrupt_1shot),
+	.g_interrupt_1shot(interrupt_condition_ex),
 	.post_jump_cmd_cond(post_jump_cmd_cond),
 	.illegal_ops_ex(illegal_ops_ex),
 	.illegal_ops_inst(illegal_ops_inst), // new
@@ -271,7 +275,8 @@ csr_array csr_array(
 	.g_current_priv(g_current_priv),
 	.csr_mepc_ex(csr_mepc_ex),
 	.csr_sepc_ex(csr_sepc_ex),
-	.cmd_mret_ex(cmd_mret_ex),
+	//.cmd_mret_ex(cmd_mret_ex),
+	.cmd_mret_ex(mret_condition_ex),
 	.cmd_sret_ex(cmd_sret_ex),
 	.cmd_uret_ex(cmd_uret_ex),
 	.csr_rmie(csr_rmie), // new
@@ -281,8 +286,9 @@ csr_array csr_array(
 	.cmd_ecall_ex(cmd_ecall_ex),
 	.pc_id(pc_id),
 	.pc_ex(pc_ex),
-	.jmp_adr_ex(jmp_adr_ex),
+	.jmp_adr_if(jmp_adr_if),
 	.jmp_condition_ex(jmp_condition_ex),
+	.mret_condition_ex(mret_condition_ex),
 	.stall(stall),
 	.csr_radr_en_mon(csr_radr_en_mon), // new
 	.csr_radr_mon(csr_radr_mon), // new
@@ -305,7 +311,8 @@ exception exception (
 // ALU
 
 wire [2:0] alu_code = alu_code_ex & { 3{ ~(cmd_alu_ex & cmd_alui_ex & cmd_alui_shamt_ex) }};
-wire cmd_stld = cmd_st_ex | cmd_ld_pur;
+wire cmd_stld = cmd_st_pur | cmd_ld_pur;
+//wire cmd_stld = cmd_st_ex | cmd_ld_pur;
 
 function [31:0] alu_selector;
 input [2:0] alu_code;
@@ -375,7 +382,7 @@ end
 */
 
 // roll back for dc_stall
-wire cmd_st_tmp;
+//wire cmd_st_tmp;
 reg [4:0] rd_adr_roll;
 reg [31:0] st_data_roll;
 reg [31:0] rd_data_roll;
@@ -388,7 +395,8 @@ wire wbk_rd_reg_tmp;
 //wire stall_ldst_pre = (cmd_ld_pur | cmd_st_tmp) ? stall : stall_dly;
 //wire stall_ldst_pre = (cmd_ld_pur|cmd_st_tmp) ? stall : stall_dly;
 //wire stall_ldst_pre = (stall & cmd_st_tmp) |  (stall_dly & cmd_ld_pur);
-wire stall_ldst_pre = (stall & cmd_st_tmp) |  (stall & cmd_ld_pur);
+//wire stall_ldst_pre = (stall & cmd_st_tmp) |  (stall & cmd_ld_pur);
+wire stall_ldst_pre = (stall & cmd_st_pur) |  (stall & cmd_ld_pur);
 
 wire [4:0] rd_adr_ex_with_div = div_result_valid ? div_rd_adr_ex : rd_adr_ex;
 
@@ -418,7 +426,8 @@ always @ ( posedge clk or negedge rst_n) begin
         rd_data_roll <= rd_data_ex_pre;
         ldst_code_roll <= alu_code_ex;
         cmd_ld_roll <= cmd_ld_pur;
-        cmd_st_roll <= cmd_st_tmp;
+        //cmd_st_roll <= cmd_st_tmp;
+        cmd_st_roll <= cmd_st_pur;
 		wbk_rd_reg_roll <= wbk_rd_reg_tmp;
 		jmp_purge_roll <= jmp_purge_ex;
 	end
@@ -447,7 +456,8 @@ assign rd_data_ex = (stall_ldst) ? rd_data_roll : rd_data_ex_pre;
 wire [31:0] st_data_ex = (stall_ldst) ? st_data_roll : st_data_ex_pre;
 wire [2:0] ldst_code_ex = (stall_ldst_0) ? ldst_code_roll : alu_code_ex;
 wire cmd_ld_ex_post = (stall_ldst_0) ? cmd_ld_roll : cmd_ld_pur;
-wire cmd_st_ex_post = (stall_ldst_0) ? cmd_st_roll : cmd_st_tmp;
+wire cmd_st_ex_post = (stall_ldst_0) ? cmd_st_roll : cmd_st_pur;
+//wire cmd_st_ex_post = (stall_ldst_0) ? cmd_st_roll : cmd_st_tmp;
 wire wbk_rd_reg_ex_post = (stall_ldst_0) ? wbk_rd_reg_roll : wbk_rd_reg_tmp;
 wire jmp_purge_ex_post =  (stall_ldst_0) ? jmp_purge_roll : jmp_purge_ex;
 
@@ -465,17 +475,19 @@ assign jmp_condition_ex = ~stall & ~jmp_purge_ma & (
 					      sbgu & (alu_code_ex == 3'b111) ));
 
 // ecall
-assign ecall_condition_ex = ~stall & ~jmp_purge_ma & (cmd_ecall_ex | illegal_ops_ex);
+assign ecall_condition_ex = ~stall & ~jmp_purge_ma & ((cmd_ecall_ex & csr_rmie) | illegal_ops_ex);
 // mret
-assign mret_condition_ex = ~stall & ~jmp_purge_ma & (cmd_mret_ex | illegal_ops_ex);
+assign mret_condition_ex = ~stall & ~jmp_purge_ma & cmd_mret_ex;
+// interrupt
+assign interrupt_condition_ex = ~stall & g_interrupt_1shot & csr_rmie;
 
 // purge signal
-assign jmp_purge_ex = jmp_condition_ex | ecall_condition_ex | mret_condition_ex;
+assign jmp_purge_ex = jmp_condition_ex | ecall_condition_ex | mret_condition_ex | interrupt_condition_ex;
 
 assign wbk_rd_reg_tmp = wbk_rd_reg_ex & ~jmp_purge_ma & ~illegal_ops_ex;
-assign cmd_st_tmp = cmd_st_ex & ~jmp_purge_ma;
+//assign cmd_st_tmp = cmd_st_ex & ~jmp_purge_ma;
 
-wire wb_mask_with_exception_interrupt = g_interrupt_1shot | g_exception;
+wire wb_mask_with_exception_interrupt = interrupt_condition_ex | g_exception;
 
 // FF to MA
 
@@ -496,7 +508,7 @@ always @ ( posedge clk or negedge rst_n) begin
 	//else if (~dc_stall_early) begin
 	else if (~stall) begin
 	//else if (~(stall_dly|stall)) begin
-		jmp_purge_ma <= jmp_purge_ex_post & ~ wb_mask_with_exception_interrupt;
+		jmp_purge_ma <= jmp_purge_ex_post;
 	end
 end
 
@@ -518,9 +530,9 @@ always @ ( posedge clk or negedge rst_n) begin
 		//rd_data_ma <= rd_data_ex_pre; // for debug test
 		//st_data_ma <= st_data_ex_pre; // for debug test
 		ldst_code_ma <= ldst_code_ex;
-	    cmd_ld_ma <= cmd_ld_ex_post & ~ wb_mask_with_exception_interrupt;
-        cmd_st_ma <= cmd_st_ex_post & ~ wb_mask_with_exception_interrupt;
-		wbk_rd_reg_ma <= wbk_rd_reg_ex_post & ~ wb_mask_with_exception_interrupt;
+	    cmd_ld_ma <= cmd_ld_ex_post & ~wb_mask_with_exception_interrupt;
+        cmd_st_ma <= cmd_st_ex_post & ~wb_mask_with_exception_interrupt;
+		wbk_rd_reg_ma <= wbk_rd_reg_ex_post & ~wb_mask_with_exception_interrupt;
 	end
 end
 

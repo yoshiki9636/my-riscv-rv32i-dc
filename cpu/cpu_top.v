@@ -133,6 +133,7 @@ wire [31:0] wbk_data_wb2;
 wire [31:0] wbk_data_wb;
 wire [31:12] lui_auipc_imm_ex;
 wire [31:2] jmp_adr_ex;
+wire [31:2] jmp_adr_if;
 wire [31:2] csr_mtvec_ex;
 wire [31:2] pc_ex;
 wire [31:2] pc_id;
@@ -184,6 +185,7 @@ wire inst_rs2_valid;
 wire jmp_condition_ex;
 wire ecall_condition_ex;
 wire mret_condition_ex;
+wire interrupt_condition_ex;
 wire jmp_purge_ex;
 wire jmp_purge_ma;
 wire nohit_rs1_ex;
@@ -333,16 +335,18 @@ if_stage #(.IWIDTH(IWIDTH)) if_stage (
 	.pc_id(pc_id),
 	.jmp_condition_ex(jmp_condition_ex),
 	.jmp_adr_ex(jmp_adr_ex),
+	.jmp_adr_if(jmp_adr_if),
 	.ecall_condition_ex(ecall_condition_ex),
 	.mret_condition_ex(mret_condition_ex),
-	.cmd_mret_ex(cmd_mret_ex),
+	.interrupt_condition_ex(interrupt_condition_ex),
+	//.cmd_mret_ex(cmd_mret_ex),
 	.csr_mepc_ex(csr_mepc_ex),
 	.cmd_sret_ex(cmd_sret_ex),
 	.csr_sepc_ex(csr_sepc_ex),
 	.cmd_uret_ex(cmd_uret_ex),
 	.csr_mtvec_ex(csr_mtvec_ex),
     //.g_interrupt(g_interrupt),
-    .g_interrupt_1shot(g_interrupt_1shot),
+    //.g_interrupt_1shot(g_interrupt_1shot),
     .post_jump_cmd_cond(post_jump_cmd_cond),
     .g_exception(g_exception),
 	.i_ram_radr(i_ram_radr),
@@ -525,9 +529,11 @@ ex_stage ex_stage (
 	.st_data_ma(st_data_ma),
 	.ldst_code_ma(ldst_code_ma),
 	.jmp_adr_ex(jmp_adr_ex),
+	.jmp_adr_if(jmp_adr_if),
 	.jmp_condition_ex(jmp_condition_ex),
 	.ecall_condition_ex(ecall_condition_ex),
 	.mret_condition_ex(mret_condition_ex),
+	.interrupt_condition_ex(interrupt_condition_ex),
 	.csr_mtvec_ex(csr_mtvec_ex),
 	.csr_mepc_ex(csr_mepc_ex),
 	.csr_sepc_ex(csr_sepc_ex),
