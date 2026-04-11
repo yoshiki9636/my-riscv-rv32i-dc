@@ -646,17 +646,17 @@ always @ (posedge clk or negedge rst_n) begin
 		pc_ex_pre <= pc_id;
 		inst_ex <= inst_id;
 `ifdef SUPPORT_M
-		cmd_mul_ex <= cmd_mul_id;
-		cmd_mulh_ex <= cmd_mulh_id;
-		cmd_mulhsu_ex <= cmd_mulhsu_id;
-		cmd_mulhu_ex <= cmd_mulhu_id;
-		cmd_div_ex <= cmd_div_id;
-		cmd_divu_ex <= cmd_divu_id;
-		cmd_rem_ex <= cmd_rem_id;
-		cmd_remu_ex <= cmd_remu_id;
-		cmd_mul_decode_ex <= cmd_mul_decode_id;
-		cmd_div_decode_ex <= cmd_div_decode_id;
-		cmd_rem_decode_ex <= cmd_rem_decode_id;
+		cmd_mul_ex <= cmd_mul_id & ~stall_ld;
+		cmd_mulh_ex <= cmd_mulh_id & ~stall_ld;
+		cmd_mulhsu_ex <= cmd_mulhsu_id & ~stall_ld;
+		cmd_mulhu_ex <= cmd_mulhu_id & ~stall_ld;
+		cmd_div_ex <= cmd_div_id & ~stall_ld;
+		cmd_divu_ex <= cmd_divu_id & ~stall_ld;
+		cmd_rem_ex <= cmd_rem_id & ~stall_ld;
+		cmd_remu_ex <= cmd_remu_id & ~stall_ld;
+		cmd_mul_decode_ex <= cmd_mul_decode_id & ~stall_ld;
+		cmd_div_decode_ex <= cmd_div_decode_id & ~stall_ld;
+		cmd_rem_decode_ex <= cmd_rem_decode_id & ~stall_ld;
 `endif // SUPPORT_M
     end
 end
