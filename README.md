@@ -8,9 +8,13 @@ RISC-V RV32I instruction set CPU for study
 This RTL logics and operating environment of RISC-V RV32I instruction set is for aiming at woking on Seed FPGA board Arty A7.
 It is confirmed to work at 50MHz.
 
-1.1 Limitations of Version 0.5
-- Added implementation of external interrupts (standalone) and mret using the interrupt pin compared to 0.2.
-- ver 0.3 : added illegal operations exception.
+1.1 Limitations of Version 0.6
+- M(mult,div,rem) instructions are added to compile option. ( repository name is not changed because it is option )
+- Added implementation of external interrupts (standalone) and mret using the interrupt pin.
+- There are at least one BUG that caouse some data/instruction changing with cache data conversion.
+- 64bit free run counter and timer interrupt are added.
+- Uart rx interrupt is added as one of external interrupt. 
+- added illegal operations exception.
 - Privilege is M-mode only.
 - Create around ALU, Load/Store, Jump, csr system and ecall.
 - FENCE system, ECALL system other than ECALL　are not implemented.
