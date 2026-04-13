@@ -11,7 +11,7 @@
 module clk_wiz_0(
 	output clk_out1,
 	output clk_out2,
-	//output clk_out3,
+	output clk_out3,
 	input reset,
 	output locked,
 	input clk_in1
@@ -21,6 +21,6 @@ module clk_wiz_0(
 assign locked = 1'b1;
 assign clk_out1 = clk_in1;
 assign clk_out2 = clk_in1;
-//assign clk_out3 = clk_in1;
+assign clk_out3 = clk_in1;
 
 endmodule
