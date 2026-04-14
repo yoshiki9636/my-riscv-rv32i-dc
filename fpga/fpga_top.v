@@ -292,6 +292,7 @@ wire csr_mtie;
 wire csr_rmie;
 wire csr_meie;
 wire frc_cntr_val_leq;
+wire frc_cntr_val_leq_1shot;
 
 // spi select signal : not used for 5 stage 
 wire spi_select_io; // not used
@@ -303,7 +304,7 @@ wire spi_miso = 1'b0; // zantei
 // for interrupt
 wire g_interrupt_1shot;
 wire g_interrupt;
-wire ic_stall;
+//wire ic_stall;
 wire stall;
 
 cpu_top #(.DWIDTH(DWIDTH), .IWIDTH(IWIDTH)) cpu_top (
@@ -384,11 +385,12 @@ cpu_top #(.DWIDTH(DWIDTH), .IWIDTH(IWIDTH)) cpu_top (
 	.rd_data_ma(rd_data_ma),
 	.csr_mtie(csr_mtie),
 	.frc_cntr_val_leq(frc_cntr_val_leq),
+    .frc_cntr_val_leq_1shot(frc_cntr_val_leq_1shot),
     .csr_rmie(csr_rmie),
     .csr_meie(csr_meie),
     .g_interrupt_1shot(g_interrupt_1shot),
     .g_interrupt(g_interrupt),
-    .ic_stall(ic_stall),
+    //.ic_stall(ic_stall),
     .stall(stall)
 	);
 
@@ -678,7 +680,10 @@ io_frc io_frc (
     .dma_io_rdata_in(dma_io_rdata_in_3),
     .dma_io_rdata(dma_io_rdata_in_4),
     .csr_mtie(csr_mtie),
-    .frc_cntr_val_leq(frc_cntr_val_leq)
+    .csr_rmie(csr_rmie),
+    .frc_cntr_val_leq(frc_cntr_val_leq),
+    .frc_cntr_val_leq_1shot(frc_cntr_val_leq_1shot),
+    .stall(stall)
     );
 
 interrupter interrupter (
@@ -690,7 +695,7 @@ interrupter interrupter (
     .csr_meie(csr_meie),
     .g_interrupt_1shot(g_interrupt_1shot),
     .g_interrupt(g_interrupt),
-    .ic_stall(ic_stall),
+    //.ic_stall(ic_stall),
     .stall(stall),
     .dma_io_we(dma_io_we),
     .dma_io_wadr(dma_io_wadr),
