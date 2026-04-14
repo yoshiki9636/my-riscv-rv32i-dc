@@ -23,7 +23,10 @@ module io_frc(
 
 	// from/to Execution/CSR
 	input csr_mtie,
-	output reg frc_cntr_val_leq
+	input csr_rmie,
+	output reg frc_cntr_val_leq,
+	output frc_cntr_val_leq_1shot,
+	input stall
 	//output interrupt_clear
 
 	);
@@ -116,6 +119,38 @@ always @ (posedge clk or negedge rst_n) begin
 	else if ((frc_cntr_val >= frc_cmp_val) & run_cntr & csr_mtie)
         frc_cntr_val_leq <= 1'd1 ;
 end
+
+// make 1shot same as external interrupt
+
+reg frc_cntr_val_leq_dly;
+always @ (posedge clk or negedge rst_n) begin
+    if (~rst_n)
+        frc_cntr_val_leq_dly <= 1'b0;
+    else
+        frc_cntr_val_leq_dly <= frc_cntr_val_leq & csr_rmie;
+end
+
+wire frc_cntr_val_leq_1shot_pre = frc_cntr_val_leq & csr_rmie & ~frc_cntr_val_leq_dly;
+
+// 1shot stall keeper
+
+wire stall_all = stall;
+
+reg frc_cntr_val_leq_stall_keeper;
+
+always @ (posedge clk or negedge rst_n) begin
+    if (~rst_n)
+        frc_cntr_val_leq_stall_keeper <= 1'b0;
+	else if (frc_cntr_val_rst)
+        frc_cntr_val_leq_stall_keeper <= 1'b0;
+    else if (~stall_all & csr_rmie)
+        frc_cntr_val_leq_stall_keeper <= 1'b0;
+    else if (frc_cntr_val_leq_1shot_pre & (stall_all | ~csr_rmie))
+        frc_cntr_val_leq_stall_keeper <= 1'b1;
+end
+
+assign frc_cntr_val_leq_1shot = ~stall_all & (frc_cntr_val_leq_stall_keeper | frc_cntr_val_leq_1shot_pre) & csr_mtie & csr_rmie;
+
 
 // bus read part
 reg [4:0] re_frc_dly;
