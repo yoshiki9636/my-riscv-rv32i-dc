@@ -92,9 +92,13 @@ module ex_stage(
     output ecall_condition_ex,
     output mret_condition_ex,
     output interrupt_condition_ex,
+    output timer_condition_ex,
+	output jump_between_stall,
 	output [31:2] csr_mepc_ex,
 	output [31:2] csr_sepc_ex,
 	// from somewhere...
+	input frc_cntr_val_leq,
+	input frc_cntr_val_leq_1shot,
 	input g_interrupt,
 	input g_interrupt_1shot,
 	input [1:0] g_interrupt_priv,
@@ -265,8 +269,10 @@ csr_array csr_array(
 	.csr_rd_data(csr_rd_data),
 	.csr_mtvec_ex(csr_mtvec_ex),
 	.g_interrupt(g_interrupt),
+	.frc_cntr_val_leq(frc_cntr_val_leq),
 	//.g_interrupt_1shot(g_interrupt_1shot),
-	.g_interrupt_1shot(interrupt_condition_ex),
+	.interrupt_condition_ex(interrupt_condition_ex),
+	.timer_condition_ex(timer_condition_ex),
 	.post_jump_cmd_cond(post_jump_cmd_cond),
 	.illegal_ops_ex(illegal_ops_ex),
 	.illegal_ops_inst(illegal_ops_inst), // new
@@ -465,7 +471,7 @@ wire jmp_purge_ex_post =  (stall_ldst_0) ? jmp_purge_roll : jmp_purge_ex;
 
 assign jmp_adr_ex = jump_adr[31:2];
 
-assign jmp_condition_ex = ~stall & ~jmp_purge_ma & (
+wire jmp_condition_ex_pre = ~jmp_purge_ma & (
                         cmd_jal_ex | cmd_jalr_ex | cmd_br_ex &
 						( seq  & (alu_code_ex == 3'b000) |
 					      sne  & (alu_code_ex == 3'b001) |
@@ -474,20 +480,44 @@ assign jmp_condition_ex = ~stall & ~jmp_purge_ma & (
 					      sltu & (alu_code_ex == 3'b110) |
 					      sbgu & (alu_code_ex == 3'b111) ));
 
+assign jmp_condition_ex = ~stall & jmp_condition_ex_pre;
+
 // ecall
-assign ecall_condition_ex = ~stall & ~jmp_purge_ma & ((cmd_ecall_ex & csr_rmie) | illegal_ops_ex);
+wire ecall_condition_ex_pre = ~jmp_purge_ma & ((cmd_ecall_ex & csr_rmie) | illegal_ops_ex);
+assign ecall_condition_ex = ~stall & ecall_condition_ex_pre;
 // mret
-assign mret_condition_ex = ~stall & ~jmp_purge_ma & cmd_mret_ex;
+wire mret_condition_ex_pre = ~jmp_purge_ma & cmd_mret_ex;
+assign mret_condition_ex = ~stall & mret_condition_ex_pre;
 // interrupt
 assign interrupt_condition_ex = ~stall & g_interrupt_1shot & csr_rmie;
+// timer interrupt
+assign timer_condition_ex = ~stall & frc_cntr_val_leq_1shot & csr_rmie;
 
 // purge signal
-assign jmp_purge_ex = jmp_condition_ex | ecall_condition_ex | mret_condition_ex | interrupt_condition_ex;
+assign jmp_purge_ex = jmp_condition_ex | ecall_condition_ex | mret_condition_ex | interrupt_condition_ex | timer_condition_ex;
 
 assign wbk_rd_reg_tmp = wbk_rd_reg_ex & ~jmp_purge_ma & ~illegal_ops_ex;
 //assign cmd_st_tmp = cmd_st_ex & ~jmp_purge_ma;
 
-wire wb_mask_with_exception_interrupt = interrupt_condition_ex | g_exception;
+wire wb_mask_with_exception_interrupt = interrupt_condition_ex | timer_condition_ex | g_exception;
+
+// workaround for jump between stall and stall
+reg dc_stall_fin2;
+reg dc_stall_fin3;
+
+always @ ( posedge clk or negedge rst_n) begin   
+	if (~rst_n) begin
+		dc_stall_fin2 <= 1'b0;
+		dc_stall_fin3 <= 1'b0;
+	end
+	else begin
+		dc_stall_fin2 <= dc_stall_fin;
+		dc_stall_fin3 <= dc_stall_fin2;
+	end
+end
+
+assign jump_between_stall = dc_stall_fin3 & (jmp_condition_ex_pre | ecall_condition_ex_pre | mret_condition_ex_pre);
+
 
 // FF to MA
 

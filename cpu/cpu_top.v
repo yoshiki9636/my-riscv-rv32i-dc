@@ -97,12 +97,13 @@ module cpu_top
 	output cmd_st_ma,
 	output [31:0] rd_data_ma,
 	output csr_mtie,
-	input frc_cntr_val_leq, // need to fix
+	input frc_cntr_val_leq,
+	input frc_cntr_val_leq_1shot,
 	output csr_meie,
 	output csr_rmie,
-	input g_interrupt_1shot, // need to fix
-	input g_interrupt, // need to fix
-	output ic_stall,
+	input g_interrupt_1shot,
+	input g_interrupt,
+	//output ic_stall,
 	output stall
 
 	);
@@ -186,6 +187,8 @@ wire jmp_condition_ex;
 wire ecall_condition_ex;
 wire mret_condition_ex;
 wire interrupt_condition_ex;
+wire timer_condition_ex;
+wire jump_between_stall;
 wire jmp_purge_ex;
 wire jmp_purge_ma;
 wire nohit_rs1_ex;
@@ -339,6 +342,8 @@ if_stage #(.IWIDTH(IWIDTH)) if_stage (
 	.ecall_condition_ex(ecall_condition_ex),
 	.mret_condition_ex(mret_condition_ex),
 	.interrupt_condition_ex(interrupt_condition_ex),
+	.timer_condition_ex(timer_condition_ex),
+	.jump_between_stall(jump_between_stall),
 	//.cmd_mret_ex(cmd_mret_ex),
 	.csr_mepc_ex(csr_mepc_ex),
 	.cmd_sret_ex(cmd_sret_ex),
@@ -534,11 +539,15 @@ ex_stage ex_stage (
 	.ecall_condition_ex(ecall_condition_ex),
 	.mret_condition_ex(mret_condition_ex),
 	.interrupt_condition_ex(interrupt_condition_ex),
+	.timer_condition_ex(timer_condition_ex),
+	.jump_between_stall(jump_between_stall),
 	.csr_mtvec_ex(csr_mtvec_ex),
 	.csr_mepc_ex(csr_mepc_ex),
 	.csr_sepc_ex(csr_sepc_ex),
     .g_interrupt(g_interrupt),
     .g_interrupt_1shot(g_interrupt_1shot),
+    .frc_cntr_val_leq(frc_cntr_val_leq),
+    .frc_cntr_val_leq_1shot(frc_cntr_val_leq_1shot),
     .post_jump_cmd_cond(post_jump_cmd_cond),
     .g_interrupt_priv(g_interrupt_priv),
     .g_current_priv(g_current_priv),
