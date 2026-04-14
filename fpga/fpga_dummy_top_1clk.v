@@ -211,7 +211,7 @@ wire start_dcflush;
 wire dcflush_running;
 
 wire clk;
-//wire mclk = clk;
+wire mclk = clk;
 //wire mclk_not_used;
 // for debug
 wire tx_fifo_full;
