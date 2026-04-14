@@ -21,7 +21,9 @@ module csr_array(
 	output [31:0] csr_rd_data,
 	output [31:2] csr_mtvec_ex,
 	input g_interrupt,
-	input g_interrupt_1shot,
+	input interrupt_condition_ex,
+	input frc_cntr_val_leq,
+	input timer_condition_ex,
 	input post_jump_cmd_cond, // old?
 	input illegal_ops_ex,
     input [31:0] illegal_ops_inst, // new
@@ -167,7 +169,7 @@ reg csr_spp;
 //wire m_interrupt = g_interrupt & (g_interrupt_priv == `M_MODE);
 //wire m_interrupt =  (interrupts_in_pc_state & (g_interrupt_priv == `M_MODE) | cmd_ecall_ex | cmd_ebreak_ex ) & cpu_stat_pc & csr_rmie | g_exception;
 //wire m_interrupt =  (g_interrupt & (g_interrupt_priv == `M_MODE) | cmd_ecall_ex) & csr_rmie | g_exception;
-wire m_interrupt =  (g_interrupt_1shot & (g_interrupt_priv == `M_MODE) | cmd_ecall_ex) & csr_rmie | g_exception;
+wire m_interrupt =  ((interrupt_condition_ex | timer_condition_ex) & (g_interrupt_priv == `M_MODE) | cmd_ecall_ex) & csr_rmie | g_exception;
 wire rmie_wr = m_interrupt | cmd_mret_ex;
 //wire rmie_value = m_interrupt ? 1'b0 :
                  //cmd_mret_ex ? csr_mpie : csr_rmie;
@@ -239,7 +241,7 @@ end
 // SIE[1] : Supervisor mode Global Interrupt enable : currently not used
 //wire s_interrupt = g_interrupt & (g_interrupt_priv == `S_MODE);
 //wire s_interrupt = g_interrupt & (g_interrupt_priv == `S_MODE) & csr_sie;
-wire s_interrupt = g_interrupt_1shot & (g_interrupt_priv == `S_MODE) & csr_sie;
+wire s_interrupt = (interrupt_condition_ex | timer_condition_ex) & (g_interrupt_priv == `S_MODE) & csr_sie;
 wire sie_wr = s_interrupt | cmd_sret_ex;
 wire sie_value = s_interrupt ? 1'b0 :
                  cmd_sret_ex ? csr_spie : csr_sie;
@@ -383,22 +385,21 @@ assign csr_mepc_ex = csr_mepc[31:2];
 
 // mcause
 // conditions
-//wire interrupt_bit = g_interrupt_1shot;
-wire interrupt_bit = g_interrupt;
-//wire interrupt_bit = g_interrupt | frc_cntr_val_leq;
+//wire interrupt_bit = interrupt_condition_ex;
+wire interrupt_bit = g_interrupt | frc_cntr_val_leq;
 // just impliment Machine mode Ecall and inteeupt
 //wire [30:0] mcause_code = g_interrupt ? 31'd11 :
 						  //illegal_ops_ex ? 31'd2 :
                           //cmd_ecall_ex ?  31'd3 : 31'd0;
 
 assign mcause_code = g_interrupt ? 6'd11 :
-                     //frc_cntr_val_leq ? 6'd7 :
+                     frc_cntr_val_leq ? 6'd7 :
                      cmd_ecall_ex ?  6'd11 :
                      //cmd_ebreak_ex ?  6'd3 :
                      illegal_ops_ex ? 6'd2 : 6'h3f;
 
 //wire [31:0] sel_tval = (g_interrupt) ? 32'd0 :
-wire [31:0] sel_tval = g_interrupt ? 32'd0 :
+wire [31:0] sel_tval = (g_interrupt | frc_cntr_val_leq) ? 32'd0 :
                        illegal_ops_ex ? illegal_ops_inst : 32'd0;
                        //illegal_ops_ex ? { pc_ex, 2'd0 } : 32'd0; // debug
 //wire [31:0] sel_tval = (g_interrupt | frc_cntr_val_leq) ? 32'd0 :
@@ -408,7 +409,7 @@ wire [31:0] sel_tval = g_interrupt ? 32'd0 :
 //wire mcause_write = cmd_ecall_ex | g_interrupt | g_exception;
 //wire mcause_write = (cmd_ecall_ex | cmd_ebreak_ex | g_interrupt) & csr_rmie | g_exception;
 //wire mcause_write = (cmd_ecall_ex | g_interrupt) & csr_rmie | g_exception;
-wire mcause_write = (cmd_ecall_ex | g_interrupt_1shot) & csr_rmie | g_exception;
+wire mcause_write = (cmd_ecall_ex | interrupt_condition_ex | timer_condition_ex) & csr_rmie | g_exception;
 
 always @ ( posedge clk or negedge rst_n) begin   
 	if (~rst_n) begin
@@ -466,7 +467,7 @@ end
 // mip resister : currently read only register because of only M-mode is supported
 //assign csr_mip = { 20'd0, g_interrupt, 3'd0, frc_cntr_val_leq, 3'd0, g_exception, 3'd0 };
 //assign csr_mip = { 20'd0, g_interrupt, 3'd0, 1'b0, 3'd0, g_exception, 3'd0 };
-assign csr_mip = { 20'd0, g_interrupt, 3'd0, 1'b0, 3'd0, g_exception, 3'd0 };
+assign csr_mip = { 20'd0, g_interrupt, 3'd0, frc_cntr_val_leq, 3'd0, g_exception, 3'd0 };
 
 // mie register
 reg [2:0] csr_mie_bits;
