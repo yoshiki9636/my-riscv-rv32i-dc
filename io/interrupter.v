@@ -21,7 +21,7 @@ module interrupter(
 	input csr_rmie,
 	output g_interrupt_1shot,
 	output g_interrupt,
-	input ic_stall,
+	//input ic_stall,
 	input stall,
 
 	input dma_io_we,
@@ -146,7 +146,6 @@ wire g_interrupt_1shot_pre = g_interrupt & csr_rmie & ~g_interrupt_dly;
 
 // 1shot stall keeper
 
-//wire stall_all = ic_stall | stall;
 wire stall_all = stall;
 
 reg g_interrupt_stall_keeper;
