@@ -155,7 +155,7 @@ reg rx_first_read;
 always @ (posedge clk or negedge rst_n) begin
     if (~rst_n)
         rx_first_read <= 1'b0 ;
-	else if ( re_uart_rdflg_dly[3] ) // clear when read
+	else if ( re_uart_rdflg_dly[2] ) // clear when read
         rx_first_read <= 1'b0 ;
 	else if ( cpu_run_state & rout_en ) // set when write
         rx_first_read <= 1'b1 ;
@@ -167,7 +167,7 @@ reg rx_write_error;
 always @ (posedge clk or negedge rst_n) begin
     if (~rst_n)
         rx_write_error <= 1'b0 ;
-	else if ( re_uart_rdflg_dly[3] ) // clear when read
+	else if ( re_uart_rdflg_dly[2] ) // clear when read
         rx_write_error <= 1'b0 ;
 	else if ( cpu_run_state & rout_en & rx_first_read ) // set when write on not read data
         rx_write_error <= 1'b1 ;
