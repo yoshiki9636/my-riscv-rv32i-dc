@@ -132,6 +132,7 @@ module ex_stage(
 	output jmp_purge_ex,
 	// stall
 	//input dc_stall_1shot_re,
+	input ic_stall,
 	input stall,
 	input stall_1shot,
 	input stall_dly,
@@ -216,7 +217,10 @@ wire [31:0] adr_s2 = cmd_auipc_ex ? auipc_data :
 wire alu_adder_comp = cmd_alu_sub_ex & cmd_alu_ex;
 wire [31:0] rs2_xor = rs2_sel ^ { 32{ alu_adder_comp }};
 
-wire [32:0] alu_add_tmp = { rs1_sel, 1'b1 } + { rs2_xor, alu_adder_comp };
+//wire [32:0] alu_add_tmp = { rs1_sel, 1'b1 } + { rs2_xor, alu_adder_comp };
+wire [32:0] alu_add_r = { rs1_sel, 1'b1 };
+wire [32:0] alu_add_l = { rs2_xor, alu_adder_comp };
+wire [32:0] alu_add_tmp = alu_add_r + alu_add_l;
 wire [31:0] alu_add = alu_add_tmp[32:1];
 
 // Left shift
@@ -289,7 +293,8 @@ csr_array csr_array(
 	.csr_meie(csr_meie),
 	.csr_mtie(csr_mtie),
 	.csr_msie(csr_msie),
-	.cmd_ecall_ex(cmd_ecall_ex),
+	//.cmd_ecall_ex(cmd_ecall_ex),
+	.ecall_condition_ex(ecall_condition_ex),
 	.pc_id(pc_id),
 	.pc_ex(pc_ex),
 	.jmp_adr_if(jmp_adr_if),
@@ -471,7 +476,9 @@ wire jmp_purge_ex_post =  (stall_ldst_0) ? jmp_purge_roll : jmp_purge_ex;
 
 assign jmp_adr_ex = jump_adr[31:2];
 
-wire jmp_condition_ex_pre = ~jmp_purge_ma & (
+reg jmp_purge_ma2;
+//wire jmp_condition_ex_pre = ~jmp_purge_ma & (
+wire jmp_condition_ex_pre = ~jmp_purge_ma & ~jmp_purge_ma2 & (
                         cmd_jal_ex | cmd_jalr_ex | cmd_br_ex &
 						( seq  & (alu_code_ex == 3'b000) |
 					      sne  & (alu_code_ex == 3'b001) |
@@ -483,10 +490,11 @@ wire jmp_condition_ex_pre = ~jmp_purge_ma & (
 assign jmp_condition_ex = ~stall & jmp_condition_ex_pre;
 
 // ecall
-wire ecall_condition_ex_pre = ~jmp_purge_ma & ((cmd_ecall_ex & csr_rmie) | illegal_ops_ex);
+//wire ecall_condition_ex_pre = ~jmp_purge_ma & ((cmd_ecall_ex & csr_rmie) | illegal_ops_ex);
+wire ecall_condition_ex_pre = ~jmp_purge_ma & ~jmp_purge_ma2 & (cmd_ecall_ex | illegal_ops_ex);
 assign ecall_condition_ex = ~stall & ecall_condition_ex_pre;
 // mret
-wire mret_condition_ex_pre = ~jmp_purge_ma & cmd_mret_ex;
+wire mret_condition_ex_pre = ~jmp_purge_ma & ~jmp_purge_ma2 & cmd_mret_ex;
 assign mret_condition_ex = ~stall & mret_condition_ex_pre;
 // interrupt
 assign interrupt_condition_ex = ~stall & g_interrupt_1shot & csr_rmie;
@@ -524,6 +532,7 @@ assign jump_between_stall = dc_stall_fin3 & (jmp_condition_ex_pre | ecall_condit
 always @ ( posedge clk or negedge rst_n) begin   
 	if (~rst_n) begin
 		jmp_purge_ma <= 1'b0;
+		jmp_purge_ma2 <= 1'b0;
 	end
 	//else if (rst_pipe) begin
         //cmd_st_ma <= 1'b0;
@@ -536,9 +545,10 @@ always @ ( posedge clk or negedge rst_n) begin
 		//wbk_rd_reg_ma <= 1'b0;
 	//end
 	//else if (~dc_stall_early) begin
-	else if (~stall) begin
+	else if (~stall & ~ic_stall) begin
 	//else if (~(stall_dly|stall)) begin
 		jmp_purge_ma <= jmp_purge_ex_post;
+		jmp_purge_ma2 <= jmp_purge_ma;
 	end
 end
 

@@ -153,7 +153,7 @@ reg g_interrupt_stall_keeper;
 always @ (posedge clk or negedge rst_n) begin
 	if (~rst_n)
 		g_interrupt_stall_keeper <= 1'b0;
-	else if (interrupt_clear_int0 | interrupt_clear_rx)
+	else if (interrupt_clear_int0 | interrupt_clear_rx | ~csr_meie)
 		g_interrupt_stall_keeper <= 1'b0;
 	else if (~stall_all & csr_rmie)
 		g_interrupt_stall_keeper <= 1'b0;

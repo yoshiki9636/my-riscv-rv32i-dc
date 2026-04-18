@@ -83,12 +83,12 @@ module if_stage
 //reg [31:2] pc_if;
 reg [1:0] post_intr_ecall_exception;
 //wire intr_ecall_exception = ecall_condition_ex | g_interrupt | g_exception ;
-wire intr_ecall_exception = ecall_condition_ex | interrupt_condition_ex | timer_condition_ex | g_exception ;
-wire jump_cmd_cond = (jmp_condition_ex | mret_condition_ex | cmd_sret_ex | cmd_uret_ex) & ~(|post_intr_ecall_exception);
+wire intr_ecall_exception = interrupt_condition_ex | timer_condition_ex;
+wire jump_cmd_cond = (jmp_condition_ex | mret_condition_ex | ecall_condition_ex | cmd_sret_ex | cmd_uret_ex | g_exception) & ~(|post_intr_ecall_exception);
 
 //wire jmp_cond = intr_ecall_exception | ( jump_cmd_cond & ~post_intr_ecall_exception);
 wire jmp_cond = intr_ecall_exception | jump_cmd_cond;
-wire [31:2] jmp_adr = intr_ecall_exception ? csr_mtvec_ex : jmp_adr_if;
+wire [31:2] jmp_adr = (intr_ecall_exception | ecall_condition_ex | g_exception) ? csr_mtvec_ex : jmp_adr_if;
                       //mret_condition_ex ? csr_mepc_ex :
                       //cmd_sret_ex ? csr_sepc_ex : jmp_adr_ex;
 
@@ -123,6 +123,8 @@ always @ (posedge clk or negedge rst_n) begin
         pc_if_roll <= 30'd0;
 	else if (pc_start)
 		pc_if_roll <= start_adr_lat;
+	else if (interrupt_condition_ex | timer_condition_ex | jump_between_stall)
+        pc_if_roll <= jmp_adr;
 	else if (jmp_cond)
         pc_if_roll <= jmp_adr;
 	else if (~ic_stall)

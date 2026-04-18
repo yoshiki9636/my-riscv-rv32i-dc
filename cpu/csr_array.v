@@ -39,7 +39,7 @@ module csr_array(
 	output csr_meie,
 	output csr_mtie,
 	output csr_msie,
-    input cmd_ecall_ex,
+    input ecall_condition_ex,
 	//input cmd_ebreak_ex,
 	input [31:2] pc_id,
 	input [31:2] pc_ex,
@@ -167,10 +167,11 @@ reg csr_spp;
 
 // MIE[3] : Machine mode Global Interrupt enable
 //wire m_interrupt = g_interrupt & (g_interrupt_priv == `M_MODE);
-//wire m_interrupt =  (interrupts_in_pc_state & (g_interrupt_priv == `M_MODE) | cmd_ecall_ex | cmd_ebreak_ex ) & cpu_stat_pc & csr_rmie | g_exception;
-//wire m_interrupt =  (g_interrupt & (g_interrupt_priv == `M_MODE) | cmd_ecall_ex) & csr_rmie | g_exception;
-wire m_interrupt =  ((interrupt_condition_ex | timer_condition_ex) & (g_interrupt_priv == `M_MODE) | cmd_ecall_ex) & csr_rmie | g_exception;
-wire rmie_wr = m_interrupt | cmd_mret_ex;
+//wire m_interrupt =  (interrupts_in_pc_state & (g_interrupt_priv == `M_MODE) | ecall_condition_ex | cmd_ebreak_ex ) & cpu_stat_pc & csr_rmie | g_exception;
+//wire m_interrupt =  (g_interrupt & (g_interrupt_priv == `M_MODE) | ecall_condition_ex) & csr_rmie | g_exception;
+wire m_interrupt =  ((interrupt_condition_ex | timer_condition_ex) & (g_interrupt_priv == `M_MODE)) & csr_rmie | ecall_condition_ex | g_exception;
+//wire rmie_wr = m_interrupt | cmd_mret_ex;
+wire rmie_wr = m_interrupt | mret_condition_ex;
 //wire rmie_value = m_interrupt ? 1'b0 :
                  //cmd_mret_ex ? csr_mpie : csr_rmie;
 wire pc_int_ecall_syn_end = 1'b0; // temp fixed
@@ -194,7 +195,7 @@ always @ ( posedge clk or negedge rst_n) begin
 end
 
 // MPIE[7] : Machine mode Previouse Interrupt Enable
-wire mpie_wr = m_interrupt | cmd_mret_ex;
+wire mpie_wr = m_interrupt | mret_condition_ex;
 wire mpie_value = m_interrupt ? csr_rmie :
                   cmd_mret_ex ? 1'b1 : csr_mpie;
 
@@ -214,7 +215,7 @@ always @ ( posedge clk or negedge rst_n) begin
 end
 
 // MPP[12:11] : Machine mode Previouse Privilege
-wire mpp_wr = m_interrupt | cmd_mret_ex;
+wire mpp_wr = m_interrupt | mret_condition_ex;
 //wire [1:0] mpp_value = m_interrupt ? g_current_priv :
                        //cmd_mret_ex ? `M_MODE : // currently only M_MODE support
                        //csr_mpp;
@@ -390,13 +391,14 @@ wire interrupt_bit = g_interrupt | frc_cntr_val_leq;
 // just impliment Machine mode Ecall and inteeupt
 //wire [30:0] mcause_code = g_interrupt ? 31'd11 :
 						  //illegal_ops_ex ? 31'd2 :
-                          //cmd_ecall_ex ?  31'd3 : 31'd0;
+                          //ecall_condition_ex ?  31'd3 : 31'd0;
 
 assign mcause_code = g_interrupt ? 6'd11 :
+                     illegal_ops_ex ? 6'd2 :
                      frc_cntr_val_leq ? 6'd7 :
-                     cmd_ecall_ex ?  6'd11 :
+                     ecall_condition_ex ?  6'd11 :
                      //cmd_ebreak_ex ?  6'd3 :
-                     illegal_ops_ex ? 6'd2 : 6'h3f;
+                     6'h3f;
 
 //wire [31:0] sel_tval = (g_interrupt) ? 32'd0 :
 wire [31:0] sel_tval = (g_interrupt | frc_cntr_val_leq) ? 32'd0 :
@@ -406,10 +408,10 @@ wire [31:0] sel_tval = (g_interrupt | frc_cntr_val_leq) ? 32'd0 :
                        //cmd_ebreak_ex ? { pc_ebreak, 2'd0 } :
 
 
-//wire mcause_write = cmd_ecall_ex | g_interrupt | g_exception;
-//wire mcause_write = (cmd_ecall_ex | cmd_ebreak_ex | g_interrupt) & csr_rmie | g_exception;
-//wire mcause_write = (cmd_ecall_ex | g_interrupt) & csr_rmie | g_exception;
-wire mcause_write = (cmd_ecall_ex | interrupt_condition_ex | timer_condition_ex) & csr_rmie | g_exception;
+//wire mcause_write = ecall_condition_ex | g_interrupt | g_exception;
+//wire mcause_write = (ecall_condition_ex | cmd_ebreak_ex | g_interrupt) & csr_rmie | g_exception;
+//wire mcause_write = (ecall_condition_ex | g_interrupt) & csr_rmie | g_exception;
+wire mcause_write = (interrupt_condition_ex | timer_condition_ex) & csr_rmie | ecall_condition_ex | g_exception;
 
 always @ ( posedge clk or negedge rst_n) begin   
 	if (~rst_n) begin

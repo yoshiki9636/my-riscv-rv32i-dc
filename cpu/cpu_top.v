@@ -199,7 +199,7 @@ wire rst_pipe_id;
 wire rst_pipe_ex;
 wire rst_pipe_ma;
 wire rst_pipe_wb;
-//wire ic_stall;
+wire ic_stall;
 wire ic_stall_dly;
 wire dc_stall;
 //wire stall;
@@ -573,6 +573,7 @@ ex_stage ex_stage (
 `endif // SUPPORT_M
 	.jmp_purge_ma(jmp_purge_ma),
 	.jmp_purge_ex(jmp_purge_ex),
+	.ic_stall(ic_stall),
 	.stall(stall),
 	.stall_1shot(stall_1shot),
 	.stall_dly(stall_dly),
