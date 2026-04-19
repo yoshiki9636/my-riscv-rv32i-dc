@@ -233,25 +233,24 @@ always @ ( posedge clk or negedge rst_n) begin
         cmd_ld_wb <= 1'b0;
 		ld_code_wb <= 3'd0;
 		rd_adr_wb <= 5'd0;
-		rd_data_wb <= 32'd0;
 		wbk_rd_reg_wb <= 1'b0;
 	end
-	else if (rst_pipe_ma) begin
-        cmd_ld_wb <= 1'b0;
-		ld_code_wb <= 3'd0;
-		rd_adr_wb <= 5'd0;
-		rd_data_wb <= 32'd0;
-		wbk_rd_reg_wb <= 1'b0;
-	end
-	//else if (~stall) begin
 	else begin
         cmd_ld_wb <= cmd_ld_ma;
 		ld_code_wb <= ldst_code_ma;
 		rd_adr_wb <= rd_adr_ma;
-		rd_data_wb <= rd_data_ma;
 		wbk_rd_reg_wb <= ~(stall & ~cpu_stopping) & wbk_rd_reg_ma & ~dc_wb_mask;
 		//wbk_rd_reg_wb <= (stall & ~cpu_stopping) ? dc_stall_fin2 : wbk_rd_reg_ma;
 		//wbk_rd_reg_wb <= ~stall & wbk_rd_reg_ma;
+	end
+end
+
+always @ ( posedge clk or negedge rst_n) begin   
+	if (~rst_n) begin
+		rd_data_wb <= 32'd0;
+	end
+	else if (~stall) begin
+		rd_data_wb <= rd_data_ma;
 	end
 end
 

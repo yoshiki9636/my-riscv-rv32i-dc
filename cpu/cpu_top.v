@@ -707,6 +707,7 @@ forwarding forwarding (
 	.stall_ld_ex(stall_ld_ex),
 	.stall_ld_ma(stall_ld_ma),
 	.stall(stall),
+	.stall_dly(stall_dly),
 	.stall_ex(stall_ex),
 	.stall_ma(stall_ma),
 	.stall_wb(stall_wb),

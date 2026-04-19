@@ -25,21 +25,22 @@ module forwarding(
 	input [4:0] rd_adr_wb,
 	input wbk_rd_reg_wb,
 	
-	output reg hit_rs1_idex_ex,
-	output reg hit_rs1_idma_ex,
+	output hit_rs1_idex_ex,
+	output hit_rs1_idma_ex,
 	output reg hit_rs1_idwb_ex,
-	output reg nohit_rs1_ex,
-	output reg hit_rs2_idex_ex,
-	output reg hit_rs2_idma_ex,
+	output nohit_rs1_ex,
+	output hit_rs2_idex_ex,
+	output hit_rs2_idma_ex,
 	output reg hit_rs2_idwb_ex,
-	output reg nohit_rs2_ex,
-	output reg stall_ld_ex,
+	output nohit_rs2_ex,
+	output stall_ld_ex,
 	output reg stall_ld_ma,
 	output stall_ld,
 	// jump condition
 	input jmp_purge_ma,
 	// stall
 	input stall,
+	input stall_dly,
 	input stall_ex,
 	input stall_ma,
 	input stall_wb,
@@ -67,8 +68,8 @@ end
 // comparetor
 reg keep_rs1_stall;
 reg keep_rs2_stall;
-reg hit_rs1_ldidex_dly;
-reg hit_rs2_ldidex_dly;
+wire hit_rs1_ldidex_dly;
+wire hit_rs2_ldidex_dly;
 
 wire notstall_ex = ~stall_ex;
 wire notstall_ma = ~stall_ma;
@@ -87,13 +88,13 @@ wire hit_rs1_ldidex = rd_adr_ex_not0 & (inst_rs1_id == rd_adr_ex) & inst_rs1_val
 wire hit_rs1_idex = rd_adr_ex_not0 & (inst_rs1_id == rd_adr_ex) & inst_rs1_valid & wbk_rd_reg_ex & ~cmd_ld_ex & ~hit_rs1_ldidex_dly & nostall_ld_ex & ~jmp_purge_ma;
 wire hit_rs1_idma = rd_adr_ma_not0 & (inst_rs1_id == rd_adr_ma) & inst_rs1_valid & wbk_rd_reg_ma & (nostall_ld_ma | keep_rs1_stall);
 wire hit_rs1_idwb = rd_adr_wb_not0 & (inst_rs1_id == rd_adr_wb) & inst_rs1_valid & wbk_rd_reg_wb & (nostall_ld_wb | keep_rs1_stall);
-wire nohit_rs1 = ~( hit_rs1_idex | hit_rs1_idma | hit_rs1_idwb);
+//wire nohit_rs1 = ~( hit_rs1_idex | hit_rs1_idma | hit_rs1_idwb);
 
 wire hit_rs2_ldidex = rd_adr_ex_not0 & (inst_rs2_id == rd_adr_ex) & inst_rs2_valid & wbk_rd_reg_ex & cmd_ld_ex & ~jmp_purge_ma;
 wire hit_rs2_idex = rd_adr_ex_not0 & (inst_rs2_id == rd_adr_ex) & inst_rs2_valid & wbk_rd_reg_ex & ~cmd_ld_ex & ~hit_rs2_ldidex_dly & nostall_ld_ex & ~jmp_purge_ma;
 wire hit_rs2_idma = rd_adr_ma_not0 & (inst_rs2_id == rd_adr_ma) & inst_rs2_valid & wbk_rd_reg_ma & (nostall_ld_ma | keep_rs2_stall);
 wire hit_rs2_idwb = rd_adr_wb_not0 & (inst_rs2_id == rd_adr_wb) & inst_rs2_valid & wbk_rd_reg_wb & (nostall_ld_wb | keep_rs2_stall);
-wire nohit_rs2 = ~( hit_rs2_idex | hit_rs2_idma | hit_rs2_idwb);
+//wire nohit_rs2 = ~( hit_rs2_idex | hit_rs2_idma | hit_rs2_idwb);
 
 // for stall 1 cycle
 reg keep_stall_ld;
@@ -102,14 +103,17 @@ reg keep_stall_ld;
 wire stall_ld_pre = hit_rs1_ldidex | hit_rs2_ldidex;
 assign stall_ld = stall_ld_pre | stall_ld_add;
 
+reg hit_rs1_idex_ex_pre;
+reg hit_rs2_idex_ex_pre;
+reg hit_rs1_idma_ex_pre;
+reg hit_rs2_idma_ex_pre;
+reg hit_rs1_ldidex_dly_pre;
+reg hit_rs2_ldidex_dly_pre;
+reg stall_ld_ex_pre;
+
 // keep stall_ld during stall
 always @ (posedge clk or negedge rst_n) begin
 	if (~rst_n) begin
-		keep_stall_ld <= 1'b0;
-		keep_rs1_stall <= 1'b0;
-		keep_rs2_stall <= 1'b0;
-	end
-	else if (rst_pipe) begin
 		keep_stall_ld <= 1'b0;
 		keep_rs1_stall <= 1'b0;
 		keep_rs2_stall <= 1'b0;
@@ -121,47 +125,64 @@ always @ (posedge clk or negedge rst_n) begin
 	end
 end
 
+assign hit_rs1_ldidex_dly = hit_rs1_ldidex_dly_pre;// & ~stall;
+assign hit_rs2_ldidex_dly = hit_rs2_ldidex_dly_pre;// & ~stall;
+assign stall_ld_ex = stall_ld_ex_pre;// & ~stall;
+
 // pipeline FF
 always @ (posedge clk or negedge rst_n) begin
 	if (~rst_n) begin
-		hit_rs1_idex_ex <= 1'b0;
-		hit_rs1_idma_ex <= 1'b0;
 		hit_rs1_idwb_ex <= 1'b0;
-		nohit_rs1_ex <= 1'b0;
-		hit_rs2_idex_ex <= 1'b0;
-		hit_rs2_idma_ex <= 1'b0;
 		hit_rs2_idwb_ex <= 1'b0;
-		nohit_rs2_ex <= 1'b0;
-		stall_ld_ex <= 1'b0;
-		hit_rs1_ldidex_dly <= 1'b0;
-		hit_rs2_ldidex_dly <= 1'b0;
-	end
-	else if (rst_pipe) begin
-		hit_rs1_idex_ex <= 1'b0;
-		hit_rs1_idma_ex <= 1'b0;
-		hit_rs1_idwb_ex <= 1'b0;
-		nohit_rs1_ex <= 1'b0;
-		hit_rs2_idex_ex <= 1'b0;
-		hit_rs2_idma_ex <= 1'b0;
-		hit_rs2_idwb_ex <= 1'b0;
-		nohit_rs2_ex <= 1'b0;
-		stall_ld_ex <= 1'b0;
-		hit_rs1_ldidex_dly <= 1'b0;
-		hit_rs2_ldidex_dly <= 1'b0;
+
+		hit_rs1_idex_ex_pre <= 1'b0;
+		hit_rs2_idex_ex_pre <= 1'b0;
+		hit_rs1_idma_ex_pre <= 1'b0;
+		hit_rs2_idma_ex_pre <= 1'b0;
+		hit_rs1_ldidex_dly_pre <= 1'b0;
+		hit_rs2_ldidex_dly_pre <= 1'b0;
+		stall_ld_ex_pre <= 1'b0;
 	end
 	else begin
-		hit_rs1_idex_ex <= hit_rs1_idex;
-		hit_rs1_idma_ex <= hit_rs1_idma;
 		hit_rs1_idwb_ex <= hit_rs1_idwb;
-		nohit_rs1_ex <= nohit_rs1;
-		hit_rs2_idex_ex <= hit_rs2_idex;
-		hit_rs2_idma_ex <= hit_rs2_idma;
 		hit_rs2_idwb_ex <= hit_rs2_idwb;
-		nohit_rs2_ex <= nohit_rs2;
-		stall_ld_ex <= stall_ld;
-		hit_rs1_ldidex_dly <= hit_rs1_ldidex;
-		hit_rs2_ldidex_dly <= hit_rs2_ldidex;
+
+		hit_rs1_idex_ex_pre <= hit_rs1_idex;
+		hit_rs2_idex_ex_pre <= hit_rs2_idex;
+		hit_rs1_idma_ex_pre <= hit_rs1_idma;
+		hit_rs2_idma_ex_pre <= hit_rs2_idma;
+		hit_rs1_ldidex_dly_pre <= hit_rs1_ldidex;
+		hit_rs2_ldidex_dly_pre <= hit_rs2_ldidex;
+		stall_ld_ex_pre <= stall_ld;
 	end
 end
+
+reg hit_rs1_idex_ex_post;
+reg hit_rs2_idex_ex_post;
+reg hit_rs1_idma_ex_post;
+reg hit_rs2_idma_ex_post;
+
+always @ (posedge clk or negedge rst_n) begin
+	if (~rst_n) begin
+		hit_rs1_idex_ex_post <= 1'b0;
+		hit_rs2_idex_ex_post <= 1'b0;
+		hit_rs1_idma_ex_post <= 1'b0;
+		hit_rs2_idma_ex_post <= 1'b0;
+	end
+	else if (~stall) begin
+		hit_rs1_idex_ex_post <= hit_rs1_idex;
+		hit_rs2_idex_ex_post <= hit_rs2_idex;
+		hit_rs1_idma_ex_post <= hit_rs1_idma;
+		hit_rs2_idma_ex_post <= hit_rs2_idma;
+	end
+end
+
+assign hit_rs1_idex_ex = (stall_dly) ? hit_rs1_idex_ex_post : hit_rs1_idex_ex_pre;
+assign hit_rs2_idex_ex = (stall_dly) ? hit_rs2_idex_ex_post : hit_rs2_idex_ex_pre;
+assign hit_rs1_idma_ex = (stall_dly) ? hit_rs1_idma_ex_post : hit_rs1_idma_ex_pre;
+assign hit_rs2_idma_ex = (stall_dly) ? hit_rs2_idma_ex_post : hit_rs2_idma_ex_pre;
+
+assign nohit_rs1_ex = ~( hit_rs1_idex_ex | hit_rs1_idma_ex | hit_rs1_idwb_ex);
+assign nohit_rs2_ex = ~( hit_rs2_idex_ex | hit_rs2_idma_ex | hit_rs2_idwb_ex);
 
 endmodule
