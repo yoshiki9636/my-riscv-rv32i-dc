@@ -9,17 +9,18 @@ This RTL logics and operating environment of RISC-V RV32I instruction set is for
 It is confirmed to work at 50MHz.
 
 1.1 Limitations of Version 0.5
-- Added implementation of external interrupts (standalone) and mret using the interrupt pin compared to 0.2.
-- ver 0.3 : added illegal operations exception.
 - Privilege is M-mode only.
 - Create around ALU, Load/Store, Jump, csr system and ecall.
-- FENCE system, ECALL system other than ECALL　are not implemented.
-- Memory is separated by INSTRUCTION and DATA. Each is 1K Words in size.
-- I/O has 12-pin 4 sets of RGB LED.
-- Support uart output using I/O
-- support I and D caches with 128MB DRAM.
+- FENCE system is not implemented, so I$ cannot use self modify code.
+- Cache is separated by INSTRUCTION and DATA. Each size is up to 16K Words.
 - 16 byte cache line size.
 - No snoop function between I cache and D cache.
+- Arty 7's 128MB SDRAM is supported for main memory by using mig interface.
+- I/O has 12-pin 4 sets of RGB LED.
+- Support 64bit timer with timer interruption.
+- Support uart input/output using I/O. External interrupt is supported for rx.
+- Added implementation of external interrupts (standalone) and mret using the interrupt pin compared to 0.2.
+- Illegal operations exception is added.
 
 2. simple usage
   
@@ -122,6 +123,12 @@ Here is a note on how to synthesize when using the Digilent Arty A7, using Xilin
 	r : read data from SDRAM : format: r <start address> <end adderss>
 	t : trashed memory data and 0 clear : format: t <start address> <end adderss>
 	s : program break point set : format: s <break address>
+		Setting address : using even number address
+		Unsetting address : using odd number address
+	l : load data break point set : format: l <break address>
+		Setting address : using even number address
+		Unsetting address : using odd number address
+	m : store data break point set : format: m <break address>
 		Setting address : using even number address
 		Unsetting address : using odd number address
 	p : read IO regs/csr/RF : format: p <start address> <end adderss>
