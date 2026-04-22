@@ -184,6 +184,9 @@ wire hit_rs2_idwb_ex;
 wire inst_rs1_valid;
 wire inst_rs2_valid;
 wire jmp_condition_ex;
+wire fencei_condition_ex;
+wire fencei_dcflush_end;
+wire fencei_cond;
 wire ecall_condition_ex;
 wire mret_condition_ex;
 wire interrupt_condition_ex;
@@ -337,6 +340,7 @@ if_stage #(.IWIDTH(IWIDTH)) if_stage (
 	.inst_id(inst_id),
 	.pc_id(pc_id),
 	.jmp_condition_ex(jmp_condition_ex),
+	.fencei_cond(fencei_cond),
 	.jmp_adr_ex(jmp_adr_ex),
 	.jmp_adr_if(jmp_adr_if),
 	.ecall_condition_ex(ecall_condition_ex),
@@ -498,6 +502,7 @@ ex_stage ex_stage (
 	.br_ofs_ex(br_ofs_ex),
 	.cmd_fence_ex(cmd_fence_ex),
 	.cmd_fencei_ex(cmd_fencei_ex),
+	.fencei_cond(fencei_cond),
 	.fence_succ_ex(fence_succ_ex),
 	.fence_pred_ex(fence_pred_ex),
 	.cmd_sfence_ex(cmd_sfence_ex),
@@ -536,6 +541,7 @@ ex_stage ex_stage (
 	.jmp_adr_ex(jmp_adr_ex),
 	.jmp_adr_if(jmp_adr_if),
 	.jmp_condition_ex(jmp_condition_ex),
+	.fencei_condition_ex(fencei_condition_ex),
 	.ecall_condition_ex(ecall_condition_ex),
 	.mret_condition_ex(mret_condition_ex),
 	.interrupt_condition_ex(interrupt_condition_ex),
@@ -756,6 +762,8 @@ lsu_stage #(.DWIDTH(DWIDTH)) lsu_stage (
 	.rdat_m_data(rdat_m_data),
 	.rdat_m_valid(rdat_m_valid),
 	.finish_mrd(finish_mrd),
+	.fencei_condition_ex(fencei_condition_ex),
+	.fencei_dcflush_end(fencei_dcflush_end),
 	.start_dcflush(start_dcflush),
 	.dcflush_running(dcflush_running),
 	.dc_wbback_state(dc_wbback_state),
@@ -770,6 +778,8 @@ ilu_stage #(.IWIDTH(IWIDTH)) ilu_stage (
 	.pc_id_pre(pc_id_pre),
 	.pc_valid_id(pc_valid_id),
 	.ic_ram_wadr_all(ic_ram_wadr_all),
+	.fencei_dcflush_end(fencei_dcflush_end),
+	.fencei_cond(fencei_cond),
 `ifdef SUPPORT_M
 	.ic_stall_fin2_add_div(ic_stall_fin2),
 	.ic_stall_fin_add_div(ic_stall_fin),

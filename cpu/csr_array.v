@@ -45,6 +45,7 @@ module csr_array(
 	input [31:2] pc_ex,
 	input [31:2] jmp_adr_if,
 	input jmp_condition_ex,
+	input fencei_condition_ex,
 	input mret_condition_ex,
 	input stall,
     input csr_radr_en_mon, // new
@@ -499,7 +500,7 @@ reg [31:2] post_pc_ex;
 always @ ( posedge clk or negedge rst_n) begin   
 	if (~rst_n)
 		post_pc_ex <= 30'd0;
-	else if ( jmp_condition_ex | mret_condition_ex )
+	else if ( jmp_condition_ex | mret_condition_ex | fencei_condition_ex )
 		post_pc_ex <= jmp_adr_if;
 		//post_pc_ex <= jmp_condition_ex ? jmp_adr_ex : pc_ex;
 end

@@ -88,6 +88,8 @@ module ex_stage(
 	output [31:2] jmp_adr_ex,
 	input [31:2] jmp_adr_if,
 	output jmp_condition_ex,
+	output fencei_condition_ex,
+	input fencei_cond,
 	output [31:2] csr_mtvec_ex,
     output ecall_condition_ex,
     output mret_condition_ex,
@@ -299,6 +301,7 @@ csr_array csr_array(
 	.pc_ex(pc_ex),
 	.jmp_adr_if(jmp_adr_if),
 	.jmp_condition_ex(jmp_condition_ex),
+	.fencei_condition_ex(fencei_cond),
 	.mret_condition_ex(mret_condition_ex),
 	.stall(stall),
 	.csr_radr_en_mon(csr_radr_en_mon), // new
@@ -472,11 +475,18 @@ wire cmd_st_ex_post = (stall_ldst_0) ? cmd_st_roll : cmd_st_pur;
 wire wbk_rd_reg_ex_post = (stall_ldst_0) ? wbk_rd_reg_roll : wbk_rd_reg_tmp;
 wire jmp_purge_ex_post =  (stall_ldst_0) ? jmp_purge_roll : jmp_purge_ex;
 
+// fence.i
+// (1) purge I$
+// (2) jump to next instruction for reload new instructions
+reg jmp_purge_ma2;
+
+wire fencei_condition_ex_pre = ~jmp_purge_ma & ~jmp_purge_ma2 & cmd_fencei_ex;
+assign fencei_condition_ex = ~stall & fencei_condition_ex_pre;
+
 // jamp/br
 
 assign jmp_adr_ex = jump_adr[31:2];
 
-reg jmp_purge_ma2;
 //wire jmp_condition_ex_pre = ~jmp_purge_ma & (
 wire jmp_condition_ex_pre = ~jmp_purge_ma & ~jmp_purge_ma2 & (
                         cmd_jal_ex | cmd_jalr_ex | cmd_br_ex &
@@ -502,7 +512,7 @@ assign interrupt_condition_ex = ~stall & g_interrupt_1shot & csr_rmie;
 assign timer_condition_ex = ~stall & frc_cntr_val_leq_1shot & csr_rmie;
 
 // purge signal
-assign jmp_purge_ex = jmp_condition_ex | ecall_condition_ex | mret_condition_ex | interrupt_condition_ex | timer_condition_ex;
+assign jmp_purge_ex = jmp_condition_ex | ecall_condition_ex | mret_condition_ex | interrupt_condition_ex | timer_condition_ex | fencei_cond;
 
 assign wbk_rd_reg_tmp = wbk_rd_reg_ex & ~jmp_purge_ma & ~illegal_ops_ex;
 //assign cmd_st_tmp = cmd_st_ex & ~jmp_purge_ma;
@@ -524,7 +534,7 @@ always @ ( posedge clk or negedge rst_n) begin
 	end
 end
 
-assign jump_between_stall = dc_stall_fin3 & (jmp_condition_ex_pre | ecall_condition_ex_pre | mret_condition_ex_pre);
+assign jump_between_stall = dc_stall_fin3 & (jmp_condition_ex_pre | ecall_condition_ex_pre | mret_condition_ex_pre | fencei_cond);
 
 
 // FF to MA

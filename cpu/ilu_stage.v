@@ -21,6 +21,8 @@ module ilu_stage
 	input [31:2] pc_id_pre,
 	input pc_valid_id,
     output [IWIDTH-3:0] ic_ram_wadr_all,
+	input fencei_dcflush_end,
+	output fencei_cond,
     //output [127:0] ic_ram_wdata_all,
     //output ic_ram_wen_all,
 `ifdef SUPPORT_M
@@ -56,6 +58,26 @@ module ilu_stage
 	input rst_pipe
 
 	);
+
+// fencei wait
+
+reg [2:0] fencei_wt;
+
+always @ (posedge clk or negedge rst_n) begin
+    if (~rst_n)
+        fencei_wt <= 3'd0;
+    else
+        fencei_wt <= { fencei_wt[1:0], fencei_dcflush_end };
+end
+
+wire fencei_stall = fencei_wt[0] | fencei_dcflush_end;
+wire fencei_stall_fin = fencei_wt[0];
+wire fencei_stall_fin2 = fencei_wt[1];
+assign fencei_cond = fencei_wt[1];
+//wire fencei_stall = 1'b0;
+//wire fencei_stall_fin = 1'b0;
+//wire fencei_stall_fin2 = 1'b0;
+//assign fencei_cond = fencei_dcflush_end;
 
 `ifdef SUPPORT_M
 // for div stall
@@ -136,7 +158,7 @@ reg [IWIDTH+1:4] ic_index_adr_dly;
 always @ (posedge clk or negedge rst_n) begin
     if (~rst_n)
         ic_ent_valid_bit_id <= { (2**(IWIDTH-2)){ 1'b0 }};
-    else if (start_icflush | rst_pipe)
+    else if (fencei_cond | start_icflush | rst_pipe)
         ic_ent_valid_bit_id <= { (2**(IWIDTH-2)){ 1'b0 }};
     else if (ic_tag_wen)
         //ic_ent_valid_bit_id[ic_index_wadr] <= 1'b1;
@@ -237,7 +259,7 @@ always @ (posedge clk or negedge rst_n) begin
 end
 
 // core stall singal
-assign ic_stall = ((ic_miss_current != `ICMS_LDRD)&(ic_miss_current != `ICMS_IDLE)) | ((ic_tag_miss_id | ic_tag_empty_id)&(ic_miss_current != `ICMS_LDRD));
+assign ic_stall = ((ic_miss_current != `ICMS_LDRD)&(ic_miss_current != `ICMS_IDLE)) | ((ic_tag_miss_id | ic_tag_empty_id)&(ic_miss_current != `ICMS_LDRD)) | fencei_stall;
 //assign ic_stall = (ic_miss_current != `ICMS_IDLE);
 assign ic_sel_tag = ((ic_miss_current != `ICMS_LDRD)&(ic_miss_current != `ICMS_IDLE)) ;
 //assign ic_st_ok = (dc_miss_current != `ICMS_MEMR);
@@ -246,8 +268,8 @@ assign ic_sel_tag = ((ic_miss_current != `ICMS_LDRD)&(ic_miss_current != `ICMS_I
 //assign ic_st_wt_id = (ic_miss_current != `ICMS_ICWT);
 
 // load issue timing
-assign ic_stall_fin = (ic_miss_current == `ICMS_ICW3);
-assign ic_stall_fin2 = (ic_miss_current == `ICMS_LDRD);
+assign ic_stall_fin = (ic_miss_current == `ICMS_ICW3) | fencei_stall_fin;
+assign ic_stall_fin2 = (ic_miss_current == `ICMS_LDRD) | fencei_stall_fin2;
 
 always @ (posedge clk or negedge rst_n) begin
     if (~rst_n)

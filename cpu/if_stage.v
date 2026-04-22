@@ -19,6 +19,7 @@ module if_stage
 	output [31:2] pc_id,
 	// from EX stage : jmp/br
 	input jmp_condition_ex,
+	input fencei_cond,
 	input [31:2] jmp_adr_ex,
 	output [31:2] jmp_adr_if,
 	input ecall_condition_ex,
@@ -77,14 +78,13 @@ module if_stage
 	output [31:0] pc_data
 	);
 
-
 // valid signal
 //assign pc_valid_id = 1'b1; // zantei
 //reg [31:2] pc_if;
 reg [1:0] post_intr_ecall_exception;
 //wire intr_ecall_exception = ecall_condition_ex | g_interrupt | g_exception ;
 wire intr_ecall_exception = interrupt_condition_ex | timer_condition_ex;
-wire jump_cmd_cond = (jmp_condition_ex | mret_condition_ex | ecall_condition_ex | cmd_sret_ex | cmd_uret_ex | g_exception) & ~(|post_intr_ecall_exception);
+wire jump_cmd_cond = (jmp_condition_ex | mret_condition_ex | ecall_condition_ex | fencei_cond | cmd_sret_ex | cmd_uret_ex | g_exception) & ~(|post_intr_ecall_exception);
 
 //wire jmp_cond = intr_ecall_exception | ( jump_cmd_cond & ~post_intr_ecall_exception);
 wire jmp_cond = intr_ecall_exception | jump_cmd_cond;
@@ -93,6 +93,7 @@ wire [31:2] jmp_adr = (intr_ecall_exception | ecall_condition_ex | g_exception) 
                       //cmd_sret_ex ? csr_sepc_ex : jmp_adr_ex;
 
 assign jmp_adr_if = mret_condition_ex ? csr_mepc_ex :
+                    fencei_cond ? pc_id : // retry for self modify code
                     cmd_sret_ex ? csr_sepc_ex : jmp_adr_ex;
 
 reg use_collision;
@@ -357,7 +358,7 @@ wire ic_fin_after_dc;
 wire syn_fin;
 reg jump_under_ic_stall;
 wire inst_masked_in_icdc_sync_start;
-reg inst_mask_condition_with_jmp_lat;
+//reg inst_mask_condition_with_jmp_lat;
 
 assign inst_id =
                  //(inst_masked_in_icdc_sync_start | inst_mask_condition_with_jmp_lat) ? 32'h0000_0013 :
@@ -542,16 +543,16 @@ assign inst_collision_smpl1 = (cache_miss_next == `IDST_ISWD)&(cache_miss_curren
 
 assign inst_masked_in_icdc_sync_start = (cache_miss_current == `IDST_SYWB);
 
-wire inst_mask_condition_with_jmp = ((cache_miss_current == `IDST_SYWB)|(cache_miss_current == `IDST_DSWI)) & jmp_condition_ex;
+//wire inst_mask_condition_with_jmp = ((cache_miss_current == `IDST_SYWB)|(cache_miss_current == `IDST_DSWI)) & jmp_condition_ex;
 
-always @ (posedge clk or negedge rst_n) begin
-    if (~rst_n)
-        inst_mask_condition_with_jmp_lat <= 1'b0;
-    else if (cache_miss_current == `IDST_IDLE)
-        inst_mask_condition_with_jmp_lat <= 1'b0;
-    else if (inst_mask_condition_with_jmp)
-        inst_mask_condition_with_jmp_lat <= 1'b1;
-end
+//always @ (posedge clk or negedge rst_n) begin
+    //if (~rst_n)
+        //inst_mask_condition_with_jmp_lat <= 1'b0;
+    //else if (cache_miss_current == `IDST_IDLE)
+        //inst_mask_condition_with_jmp_lat <= 1'b0;
+    //else if (inst_mask_condition_with_jmp)
+        //inst_mask_condition_with_jmp_lat <= 1'b1;
+//end
 
 // status latch for jump under ic_stall state
 

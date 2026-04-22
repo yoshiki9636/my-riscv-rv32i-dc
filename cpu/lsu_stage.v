@@ -51,6 +51,8 @@ module lsu_stage
 	input rdat_m_valid,
 	input finish_mrd,
 	// DC flush
+	input fencei_condition_ex,
+	output fencei_dcflush_end,
 	input start_dcflush,
 	output dcflush_running,
 	// to IF
@@ -60,8 +62,11 @@ module lsu_stage
 
 	);
 //
-// flush counter
-reg [DWIDTH+1:4] dcflush_cntr;
+// flush function
+
+wire dcflush_start = fencei_condition_ex | start_dcflush;
+
+reg [DWIDTH+2:4] dcflush_cntr;
 reg dc_stall_dly;
 reg [31:0] current_radr_keeper;
 // tag ram
@@ -70,7 +75,7 @@ reg [27:DWIDTH+2] dc_tag_adr_ma;
 //wire [27:DWIDTH+2] dc_tag_adr_ex = dc_stall_dly ? current_radr_keeper[27:DWIDTH+2] : rd_data_ex[27:DWIDTH+2];
 //wire [27:DWIDTH+2] dc_tag_adr_ex = dc_sel_tag ? current_radr_keeper[27:DWIDTH+2] : rd_data_ex[27:DWIDTH+2];
 wire [27:DWIDTH+2] dc_tag_adr_ex = dc_sel_tag ? rd_data_ma[27:DWIDTH+2] : rd_data_ex[27:DWIDTH+2];
-wire [DWIDTH+1:4] dc_index_adr = dcflush_running ? dcflush_cntr :
+wire [DWIDTH+1:4] dc_index_adr = dcflush_running ? dcflush_cntr[DWIDTH+1:4] :
                                  dc_sel_tag ? rd_data_ma[DWIDTH+1:4] : rd_data_ex[DWIDTH+1:4];
                                  //dc_sel_tag ? current_radr_keeper[DWIDTH+1:4] : rd_data_ex[DWIDTH+1:4];
                                  //dc_stall_dly ? current_radr_keeper[DWIDTH+1:4] : rd_data_ex[DWIDTH+1:4];
@@ -134,7 +139,7 @@ always @ (posedge clk or negedge rst_n) begin
     if (~rst_n)
         ent_valid_bit_ma <= { (2**(DWIDTH-2)){ 1'b0 }};
     //else if (dc_cache_clr_bits | rst_pipe)
-    else if (dc_cache_clr_bits | start_dcflush | rst_pipe)
+    else if (dc_cache_clr_bits | dcflush_start | rst_pipe)
         ent_valid_bit_ma <= { (2**(DWIDTH-2)){ 1'b0 }};
     else if (tag_wen)
         //ent_valid_bit_ma[dc_index_wadr] <= 1'b1;
@@ -148,47 +153,66 @@ always @ (posedge clk or negedge rst_n) begin
         dc_index_adr_dly <= dc_index_adr;
 end
 
+wire [DWIDTH+1:4] dc_index_adr_dly_flush = dcflush_running ? dcflush_cntr[DWIDTH+1:4] : dc_index_adr_dly;
+
 //assign dc_cache_valid_ma = ent_valid_bit_ma[dc_cache_dirty_adr];
 //wire dc_cache_dirty_ma = ent_dirty_bit_ma[dc_cache_dirty_adr] & dc_tag_miss_ma;
-assign dc_cache_valid_ma = ent_valid_bit_ma[dc_index_adr_dly];
-wire dc_cache_dirty_ma = ent_dirty_bit_ma[dc_index_adr_dly] & dc_tag_miss_ma;
+//assign dc_cache_valid_ma = ent_valid_bit_ma[dc_index_adr_dly];
+//wire dc_cache_dirty_ma = ent_dirty_bit_ma[dc_index_adr_dly] & (dc_tag_miss_ma | dcflush_running) ;
+assign dc_cache_valid_ma = ent_valid_bit_ma[dc_index_adr_dly_flush];
+wire dc_cache_dirty_ma = ent_dirty_bit_ma[dc_index_adr_dly_flush] & (dc_tag_miss_ma | dcflush_running) ;
 
 // dc state machine
 
-`define DCMS_IDLE 3'b000
-`define DCMS_MEMW 3'b001
-`define DCMS_MEMR 3'b010
-`define DCMS_DCWT 3'b011
-`define DCMS_DCW2 3'b100
-`define DCMS_DCW3 3'b101
-`define DCMS_LDRD 3'b110
-`define DCMS_DEFO 3'b111
+`define DCMS_IDLE 4'b0000
+`define DCMS_MEMW 4'b0001
+`define DCMS_MEMR 4'b0010
+`define DCMS_DCWT 4'b0011
+`define DCMS_DCW2 4'b0100
+`define DCMS_DCW3 4'b0101
+`define DCMS_LDRD 4'b0110
+`define DCMS_DEFO 4'b0111
+`define DCMS_FLSH 4'b1000
 
 // Request channel manager state machine
-reg [2:0] dc_miss_current;
+wire dcflush_nohit_ent;
+reg [3:0] dc_miss_current;
 
-function [2:0] dc_miss_decode;
-input [2:0] dc_miss_current;
+function [3:0] dc_miss_decode;
+input [3:0] dc_miss_current;
 input dc_tag_empty_ma;
 input dc_tag_miss_ma;
 input dc_cache_dirty_ma;
 input dcw_finish_wresp;
 input rdat_m_valid;
+input dcflush_start;
+input dcflush_running;
 begin
     case(dc_miss_current)
 		`DCMS_IDLE: begin
-    		casex({dc_tag_empty_ma, dc_tag_miss_ma, dc_cache_dirty_ma})
-				3'b1xx: dc_miss_decode = `DCMS_MEMR;
-				3'b00x: dc_miss_decode = `DCMS_IDLE;
-				3'b011: dc_miss_decode = `DCMS_MEMW;
-				3'b010: dc_miss_decode = `DCMS_MEMR;
+    		casex({dcflush_start,dc_tag_empty_ma, dc_tag_miss_ma, dc_cache_dirty_ma})
+				4'b1xxx: dc_miss_decode = `DCMS_FLSH; // for fencei D$ flush function
+				4'b01xx: dc_miss_decode = `DCMS_MEMR;
+				4'b000x: dc_miss_decode = `DCMS_IDLE;
+				4'b0011: dc_miss_decode = `DCMS_MEMW;
+				4'b0010: dc_miss_decode = `DCMS_MEMR;
 				default: dc_miss_decode = `DCMS_DEFO;
     		endcase
 		end
+		`DCMS_FLSH: begin
+    		casex( {dcflush_running, dc_tag_empty_ma, dc_cache_dirty_ma})
+				4'b101: dc_miss_decode = `DCMS_MEMW; // flash this entry
+				4'b11x: dc_miss_decode = `DCMS_FLSH; // no flash this entry
+				4'b100: dc_miss_decode = `DCMS_FLSH; // no flash this entry
+				4'b0xx: dc_miss_decode = `DCMS_IDLE; // end of flush
+				default: dc_miss_decode = `DCMS_IDLE;
+    		endcase
+		end
 		`DCMS_MEMW: begin
-    		case(dcw_finish_wresp)
-				1'b1: dc_miss_decode = `DCMS_MEMR;
-				1'b0: dc_miss_decode = `DCMS_MEMW;
+    		casex({dcw_finish_wresp, dcflush_running})
+				2'b11: dc_miss_decode = `DCMS_FLSH;
+				2'b10: dc_miss_decode = `DCMS_MEMR;
+				2'b0x: dc_miss_decode = `DCMS_MEMW;
 				default: dc_miss_decode = `DCMS_DEFO;
     		endcase
 		end
@@ -209,7 +233,7 @@ begin
 end
 endfunction
 
-wire [2:0] dc_miss_next = dc_miss_decode( dc_miss_current, dc_tag_empty_ma, dc_tag_miss_ma, dc_cache_dirty_ma, dcw_finish_wresp, rdat_m_valid );
+wire [3:0] dc_miss_next = dc_miss_decode( dc_miss_current, dc_tag_empty_ma, dc_tag_miss_ma, dc_cache_dirty_ma, dcw_finish_wresp, rdat_m_valid, dcflush_start, dcflush_running );
 
 always @ (posedge clk or negedge rst_n) begin
     if (~rst_n)
@@ -254,7 +278,7 @@ end
 
 // memory write bus i/f signals
 reg dcw_start_rq_dc;
-reg dcflush_wreq;
+//reg dcflush_wreq;
 wire [31:0] dcw_in_addr_dcflush;
 
 always @ (posedge clk or negedge rst_n) begin
@@ -274,12 +298,14 @@ always @ (posedge clk or negedge rst_n) begin
         dcw_in_addr_dly <= { rd_data_ma[31:28], dc_tag_radr[27:DWIDTH+2],  rd_data_ma[DWIDTH+1:0] };
 end
 
-assign dcw_start_rq = dcw_start_rq_dc | dcflush_wreq;
+//assign dcw_start_rq = dcw_start_rq_dc | dcflush_wreq;
+assign dcw_start_rq = dcw_start_rq_dc;
 
 assign dcw_in_mask = 16'd0;
 
 //assign dcw_in_addr = dcflush_running ? dcw_in_addr_dcflush : { rd_data_ma[31:28], dc_tag_radr[27:DWIDTH+2],  rd_data_ma[DWIDTH+1:0] };
 assign dcw_in_addr = dcflush_running ? dcw_in_addr_dcflush : dcw_in_addr_dly;
+//assign dcw_in_addr = dcw_in_addr_dly;
 
 assign dcw_in_data = ram_rdata_all;
 
@@ -295,7 +321,7 @@ assign ram_wdata_all = rdat_m_data;
 assign ram_radr_all = dcflush_running ? dcflush_cntr : rd_data_ma[DWIDTH+1:4];
 assign ram_wadr_all = current_radr_keeper[DWIDTH+1:4];
 assign ram_wen_all = rdat_m_valid;
-assign ram_ren_all = ((dc_miss_current == `DCMS_IDLE) & (dc_miss_next == `DCMS_MEMW)) | dcflush_running;
+assign ram_ren_all = (((dc_miss_current == `DCMS_IDLE) |(dc_miss_current == `DCMS_FLSH)) & (dc_miss_next == `DCMS_MEMW));
 
 //tag write address
 assign dc_tag_wadr = current_radr_keeper[27:DWIDTH+2];
@@ -305,13 +331,11 @@ assign tag_wen =  rdat_m_valid;
 // DC flush
 always @ (posedge clk or negedge rst_n) begin
     if (~rst_n)
-        //dcflush_cntr <= 9'd0;
-        dcflush_cntr <= { (DWIDTH-2){ 1'b0 }};
-	else if ( start_dcflush )
-        //dcflush_cntr <= {9{1'b1}};
-        dcflush_cntr <= { (DWIDTH-2){ 1'b1 }};
-	else if ((dcflush_cntr >  {(DWIDTH-2){ 1'b0 }}) & dcw_finish_wresp)
-        dcflush_cntr <= dcflush_cntr -  {{ (DWIDTH-3){ 1'b0 }}, 1'b1};
+        dcflush_cntr <= { (DWIDTH-1){ 1'b1 }};
+	else if ( dcflush_start )
+        dcflush_cntr <= { 1'b0, { (DWIDTH-2){ 1'b1 }}};
+	else if ((dcflush_cntr !=  {(DWIDTH-1){ 1'b1 }}) & (dcw_finish_wresp | dcflush_nohit_ent))
+        dcflush_cntr <= dcflush_cntr -  {{ (DWIDTH-2){ 1'b0 }}, 1'b1};
 end
 
 reg [DWIDTH+1:4] dcflush_cntr_dly;
@@ -322,31 +346,37 @@ always @ (posedge clk or negedge rst_n) begin
         dcflush_cntr_dly <= dcflush_cntr;
 end
 
-wire dcflush_cntr_not0 = (dcflush_cntr != { (DWIDTH-2){ 1'b0 }});
-reg dcflush_cntr_not0_dly;
+assign dcflush_cntr_ok = (dcflush_cntr != { (DWIDTH-1){ 1'b1 }});
+
+reg dcflush_cntr_ok_dly;
 
 always @ (posedge clk or negedge rst_n) begin
     if (~rst_n)
-		dcflush_cntr_not0_dly <= 1'b0;
+		dcflush_cntr_ok_dly <= 1'b0;
 	else
-		dcflush_cntr_not0_dly <= dcflush_cntr_not0;
+		dcflush_cntr_ok_dly <= dcflush_cntr_ok;
 end
 
-assign dcflush_running = dcflush_cntr_not0 | dcflush_cntr_not0_dly;
+assign dcflush_running = dcflush_cntr_ok | dcflush_cntr_ok_dly;
+assign fencei_dcflush_end = ~dcflush_cntr_ok & dcflush_cntr_ok_dly;
 
-wire dcflush_wreq_pre = dcflush_running & dcflush_cntr_not0_dly;
+assign dcflush_nohit_ent = (dc_miss_current == `DCMS_FLSH) & (dc_tag_empty_ma | ~dc_cache_dirty_ma);
 
-always @ (posedge clk or negedge rst_n) begin
-    if (~rst_n)
-		dcflush_wreq <= 1'b0;
-	else
-		dcflush_wreq <= dcflush_wreq_pre;
-end
+//assign dcflush_running = dcflush_cntr_not0 | dcflush_cntr_not0_dly;
+
+//wire dcflush_wreq_pre = dcflush_running & dcflush_cntr_not0_dly;
+
+//always @ (posedge clk or negedge rst_n) begin
+    //if (~rst_n)
+		//dcflush_wreq <= 1'b0;
+	//else
+		//dcflush_wreq <= dcflush_wreq_pre;
+//end
 
 assign dcw_in_addr_dcflush = { 4'd0, dc_tag_radr[27:DWIDTH+2],  dcflush_cntr_dly, 4'd0 };
 
 // dc wirte back state signal to IF stage to cancel ic_after_dc
 
-assign dc_wbback_state = (dc_miss_current == `DCMS_MEMW) ;
+assign dc_wbback_state = (dc_miss_current == `DCMS_MEMW) ; // will remove
 
 endmodule
