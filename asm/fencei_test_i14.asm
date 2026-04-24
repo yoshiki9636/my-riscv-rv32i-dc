@@ -38,8 +38,8 @@ bne x4, x0, loop1 ; loop1
 sw x7, 0x0(x6)  ; store modified code
 lw x9, 0x0(x6) ; for check
 bne x7, x9, failed2 ; 
-fence.i
-;nop
+;fence.i
+nop
 addi x5, x5, 0xfff ; loop counter -1
 addi x4, x0, 2 ; loop counter1
 bne x5, x0, loop1 ; loop2
