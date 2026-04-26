@@ -1,3 +1,64 @@
+
+# not used
+## Pmod pins JA for SPI
+## JA7 cs D13 out
+## JA8 sck B18 out
+## JA9 MOSI A18 out
+## JA10 MISO K16 in
+
+# used
+# Pmod pins JB for SPI
+# JB3_P cs J17 out
+# JB3_N sck J18 out
+# JB4_P MOSI K15 out 
+# JB4_N MISO J15 in
+
+# zantei for GPIO
+# JD1 gpio[0]  U12  6
+# JD2 gpio[1]   V12  1
+# JD3 gpio[2]   V10  5
+# JD4 gpio[3]   V11  2
+# JD7 gpio[4]   U14  3
+# JD8 gpio[5]   V14  7
+# JD9 gpio[6]  T13
+# JD10 gpio[7] U13
+
+set_property OFFCHIP_TERM NONE [get_ports {gpio[*]}]
+set_property IOSTANDARD LVCMOS33 [get_ports {gpio[*]}]
+set_property DRIVE 12 [get_ports {gpio[*]}]
+set_property SLEW SLOW [get_ports {gpio[*]}]
+set_property PACKAGE_PIN U12 [get_ports {gpio[0]}]
+set_property PACKAGE_PIN V12 [get_ports {gpio[1]}]
+set_property PACKAGE_PIN V10 [get_ports {gpio[2]}]
+set_property PACKAGE_PIN V11 [get_ports {gpio[3]}]
+set_property PACKAGE_PIN U14 [get_ports {gpio[4]}]
+set_property PACKAGE_PIN V14 [get_ports {gpio[5]}]
+set_property PACKAGE_PIN T13 [get_ports {gpio[6]}]
+set_property PACKAGE_PIN U13 [get_ports {gpio[7]}]
+
+set_property OFFCHIP_TERM NONE [get_ports spi_sck]
+set_property OFFCHIP_TERM NONE [get_ports spi_csn[1]]
+set_property OFFCHIP_TERM NONE [get_ports spi_csn[0]]
+set_property OFFCHIP_TERM NONE [get_ports spi_mosi]
+set_property IOSTANDARD LVCMOS33 [get_ports {spi_sck}]
+set_property IOSTANDARD LVCMOS33 [get_ports {spi_csn[1]}]
+set_property IOSTANDARD LVCMOS33 [get_ports {spi_csn[0]}]
+set_property IOSTANDARD LVCMOS33 [get_ports {spi_mosi}]
+set_property IOSTANDARD LVCMOS33 [get_ports {spi_miso}]
+set_property DRIVE 12 [get_ports {spi_sck}]
+set_property DRIVE 12 [get_ports {spi_csn[1]}]
+set_property DRIVE 12 [get_ports {spi_csn[0]}]
+set_property DRIVE 12 [get_ports {spi_mosi}]
+set_property SLEW SLOW [get_ports {spi_sck}]
+set_property SLEW SLOW [get_ports {spi_csn[1]}]
+set_property SLEW SLOW [get_ports {spi_csn[0]}]
+set_property SLEW SLOW [get_ports {spi_mosi}]
+set_property PACKAGE_PIN J18 [get_ports {spi_sck}]
+set_property PACKAGE_PIN D13 [get_ports {spi_csn[1]}]
+set_property PACKAGE_PIN J17 [get_ports {spi_csn[0]}]
+set_property PACKAGE_PIN K15 [get_ports {spi_mosi}]
+set_property PACKAGE_PIN J15 [get_ports {spi_miso}]
+
 set_property OFFCHIP_TERM NONE [get_ports rgb_led[2]]
 set_property OFFCHIP_TERM NONE [get_ports rgb_led[1]]
 set_property OFFCHIP_TERM NONE [get_ports rgb_led[0]]
@@ -202,5 +263,15 @@ set_output_delay -clock [get_clocks -of_objects [get_nets clk]] -min -add_delay 
 set_output_delay -clock [get_clocks -of_objects [get_nets clk]] -max -add_delay -3.000 [get_ports {rgb_led3[*]}]
 set_output_delay -clock [get_clocks -of_objects [get_nets clk]] -min -add_delay -3.000 [get_ports tx]
 set_output_delay -clock [get_clocks -of_objects [get_nets clk]] -max -add_delay -3.000 [get_ports tx]
+
+set_output_delay -clock [get_clocks -of_objects [get_nets clk]] -min -add_delay -3.000 [get_ports spi_sck]
+set_output_delay -clock [get_clocks -of_objects [get_nets clk]] -max -add_delay -3.000 [get_ports spi_sck]
+set_output_delay -clock [get_clocks -of_objects [get_nets clk]] -min -add_delay -3.000 [get_ports {spi_csn[*]}]
+set_output_delay -clock [get_clocks -of_objects [get_nets clk]] -max -add_delay -3.000 [get_ports {spi_csn[*]}]
+set_output_delay -clock [get_clocks -of_objects [get_nets clk]] -min -add_delay -3.000 [get_ports spi_mosi]
+set_output_delay -clock [get_clocks -of_objects [get_nets clk]] -max -add_delay -3.000 [get_ports spi_mosi]
+
+set_output_delay -clock [get_clocks -of_objects [get_nets clk]] -min -add_delay -3.000 [get_ports {gpio[*]}]
+set_output_delay -clock [get_clocks -of_objects [get_nets clk]] -max -add_delay -3.000 [get_ports {gpio[*]}]
  
 set_clock_groups -group [get_clocks -of_objects [get_nets clk]] -group [get_clocks -of_objects [get_nets mclk]] -asynchronous
