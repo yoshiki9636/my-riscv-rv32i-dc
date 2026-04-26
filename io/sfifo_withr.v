@@ -35,7 +35,8 @@ sfifo_1r1w
 	  .SFIFODP(SFIFODP)
 	) sfifo_1r1w (
 	.clk(clk),
-	.ram_radr(radr_early),
+	//.ram_radr(radr_early),
+	.ram_radr(radr),
 	.ram_rdata(rdata),
 	.ram_wadr(wadr),
 	.ram_wdata(wdata),
@@ -74,6 +75,8 @@ wire wqfull_3 = (fwg&(wadr - radr == SFIFODP-1))|(frg&(radr - wadr <= 1));
 assign wqfull = wqfull_3;
 
 // qempty checker
-assign rqempty = (wadr == radr_early);
+//assign rqempty = (wadr == radr_early);
+assign rqempty = (wadr == radr);
 
 endmodule
+
