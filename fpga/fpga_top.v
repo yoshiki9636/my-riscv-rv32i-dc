@@ -24,11 +24,11 @@ module fpga_top
 	output [2:0] rgb_led1,
 	output [2:0] rgb_led2,
 	output [2:0] rgb_led3,
-	//inout [7:0] gpio, // zantei
-	//output spi_sck, // zantei
-	//output [1:0] spi_csn, // zantei
-	//output spi_mosi, // zantei
-	//input spi_miso, // zantei
+	inout [7:0] gpio,
+	output spi_sck,
+	output [1:0] spi_csn,
+	output spi_mosi,
+	input spi_miso,
 
 // ddr signal
 	inout [15:0] ddr3_dq,
@@ -285,7 +285,7 @@ wire cmd_st_ma;
 wire [31:0] rd_data_ma;
 wire [2:0] dbg_bpoint;
 
-wire [7:0] gpio; // zantei
+//wire [7:0] gpio; // zantei
 
 // for free run counter signals
 wire csr_mtie;
@@ -296,10 +296,10 @@ wire frc_cntr_val_leq_1shot;
 
 // spi select signal : not used for 5 stage 
 wire spi_select_io; // not used
-wire spi_sck; // zantei
-wire [1:0] spi_csn; // zantei
-wire spi_mosi; // zantei
-wire spi_miso = 1'b0; // zantei
+//wire spi_sck;
+//wire [1:0] spi_csn; // zantei
+//wire spi_mosi; // zantei
+//wire spi_miso = 1'b0; // zantei
 
 // for interrupt
 wire g_interrupt_1shot;
@@ -350,7 +350,7 @@ cpu_top #(.DWIDTH(DWIDTH), .IWIDTH(IWIDTH)) cpu_top (
 	.ic_rdat_m_mask(ic_rdat_m_mask),
 	.ic_rdat_m_valid(ic_rdat_m_valid),
 	.ic_finish_mrd(ic_finish_mrd),
-	.start_icflush(start_dcflush), // same timing
+	.start_icflush(1'b0),
 
     .csr_radr_en_mon(csr_radr_en_mon),
     .csr_radr_mon(csr_radr_mon),
@@ -625,7 +625,8 @@ uart_top #(.DWIDTH(DWIDTH), .IWIDTH(IWIDTH)) uart_top (
 	.uart_term(uart_term),
 	.rout_en(rout_en),
 	.rout(rout),
-	.rx_disable_echoback(rx_disable_echoback)
+	.rx_disable_echoback(rx_disable_echoback),
+	.start_dcflush(start_dcflush)
 	);
 
 io_led io_led (
