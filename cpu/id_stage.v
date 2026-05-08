@@ -7,9 +7,12 @@
  * @license		https://opensource.org/licenses/MIT     MIT license
  * @version		0.1
  * @version		0.2 add part of csr instructions
+ * @version		0.3 add part of M instructions
+ * @version		0.4 add part of A instructions
  */
 
 `define SUPPORT_M
+`define SUPPORT_A
 
 module id_stage(
 	input clk,
@@ -75,6 +78,19 @@ module id_stage(
 	output reg cmd_div_decode_ex,
 	output reg cmd_rem_decode_ex,
 `endif // SUPPORT_M
+`ifdef SUPPORT_A
+	output reg cmd_lrw_ex,
+	output reg cmd_scw_ex,
+	output reg cmd_amoswapw_ex,
+	output reg cmd_amoaddw_ex,
+	output reg cmd_amoxorw_ex,
+	output reg cmd_amoandw_ex,
+	output reg cmd_amoorw_ex,
+	output reg cmd_amominw_ex,
+	output reg cmd_amomaxw_ex,
+	output reg cmd_amominuw_ex,
+	output reg cmd_amomaxuw_ex,
+`endif // SUPPORT_A
 	// from EX
 	input jmp_purge_ma,
 	input jmp_purge_ex,
@@ -285,6 +301,55 @@ wire cmd_rem_decode_id = cmd_rem_id | cmd_remu_id;
 
 `endif // SUPPORT_M
 
+`ifdef SUPPORT_A
+//wire [11:7]  inst_rd  = inst_id[11:7];
+//wire [19:15] inst_rs1 = inst_id[19:15];
+//wire [24:20] inst_rs2 = inst_id[24:20];
+//wire [26:25] inst_op5 = inst_id[26:25]; aq, rl -> ignore because just 1 core like fence inst
+
+//wire dc_notc = (inst_set == 2'b11); // bit 1-9
+wire dc_op1_01011 = (inst_op1 == 5'b01011);
+//wire dc_op2_010 
+wire dc_uimm_00000 = (inst_uimm == 5'b00000); 
+
+wire a_cmds_decode = dc_op1_01011 & dc_op2_010;
+
+// op3 decode for A insts
+function [10:0] op3_decoder_a;
+input [4:0] inst_op3;
+begin
+	case(inst_op3)
+		5'b00010: op3_decoder_a = 11'b000_0000_0001; // lr.w
+		5'b00011: op3_decoder_a = 11'b000_0000_0010; // sc.w
+		5'b00001: op3_decoder_a = 11'b000_0000_0100; // amoswap.w
+		5'b00000: op3_decoder_a = 11'b000_0000_1000; // amoadd.w
+		5'b00100: op3_decoder_a = 11'b000_0001_0000; // amoxor.w
+		5'b01100: op3_decoder_a = 11'b000_0010_0000; // amoand.w
+		5'b01000: op3_decoder_a = 11'b000_0100_0000; // amoor.w
+		5'b10000: op3_decoder_a = 11'b000_1000_0000; // amomin.w
+		5'b10100: op3_decoder_a = 11'b001_0000_0000; // amomax.w
+		5'b11000: op3_decoder_a = 11'b010_0000_0000; // amominu.w
+		5'b11100: op3_decoder_a = 11'b100_0000_0000; // amomaxu.w
+		default : op3_decoder_a = 11'b000_0000_0000;
+	endcase
+end
+endfunction
+
+wire [10:0] dc_op3_a = op3_decoder_a( inst_op3 );
+
+wire cmd_lrw_id = a_cmds_decode & dc_op3_a[0];
+wire cmd_scw_id = a_cmds_decode & dc_op3_a[1];
+wire cmd_amoswapw_id = a_cmds_decode & dc_op3_a[2];
+wire cmd_amoaddw_id = a_cmds_decode & dc_op3_a[3];
+wire cmd_amoxorw_id = a_cmds_decode & dc_op3_a[4];
+wire cmd_amoandw_id = a_cmds_decode & dc_op3_a[5];
+wire cmd_amoorw_id = a_cmds_decode & dc_op3_a[6];
+wire cmd_amominw_id = a_cmds_decode & dc_op3_a[7];
+wire cmd_amomaxw_id = a_cmds_decode & dc_op3_a[8];
+wire cmd_amominuw_id = a_cmds_decode & dc_op3_a[9];
+wire cmd_amomaxuw_id = a_cmds_decode & dc_op3_a[10];
+`endif // SUPPORT_A
+
 // microcode signals
 
 // load, auipc
@@ -351,6 +416,29 @@ wire cmd_wfi_id    = cmd_ec_id & dc_op3_00010 & dc_op4_00101;
 wire cmd_nop = (inst_id == 32'h0000_0013);
 // all command except nop
 
+`ifdef SUPPORT_A
+`ifdef SUPPORT_M
+wire cmd_all_except_nop = mcmd_decode |
+	cmd_lui_id | cmd_auipc_id | cmd_ld_id | cmd_alui_id | cmd_alui_shamt_id
+	| cmd_alu_id | cmd_alu_add_id | cmd_alu_sub_id | cmd_st_id | cmd_jal_id
+	| cmd_jalr_id | cmd_br_id | cmd_fence_id | cmd_fencei_id | cmd_sfence_id
+	| cmd_csr_id | cmd_ec_id | cmd_ecall_id | cmd_ebreak_id | cmd_uret_id  
+	| cmd_sret_id | cmd_mret_id | cmd_wfi_id
+	| cmd_lrw_id | cmd_scw_id | cmd_amoswapw_id | cmd_amoaddw_id | cmd_amoxorw_id
+	| cmd_amoandw_id | cmd_amoorw_id | cmd_amominw_id | cmd_amomaxw_id
+	| cmd_amominuw_id | cmd_amomaxuw_id;
+`else // SUPPORT_M
+wire cmd_all_except_nop =
+	cmd_lui_id | cmd_auipc_id | cmd_ld_id | cmd_alui_id | cmd_alui_shamt_id
+	| cmd_alu_id | cmd_alu_add_id | cmd_alu_sub_id | cmd_st_id | cmd_jal_id
+	| cmd_jalr_id | cmd_br_id | cmd_fence_id | cmd_fencei_id | cmd_sfence_id
+	| cmd_csr_id | cmd_ec_id | cmd_ecall_id | cmd_ebreak_id | cmd_uret_id  
+	| cmd_sret_id | cmd_mret_id | cmd_wfi_id
+	| cmd_lrw_id | cmd_scw_id | cmd_amoswapw_id | cmd_amoaddw_id | cmd_amoxorw_id
+	| cmd_amoandw_id | cmd_amoorw_id | cmd_amominw_id | cmd_amomaxw_id
+	| cmd_amominuw_id | cmd_amomaxuw_id;
+`endif // SUPPORT_M
+`else // SUPPORT_A
 `ifdef SUPPORT_M
 wire cmd_all_except_nop = mcmd_decode |
 	cmd_lui_id | cmd_auipc_id | cmd_ld_id | cmd_alui_id | cmd_alui_shamt_id
@@ -366,6 +454,7 @@ wire cmd_all_except_nop =
 	| cmd_csr_id | cmd_ec_id | cmd_ecall_id | cmd_ebreak_id | cmd_uret_id  
 	| cmd_sret_id | cmd_mret_id | cmd_wfi_id;
 `endif // SUPPORT_M
+`endif // SUPPORT_A
 
 wire illegal_ops_id = ~(cmd_nop | cmd_all_except_nop) & ~jmp_purge_ma & ~jmp_purge_ex & ~stall;
 
@@ -382,6 +471,31 @@ wire wbk_rd_reg_id = ~(cmd_st_id | cmd_br_id) & dc_notc & ~jmp_purge_ma & ~stall
 assign inst_rs1_id = inst_rs1;
 assign inst_rs2_id = inst_rs2;
 
+`ifdef SUPPORT_A
+`ifdef SUPPORT_M
+assign inst_rs1_valid = cmd_alui_id | cmd_alui_shamt_id | cmd_alu_id | cmd_csr_id
+                      | cmd_sfence_id | cmd_ld_id | cmd_st_id | cmd_jalr_id | cmd_br_id | mcmd_decode
+	                  | cmd_lrw_id | cmd_scw_id | cmd_amoswapw_id | cmd_amoaddw_id | cmd_amoxorw_id
+	                  | cmd_amoandw_id | cmd_amoorw_id | cmd_amominw_id | cmd_amomaxw_id
+	                  | cmd_amominuw_id | cmd_amomaxuw_id;
+
+assign inst_rs2_valid = cmd_alu_id | cmd_st_id | cmd_br_id | mcmd_decode
+	                  | cmd_lrw_id | cmd_scw_id | cmd_amoswapw_id | cmd_amoaddw_id | cmd_amoxorw_id
+	                  | cmd_amoandw_id | cmd_amoorw_id | cmd_amominw_id | cmd_amomaxw_id
+	                  | cmd_amominuw_id | cmd_amomaxuw_id;
+`else // SUPPORT_M
+assign inst_rs1_valid = cmd_alui_id | cmd_alui_shamt_id | cmd_alu_id | cmd_csr_id
+                      | cmd_sfence_id | cmd_ld_id | cmd_st_id | cmd_jalr_id | cmd_br_id
+	                  | cmd_lrw_id | cmd_scw_id | cmd_amoswapw_id | cmd_amoaddw_id | cmd_amoxorw_id
+	                  | cmd_amoandw_id | cmd_amoorw_id | cmd_amominw_id | cmd_amomaxw_id
+	                  | cmd_amominuw_id | cmd_amomaxuw_id;
+
+assign inst_rs2_valid = cmd_alu_id | cmd_st_id | cmd_br_id
+	                  | cmd_lrw_id | cmd_scw_id | cmd_amoswapw_id | cmd_amoaddw_id | cmd_amoxorw_id
+	                  | cmd_amoandw_id | cmd_amoorw_id | cmd_amominw_id | cmd_amomaxw_id
+	                  | cmd_amominuw_id | cmd_amomaxuw_id;
+`endif // SUPPORT_M
+`else // SUPPORT_A
 `ifdef SUPPORT_M
 assign inst_rs1_valid = cmd_alui_id | cmd_alui_shamt_id | cmd_alu_id | cmd_csr_id |
                         cmd_sfence_id | cmd_ld_id | cmd_st_id | cmd_jalr_id | cmd_br_id | mcmd_decode;
@@ -393,6 +507,7 @@ assign inst_rs1_valid = cmd_alui_id | cmd_alui_shamt_id | cmd_alu_id | cmd_csr_i
 
 assign inst_rs2_valid = cmd_alu_id | cmd_st_id | cmd_br_id;
 `endif // SUPPORT_M
+`endif // SUPPORT_A
 
 wire [4:0] inst_rs1_mon = rf_radr_en_mon ? rf_radr_mon : inst_rs1;
 
@@ -545,6 +660,19 @@ always @ (posedge clk or negedge rst_n) begin
 		cmd_div_decode_ex <= 1'b0;
 		cmd_rem_decode_ex <= 1'b0;
 `endif // SUPPORT_M
+`ifdef SUPPORT_A
+		cmd_lrw_ex <= 1'b0;
+		cmd_scw_ex <= 1'b0;
+		cmd_amoswapw_ex <= 1'b0;
+		cmd_amoaddw_ex <= 1'b0;
+		cmd_amoxorw_ex <= 1'b0;
+		cmd_amoandw_ex <= 1'b0;
+		cmd_amoorw_ex <= 1'b0;
+		cmd_amominw_ex <= 1'b0;
+		cmd_amomaxw_ex <= 1'b0;
+		cmd_amominuw_ex <= 1'b0;
+		cmd_amomaxuw_ex <= 1'b0;
+`endif // SUPPORT_A
      end
 	else if (rst_pipe) begin
         cmd_lui_ex <= 1'b0;
@@ -601,6 +729,19 @@ always @ (posedge clk or negedge rst_n) begin
 		cmd_div_decode_ex <= 1'b0;
 		cmd_rem_decode_ex <= 1'b0;
 `endif // SUPPORT_M
+`ifdef SUPPORT_A
+		cmd_lrw_ex <= 1'b0;
+		cmd_scw_ex <= 1'b0;
+		cmd_amoswapw_ex <= 1'b0;
+		cmd_amoaddw_ex <= 1'b0;
+		cmd_amoxorw_ex <= 1'b0;
+		cmd_amoandw_ex <= 1'b0;
+		cmd_amoorw_ex <= 1'b0;
+		cmd_amominw_ex <= 1'b0;
+		cmd_amomaxw_ex <= 1'b0;
+		cmd_amominuw_ex <= 1'b0;
+		cmd_amomaxuw_ex <= 1'b0;
+`endif // SUPPORT_A
      end
      else if (~stall) begin
         cmd_lui_ex <= cmd_lui_id & ~stall_ld;
@@ -658,6 +799,19 @@ always @ (posedge clk or negedge rst_n) begin
 		cmd_div_decode_ex <= cmd_div_decode_id & ~stall_ld;
 		cmd_rem_decode_ex <= cmd_rem_decode_id & ~stall_ld;
 `endif // SUPPORT_M
+`ifdef SUPPORT_A
+		cmd_lrw_ex <= cmd_lrw_id & ~stall_ld;
+		cmd_scw_ex <= cmd_scw_id & ~stall_ld;
+		cmd_amoswapw_ex <= cmd_amoswapw_id & ~stall_ld;
+		cmd_amoaddw_ex <= cmd_amoaddw_id & ~stall_ld;
+		cmd_amoxorw_ex <= cmd_amoxorw_id & ~stall_ld;
+		cmd_amoandw_ex <= cmd_amoandw_id & ~stall_ld;
+		cmd_amoorw_ex <= cmd_amoorw_id & ~stall_ld;
+		cmd_amominw_ex <= cmd_amominw_id & ~stall_ld;
+		cmd_amomaxw_ex <= cmd_amomaxw_id & ~stall_ld;
+		cmd_amominuw_ex <= cmd_amominuw_id & ~stall_ld;
+		cmd_amomaxuw_ex <= cmd_amomaxuw_id & ~stall_ld;
+`endif // SUPPORT_A
     end
 end
 

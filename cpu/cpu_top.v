@@ -9,6 +9,7 @@
  */
 
 `define SUPPORT_M
+`define SUPPORT_A
 
 module cpu_top
     #(parameter IWIDTH = 14,
@@ -264,6 +265,25 @@ wire div_stall_fin; // output
 wire div_stall_fin2; // output
 wire div_stall_dly; // output
 `endif // SUPPORT_M
+// for A arch support
+`ifdef SUPPORT_A
+wire cmd_lrw_ex;
+wire cmd_scw_ex;
+wire cmd_amoswapw_ex;
+wire cmd_amoaddw_ex;
+wire cmd_amoxorw_ex;
+wire cmd_amoandw_ex;
+wire cmd_amoorw_ex;
+wire cmd_amominw_ex;
+wire cmd_amomaxw_ex;
+wire cmd_amominuw_ex;
+wire cmd_amomaxuw_ex;
+wire amo_stall;
+wire amo_stall_fin;
+wire amo_stall_fin2;
+wire amo_stall_dly;
+`endif // SUPPORT_A
+
 // LSU
 wire dc_tag_hit_ma; // output
 wire dc_st_wt_ma; // output
@@ -449,6 +469,19 @@ id_stage id_stage (
 	.cmd_div_decode_ex(cmd_div_decode_ex),
 	.cmd_rem_decode_ex(cmd_rem_decode_ex),
 `endif // SUPPORT_M
+`ifdef SUPPORT_A
+	.cmd_lrw_ex(cmd_lrw_ex),
+	.cmd_scw_ex(cmd_scw_ex),
+	.cmd_amoswapw_ex(cmd_amoswapw_ex),
+	.cmd_amoaddw_ex(cmd_amoaddw_ex),
+	.cmd_amoxorw_ex(cmd_amoxorw_ex),
+	.cmd_amoandw_ex(cmd_amoandw_ex),
+	.cmd_amoorw_ex(cmd_amoorw_ex),
+	.cmd_amominw_ex(cmd_amominw_ex),
+	.cmd_amomaxw_ex(cmd_amomaxw_ex),
+	.cmd_amominuw_ex(cmd_amominuw_ex),
+	.cmd_amomaxuw_ex(cmd_amomaxuw_ex),
+`endif // SUPPORT_A
 	.jmp_purge_ma(jmp_purge_ma),
 	.jmp_purge_ex(jmp_purge_ex),
 	.rd_adr_wb(rd_adr_wb),
@@ -529,6 +562,7 @@ ex_stage ex_stage (
 	.nohit_rs2_ex(nohit_rs2_ex),
 	.wbk_data_wb(wbk_data_wb),
 	.wbk_data_wb2(wbk_data_wb2),
+	.dc_stall(dc_stall),
 	.dc_stall_fin(dc_stall_fin),
 	.cmd_ld_ma(cmd_ld_ma),
 	.cmd_st_ma(cmd_st_ma),
@@ -577,6 +611,23 @@ ex_stage ex_stage (
 	.div_result_valid(div_result_valid),
 	.div_rd_adr_ex(div_rd_adr_ex),
 `endif // SUPPORT_M
+`ifdef SUPPORT_A
+	.cmd_lrw_ex(cmd_lrw_ex),
+	.cmd_scw_ex(cmd_scw_ex),
+	.cmd_amoswapw_ex(cmd_amoswapw_ex),
+	.cmd_amoaddw_ex(cmd_amoaddw_ex),
+	.cmd_amoxorw_ex(cmd_amoxorw_ex),
+	.cmd_amoandw_ex(cmd_amoandw_ex),
+	.cmd_amoorw_ex(cmd_amoorw_ex),
+	.cmd_amominw_ex(cmd_amominw_ex),
+	.cmd_amomaxw_ex(cmd_amomaxw_ex),
+	.cmd_amominuw_ex(cmd_amominuw_ex),
+	.cmd_amomaxuw_ex(cmd_amomaxuw_ex),
+	.amo_stall(amo_stall),
+	.amo_stall_fin(amo_stall_fin),
+	.amo_stall_fin2(amo_stall_fin2),
+	.amo_stall_dly(amo_stall_dly),
+`endif // SUPPORT_A
 	.jmp_purge_ma(jmp_purge_ma),
 	.jmp_purge_ex(jmp_purge_ex),
 	.ic_stall(ic_stall),
@@ -795,6 +846,12 @@ ilu_stage #(.IWIDTH(IWIDTH)) ilu_stage (
 	.ic_stall(ic_stall),
 	.ic_stall_dly(ic_stall_dly),
 `endif // SUPPORT_M
+`ifdef SUPPORT_A
+	.amo_stall(amo_stall),
+	.amo_stall_fin(amo_stall_fin),
+	.amo_stall_fin2(amo_stall_fin2),
+	.amo_stall_dly(amo_stall_dly),
+`endif // SUPPORT_A
 	.ic_tag_hit_id(ic_tag_hit_id),
 	//.ic_st_wt_id(ic_st_wt_id),
 	.icr_start_rq(icr_start_rq),

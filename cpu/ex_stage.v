@@ -9,6 +9,7 @@
  */
 
 `define SUPPORT_M
+`define SUPPORT_A
 
 module ex_stage(
 	input clk,
@@ -73,7 +74,7 @@ module ex_stage(
 	input [31:0] wbk_data_wb2,
 
 	// to MA
-	//input dc_stall,
+	input dc_stall,
 	input dc_stall_fin,
 	//input dc_stall_early,
     output reg cmd_ld_ma,
@@ -128,6 +129,23 @@ module ex_stage(
 	input div_result_valid,
 	input [4:0] div_rd_adr_ex,
 `endif // SUPPORT_M
+`ifdef SUPPORT_A
+	input cmd_lrw_ex,
+	input cmd_scw_ex,
+	input cmd_amoswapw_ex,
+	input cmd_amoaddw_ex,
+	input cmd_amoxorw_ex,
+	input cmd_amoandw_ex,
+	input cmd_amoorw_ex,
+	input cmd_amominw_ex,
+	input cmd_amomaxw_ex,
+	input cmd_amominuw_ex,
+	input cmd_amomaxuw_ex,
+	output amo_stall,
+	output amo_stall_dly,
+	output amo_stall_fin,
+	output reg amo_stall_fin2,
+`endif // SUPPORT_A
 
 	// to ID
 	output reg jmp_purge_ma,
@@ -143,6 +161,220 @@ module ex_stage(
 
 	);
 
+`ifndef SUPPORT_M
+wire [31:0] rs1_sel;
+wire [31:0] rs2_sel;
+`else // SUPPORT_M
+`ifndef SUPPORT_A
+wire [31:0] rs1_sel;
+wire [31:0] rs2_sel;
+`endif // SUPPORT_A
+`endif // SUPPORT_M
+
+`ifdef SUPPORT_A
+// for A instructions
+
+// lr.w / sc.w
+reg resv_flg;
+reg [31:0] resv_adr;
+wire reset_flg_cond;
+wire cmd_ld_pur;
+wire cmd_st_pur;
+
+always @ ( posedge clk or negedge rst_n) begin   
+	if (~rst_n)
+		resv_flg <= 1'b0;
+	else if (reset_flg_cond)
+		resv_flg <= 1'b0;
+	else if (cmd_lrw_ex)
+		resv_flg <= 1'b1;
+end
+
+always @ ( posedge clk or negedge rst_n) begin   
+	if (~rst_n)
+		resv_adr <= 32'd0;
+	else if (cmd_lrw_ex)
+		resv_adr <= rs1_sel;
+end
+
+// lr.w conditions
+assign reset_flg_cond = (cmd_scw_ex | (cmd_st_ex & (resv_adr[31:2] == rs1_sel[31:2]))) & ~jmp_purge_ma;
+
+// sc.w conditions
+wire success_scw = (cmd_scw_ex & (resv_adr[31:2] == rs1_sel[31:2]) & resv_flg) & ~jmp_purge_ma;
+
+// amo instructions
+
+wire amo_cmds = cmd_amoswapw_ex | cmd_amoaddw_ex | cmd_amoxorw_ex | cmd_amoandw_ex |
+                cmd_amoorw_ex | cmd_amominw_ex | cmd_amomaxw_ex | cmd_amominuw_ex | cmd_amomaxuw_ex;
+
+// critical path 
+// state machine for amo instructions
+
+`define AMO_IDLE 3'b000
+`define AMO_LOAD 3'b001
+`define AMO_LDWB 3'b011
+`define AMO_EXEC 3'b101
+`define AMO_STOR 3'b110
+`define AMO_STWT 3'b100
+
+reg [2:0] amo_current;
+
+function [2:0] amo_decode;
+input [2:0] amo_current;
+input amo_cmds;
+input stall;
+input dc_stall_fin;
+begin
+    case(amo_current)
+		`AMO_IDLE: begin
+			if (amo_cmds) amo_decode = `AMO_LOAD;
+			else amo_decode = `AMO_IDLE;
+		end
+		`AMO_LOAD: begin
+			if (~stall) amo_decode = `AMO_LDWB;
+			else if (dc_stall_fin)  amo_decode = `AMO_LDWB;
+			else amo_decode = `AMO_LOAD;
+		end
+		`AMO_LDWB: amo_decode = `AMO_EXEC;
+		`AMO_EXEC: amo_decode = `AMO_STOR;
+		`AMO_STOR: begin
+			if (dc_stall_fin | ~stall) amo_decode = `AMO_STWT;
+			else amo_decode = `AMO_STOR;
+		end
+		`AMO_STWT: amo_decode = `AMO_IDLE;
+		default: amo_decode = `AMO_IDLE;
+	endcase
+end
+endfunction
+
+wire [2:0] amo_next = amo_decode( amo_current, amo_cmds, stall, dc_stall_fin );
+
+always @ (posedge clk or negedge rst_n) begin
+	if (~rst_n)
+		amo_current <= `AMO_IDLE;
+	else
+		amo_current <= amo_next;
+end
+
+wire amo_term = (amo_current != `AMO_IDLE);
+wire amo_wb_term = (amo_current == `AMO_LDWB);
+wire amo_ex_term = (amo_current == `AMO_EXEC);
+wire amo_st_term = (amo_current == `AMO_STOR);
+wire amo_ld_cmd = amo_cmds;
+wire amo_st_cmd = (amo_current == `AMO_EXEC);
+
+// amo stall signals
+assign amo_stall = amo_cmds | ((amo_current != `AMO_IDLE)&(amo_current != `AMO_STWT));
+assign amo_stall_dly = amo_term;
+assign amo_stall_fin =  (amo_current == `AMO_STWT);
+
+always @ (posedge clk or negedge rst_n) begin
+	if (~rst_n)
+		amo_stall_fin2 <= 1'b0;
+	else
+		amo_stall_fin2 <= amo_stall_fin;
+end
+
+// keep selected values
+reg [31:0] amo_rs1_addr;
+reg [31:0] amo_rs2_oper;
+wire [31:0] rs2_fwd;
+
+wire [31:0] rs2_sel_for_oper = ~nohit_rs2_ex ? rs2_fwd : rs2_data_ex;
+
+always @ (posedge clk or negedge rst_n) begin
+	if (~rst_n) begin
+		amo_rs1_addr <= 32'd0;
+		amo_rs2_oper <= 32'd0;
+	end
+	else if (amo_cmds) begin
+		amo_rs1_addr <= rs1_sel;
+		amo_rs2_oper <= rs2_sel_for_oper;
+	end
+end
+
+// load inst : same timing as amo_cmds
+// store inst : same timing as exec of amo
+reg cmd_amoswapw_lat;
+reg cmd_amoaddw_lat;
+reg cmd_amoxorw_lat;
+reg cmd_amoandw_lat;
+reg cmd_amoorw_lat;
+reg cmd_amominw_lat;
+reg cmd_amomaxw_lat;
+reg cmd_amominuw_lat;
+reg cmd_amomaxuw_lat;
+
+always @ (posedge clk or negedge rst_n) begin
+	if (~rst_n) begin
+		cmd_amoswapw_lat <= 1'b0;
+		cmd_amoaddw_lat <= 1'b0;
+		cmd_amoxorw_lat <= 1'b0;
+		cmd_amoandw_lat <= 1'b0;
+		cmd_amoorw_lat <= 1'b0;
+		cmd_amominw_lat <= 1'b0;
+		cmd_amomaxw_lat <= 1'b0;
+		cmd_amominuw_lat <= 1'b0;
+		cmd_amomaxuw_lat <= 1'b0;
+	end
+	else if (amo_stall_fin) begin
+		cmd_amoswapw_lat <= 1'b0;
+		cmd_amoaddw_lat <= 1'b0;
+		cmd_amoxorw_lat <= 1'b0;
+		cmd_amoandw_lat <= 1'b0;
+		cmd_amoorw_lat <= 1'b0;
+		cmd_amominw_lat <= 1'b0;
+		cmd_amomaxw_lat <= 1'b0;
+		cmd_amominuw_lat <= 1'b0;
+		cmd_amomaxuw_lat <= 1'b0;
+	end
+	else if (amo_cmds) begin
+		cmd_amoswapw_lat <= cmd_amoswapw_ex;
+		cmd_amoaddw_lat <= cmd_amoaddw_ex;
+		cmd_amoxorw_lat <= cmd_amoxorw_ex;
+		cmd_amoandw_lat <= cmd_amoandw_ex;
+		cmd_amoorw_lat <= cmd_amoorw_ex;
+		cmd_amominw_lat <= cmd_amominw_ex;
+		cmd_amomaxw_lat <= cmd_amomaxw_ex;
+		cmd_amominuw_lat <= cmd_amominuw_ex;
+		cmd_amomaxuw_lat <= cmd_amomaxuw_ex;
+	end
+end
+
+// wbk_data_wb : wbk_data_wb2;
+reg [31:0] wbk_data_lat;
+
+always @ (posedge clk or negedge rst_n) begin
+	if (~rst_n)
+		wbk_data_lat <= 32'd0;
+	else if (amo_wb_term)
+		wbk_data_lat <= wbk_data_wb;
+end
+
+// amo alu
+wire [31:0] amo_swp_data = amo_rs2_oper;
+wire [31:0] amo_add_data = wbk_data_lat + amo_rs2_oper;
+wire [31:0] amo_xor_data = wbk_data_lat ^ amo_rs2_oper;
+wire [31:0] amo_and_data = wbk_data_lat & amo_rs2_oper;
+wire [31:0] amo_or_data  = wbk_data_lat | amo_rs2_oper;
+wire [31:0] amo_min_data = ($signed( wbk_data_lat ) > $signed( amo_rs2_oper)) ? amo_rs2_oper : wbk_data_lat;
+wire [31:0] amo_max_data = ($signed( wbk_data_lat ) > $signed( amo_rs2_oper)) ? wbk_data_lat : amo_rs2_oper;
+wire [31:0] amo_minu_data = (wbk_data_lat > amo_rs2_oper) ? amo_rs2_oper : wbk_data_lat;
+wire [31:0] amo_maxu_data = (wbk_data_lat > amo_rs2_oper) ? wbk_data_lat : amo_rs2_oper;
+
+wire [31:0] amo_sel_data = cmd_amoswapw_lat ? amo_swp_data :
+                           cmd_amoaddw_lat ? amo_add_data : 
+                           cmd_amoxorw_lat ? amo_xor_data : 
+                           cmd_amoandw_lat ? amo_and_data : 
+                           cmd_amoorw_lat ? amo_or_data : 
+                           cmd_amominw_lat ? amo_min_data : 
+                           cmd_amomaxw_lat ? amo_max_data : 
+                           cmd_amominuw_lat ? amo_minu_data : 
+                           cmd_amomaxuw_lat ? amo_maxu_data : 32'd0;
+
+
+`endif // SUPPORT_A
 
 // Pre-selector
 
@@ -172,25 +404,28 @@ wire [31:0] jalr_ofs = {{ 20{ jalr_ofs_ex[11] }}, jalr_ofs_ex };
 // cmd_br_ex rs1:pc rs2:ofs
 wire [31:0] br_ofs = {{ 19{ br_ofs_ex[12] }}, br_ofs_ex, 1'b0 };
 
+`ifdef SUPPORT_A
+assign cmd_ld_pur = (cmd_ld_ex | cmd_lrw_ex | amo_ld_cmd) & ~jmp_purge_ma;
+assign cmd_st_pur = (cmd_st_ex | success_scw | amo_st_cmd) & ~jmp_purge_ma;
+`else // SUPPORT_A
 wire cmd_ld_pur = cmd_ld_ex & ~jmp_purge_ma;
 wire cmd_st_pur = cmd_st_ex & ~jmp_purge_ma;
-//wire cmd_ld_pur = cmd_ld_ex;
+`endif // SUPPORT_A
 
 // forwarding selector
 
 wire [31:0] rs1_fwd = hit_rs1_idex_ex ? rd_data_ma :
                       hit_rs1_idma_ex ? wbk_data_wb : wbk_data_wb2;
 
+`ifdef SUPPORT_A
+assign rs2_fwd = hit_rs2_idex_ex ? rd_data_ma :
+                 hit_rs2_idma_ex ? wbk_data_wb : wbk_data_wb2;
+`else // SUPPORT_A
 wire [31:0] rs2_fwd = hit_rs2_idex_ex ? rd_data_ma :
                       hit_rs2_idma_ex ? wbk_data_wb : wbk_data_wb2;
+`endif // SUPPORT_A
 
 // ALU selector
-`ifdef SUPPORT_M
-`else // SUPPORT_M
-wire [31:0] rs1_sel;
-wire [31:0] rs2_sel;
-`endif // SUPPORT_M
-
 assign rs1_sel = ~nohit_rs1_ex ? rs1_fwd : rs1_data_ex;
 
 assign rs2_sel = (cmd_ld_pur | cmd_alui_ex) ? ld_alui_ofs :
@@ -410,9 +645,14 @@ wire wbk_rd_reg_tmp;
 //wire stall_ldst_pre = (cmd_ld_pur|cmd_st_tmp) ? stall : stall_dly;
 //wire stall_ldst_pre = (stall & cmd_st_tmp) |  (stall_dly & cmd_ld_pur);
 //wire stall_ldst_pre = (stall & cmd_st_tmp) |  (stall & cmd_ld_pur);
-wire stall_ldst_pre = (stall & cmd_st_pur) |  (stall & cmd_ld_pur);
 
+//wire stall_ldst_pre = (stall & cmd_st_pur) |  (stall & cmd_ld_pur);
+
+`ifdef SUPPORT_M
 wire [4:0] rd_adr_ex_with_div = div_result_valid ? div_rd_adr_ex : rd_adr_ex;
+`else // SUPPORT_M
+wire [4:0] rd_adr_ex_with_div = rd_adr_ex;
+`endif // SUPPORT_M
 
 always @ ( posedge clk or negedge rst_n) begin   
 	if (~rst_n) begin
@@ -465,10 +705,24 @@ wire stall_ldst_0 = 1'b0;
 //assign rd_data_ex = (stall | stall_dly2) ? rd_data_roll : rd_data_ex_pre;
 //assign rd_data_ex = (stall | stall_dly) ? rd_data_roll : rd_data_ex_pre;
 //assign rd_data_ex = rd_data_ex_pre;
+
 wire [4:0] rd_adr_ex_post = (stall_ldst_0) ? rd_adr_roll : rd_adr_ex_with_div;
+
+`ifdef SUPPORT_A
+assign rd_data_ex = amo_cmds? rs1_data_ex :
+                    amo_ex_term ? amo_rs1_addr :
+                    (stall_ldst) ? rd_data_roll : rd_data_ex_pre;
+//wire [31:0] st_data_ex = amo_st_term ? amo_sel_data :
+wire [31:0] st_data_ex = amo_ex_term ? amo_sel_data :
+                        (stall_ldst) ? st_data_roll : st_data_ex_pre;
+wire [2:0] ldst_code_ex = (amo_ld_cmd | amo_st_cmd) ? 3'b010 : // select always word
+                          (stall_ldst_0) ? ldst_code_roll : alu_code_ex;
+`else // SUPPORT_A
 assign rd_data_ex = (stall_ldst) ? rd_data_roll : rd_data_ex_pre;
 wire [31:0] st_data_ex = (stall_ldst) ? st_data_roll : st_data_ex_pre;
 wire [2:0] ldst_code_ex = (stall_ldst_0) ? ldst_code_roll : alu_code_ex;
+`endif // SUPPORT_A
+
 wire cmd_ld_ex_post = (stall_ldst_0) ? cmd_ld_roll : cmd_ld_pur;
 wire cmd_st_ex_post = (stall_ldst_0) ? cmd_st_roll : cmd_st_pur;
 //wire cmd_st_ex_post = (stall_ldst_0) ? cmd_st_roll : cmd_st_tmp;

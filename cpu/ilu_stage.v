@@ -9,6 +9,7 @@
  */
 
 `define SUPPORT_M
+`define SUPPORT_A
 
 module ilu_stage
 	#(parameter IWIDTH = 14)
@@ -40,6 +41,12 @@ module ilu_stage
 	output ic_stall,
 	output ic_stall_dly,
 `endif // SUPPORT_M
+`ifdef SUPPORT_A
+	input amo_stall,
+	input amo_stall_dly,
+	input amo_stall_fin,
+	input amo_stall_fin2,
+`endif // SUPPORT_A
 
     //output ic_st_ok,
 	// IC controls
@@ -84,7 +91,7 @@ assign fencei_cond = fencei_wt[1];
 wire ic_stall_fin2;
 wire ic_stall_fin;
 wire ic_stall;
-reg ic_stall_dly;
+wire ic_stall_dly;
 
 assign ic_stall_fin2_add_div = ic_stall_fin2 | div_stall_fin2;
 assign ic_stall_fin_add_div = ic_stall_fin | div_stall_fin;
@@ -259,7 +266,12 @@ always @ (posedge clk or negedge rst_n) begin
 end
 
 // core stall singal
+
+`ifdef SUPPORT_A
+assign ic_stall = ((ic_miss_current != `ICMS_LDRD)&(ic_miss_current != `ICMS_IDLE)) | ((ic_tag_miss_id | ic_tag_empty_id)&(ic_miss_current != `ICMS_LDRD)) | fencei_stall | amo_stall;
+`else // SUPPORT_A
 assign ic_stall = ((ic_miss_current != `ICMS_LDRD)&(ic_miss_current != `ICMS_IDLE)) | ((ic_tag_miss_id | ic_tag_empty_id)&(ic_miss_current != `ICMS_LDRD)) | fencei_stall;
+`endif // SUPPORT_A
 //assign ic_stall = (ic_miss_current != `ICMS_IDLE);
 assign ic_sel_tag = ((ic_miss_current != `ICMS_LDRD)&(ic_miss_current != `ICMS_IDLE)) ;
 //assign ic_st_ok = (dc_miss_current != `ICMS_MEMR);
@@ -268,15 +280,25 @@ assign ic_sel_tag = ((ic_miss_current != `ICMS_LDRD)&(ic_miss_current != `ICMS_I
 //assign ic_st_wt_id = (ic_miss_current != `ICMS_ICWT);
 
 // load issue timing
-assign ic_stall_fin = (ic_miss_current == `ICMS_ICW3) | fencei_stall_fin;
-assign ic_stall_fin2 = (ic_miss_current == `ICMS_LDRD) | fencei_stall_fin2;
+reg ic_stall_dly_tmp;
 
 always @ (posedge clk or negedge rst_n) begin
     if (~rst_n)
-        ic_stall_dly <= 1'b0;
+        ic_stall_dly_tmp <= 1'b0;
 	else
-        ic_stall_dly <= ic_stall;
+        ic_stall_dly_tmp <= ic_stall;
 end
+
+`ifdef SUPPORT_A
+assign ic_stall_fin = (ic_miss_current == `ICMS_ICW3) | fencei_stall_fin | amo_stall_fin;
+assign ic_stall_fin2 = (ic_miss_current == `ICMS_LDRD) | fencei_stall_fin2 | amo_stall_fin2;
+assign ic_stall_dly = ic_stall_dly_tmp | amo_stall_dly;
+
+`else // SUPPORT_A
+assign ic_stall_fin = (ic_miss_current == `ICMS_ICW3) | fencei_stall_fin;
+assign ic_stall_fin2 = (ic_miss_current == `ICMS_LDRD) | fencei_stall_fin2;
+assign ic_stall_dly = ic_stall_dly_tmp;
+`endif // SUPPORT_A
 
 // memory write bus i/f signals
 //reg icw_start_rq_dc;
