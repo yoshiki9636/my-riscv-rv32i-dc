@@ -282,6 +282,8 @@ wire amo_stall;
 wire amo_stall_fin;
 wire amo_stall_fin2;
 wire amo_stall_dly;
+wire success_scw_ma;
+wire cmd_scw_purge_ma;
 `endif // SUPPORT_A
 
 // LSU
@@ -627,6 +629,8 @@ ex_stage ex_stage (
 	.amo_stall_fin(amo_stall_fin),
 	.amo_stall_fin2(amo_stall_fin2),
 	.amo_stall_dly(amo_stall_dly),
+	.success_scw_ma(success_scw_ma),
+	.cmd_scw_purge_ma(cmd_scw_purge_ma),
 `endif // SUPPORT_A
 	.jmp_purge_ma(jmp_purge_ma),
 	.jmp_purge_ex(jmp_purge_ex),
@@ -714,6 +718,10 @@ ma_stage #(.DWIDTH(DWIDTH)) ma_stage (
 	.dma_re_ma(dma_re_ma),
 	.dataram_radr_ma(dataram_radr_ma),
 	.dataram_rdata_wb(dataram_rdata_wb),
+`ifdef SUPPORT_A
+	.success_scw_ma(success_scw_ma),
+	.cmd_scw_purge_ma(cmd_scw_purge_ma),
+`endif // SUPPORT_A
 	.stall(stall),
 	.stall_1shot(stall_1shot),
 	.stall_1shot_dly(stall_1shot_dly),

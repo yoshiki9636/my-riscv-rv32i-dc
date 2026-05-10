@@ -145,6 +145,8 @@ module ex_stage(
 	output amo_stall_dly,
 	output amo_stall_fin,
 	output reg amo_stall_fin2,
+	output reg success_scw_ma,
+	output reg cmd_scw_purge_ma,
 `endif // SUPPORT_A
 
 	// to ID
@@ -202,6 +204,9 @@ assign reset_flg_cond = (cmd_scw_ex | (cmd_st_ex & (resv_adr[31:2] == rs1_sel[31
 
 // sc.w conditions
 wire success_scw = (cmd_scw_ex & (resv_adr[31:2] == rs1_sel[31:2]) & resv_flg) & ~jmp_purge_ma;
+
+// sc.w write back to register
+wire cmd_scw_purge = cmd_scw_ex & ~jmp_purge_ma; 
 
 // amo instructions
 
@@ -825,6 +830,10 @@ always @ ( posedge clk or negedge rst_n) begin
         cmd_ld_ma <= 1'b0;
         cmd_st_ma <= 1'b0;
 		wbk_rd_reg_ma <= 1'b0;
+`ifdef SUPPORT_A
+		success_scw_ma <= 1'b0;
+		cmd_scw_purge_ma <= 1'b0;
+`endif // SUPPORT_A
 	end
 	//else if (~dc_stall_early) begin
 	else if (~stall) begin
@@ -837,6 +846,10 @@ always @ ( posedge clk or negedge rst_n) begin
 	    cmd_ld_ma <= cmd_ld_ex_post & ~wb_mask_with_exception_interrupt;
         cmd_st_ma <= cmd_st_ex_post & ~wb_mask_with_exception_interrupt;
 		wbk_rd_reg_ma <= wbk_rd_reg_ex_post & ~wb_mask_with_exception_interrupt;
+`ifdef SUPPORT_A
+		success_scw_ma <= success_scw & ~wb_mask_with_exception_interrupt;;
+		cmd_scw_purge_ma <= cmd_scw_purge & ~wb_mask_with_exception_interrupt;;
+`endif // SUPPORT_A
 	end
 end
 

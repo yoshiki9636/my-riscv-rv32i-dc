@@ -8,6 +8,8 @@
  * @version		0.1
  */
 
+`define SUPPORT_A
+
 module ma_stage
 	#(parameter DWIDTH = 14)
 	(
@@ -65,6 +67,11 @@ module ma_stage
     input dma_re_ma,
     input [15:2] dataram_radr_ma,
     output [15:0] dataram_rdata_wb,
+
+`ifdef SUPPORT_A
+	input success_scw_ma,
+	input cmd_scw_purge_ma,
+`endif // SUPPORT_A
 
 	// stall
 	input stall,
@@ -226,6 +233,12 @@ end
 assign ld_data_wb = (1'b0) ? ld_data_roll : data_rdata_wb;
 assign d_ram_rdata = data_rdata_wb;
 
+`ifdef SUPPORT_A
+wire wbk_rd_reg_with_scw = wbk_rd_reg_ma | cmd_scw_purge_ma;
+	
+wire [31:0] rd_data_with_scw = cmd_scw_purge_ma ? { 31'd0, ~success_scw_ma } : rd_data_ma;
+`endif // SUPPORT_A
+
 // FF to WB
 
 always @ ( posedge clk or negedge rst_n) begin   
@@ -239,7 +252,11 @@ always @ ( posedge clk or negedge rst_n) begin
         cmd_ld_wb <= cmd_ld_ma;
 		ld_code_wb <= ldst_code_ma;
 		rd_adr_wb <= rd_adr_ma;
+`ifdef SUPPORT_A
+		wbk_rd_reg_wb <= ~(stall & ~cpu_stopping) & wbk_rd_reg_with_scw & ~dc_wb_mask;
+`else // SUPPORT_A
 		wbk_rd_reg_wb <= ~(stall & ~cpu_stopping) & wbk_rd_reg_ma & ~dc_wb_mask;
+`endif // SUPPORT_A
 		//wbk_rd_reg_wb <= (stall & ~cpu_stopping) ? dc_stall_fin2 : wbk_rd_reg_ma;
 		//wbk_rd_reg_wb <= ~stall & wbk_rd_reg_ma;
 	end
@@ -250,7 +267,11 @@ always @ ( posedge clk or negedge rst_n) begin
 		rd_data_wb <= 32'd0;
 	end
 	else if (~stall) begin
+`ifdef SUPPORT_A
+		rd_data_wb <= rd_data_with_scw;
+`else // SUPPORT_A
 		rd_data_wb <= rd_data_ma;
+`endif // SUPPORT_A
 	end
 end
 
