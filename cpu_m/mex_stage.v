@@ -41,30 +41,64 @@ module mex_stage(
 	//output div_stall_1shot,
 	output div_stall_fin,
 	output div_stall_fin2,
-	output reg div_stall_dly
+	output reg div_stall_dly,
+	input stall
 
 	);
 
 
-// mult all
+// latch 1st
+reg [31:0] rs1_sel_lat;
+reg [31:0] rs2_sel_lat;
 
-wire signed [63:0] mult_ss = $signed( rs1_sel ) * $signed( rs2_sel );
-wire signed [63:0] mult_su = $signed( rs1_sel ) * $signed( {1'b0, rs2_sel} );
-wire signed [63:0] mult_uu = rs1_sel * rs2_sel;
+always @ ( posedge clk or negedge rst_n) begin   
+	if (~rst_n) begin
+		rs1_sel_lat <= 32'd0;
+		rs2_sel_lat <= 32'd0;
+	end
+	else if (~stall) begin
+		rs1_sel_lat <= rs1_sel;
+		rs2_sel_lat <= rs2_sel;
+	end
+end
+
+
+// mult all
+//wire signed [63:0] mult_ss = $signed( rs1_sel ) * $signed( rs2_sel );
+//wire signed [63:0] mult_su = $signed( rs1_sel ) * $signed( {1'b0, rs2_sel} );
+//wire signed [63:0] mult_uu = rs1_sel * rs2_sel;
+
+wire signed [63:0] mult_ss = $signed( rs1_sel_lat ) * $signed( rs2_sel_lat );
+wire signed [63:0] mult_su = $signed( rs1_sel_lat ) * $signed( {1'b0, rs2_sel_lat} );
+wire signed [63:0] mult_uu = rs1_sel_lat * rs2_sel_lat;
 
 wire mul_cmds = cmd_mul_ex | cmd_mulh_ex | cmd_mulhsu_ex | cmd_mulhu_ex;
 
 // lach for timing path
+//wire [63:0] mult_ss_lat = mult_ss;
+//wire [63:32] mult_su_lat = mult_su[63:32];
+//wire [63:32] mult_uu_lat = mult_uu[63:32];
+
+reg cmd_mul_ex_int;
+reg cmd_mulh_ex_int;
+reg cmd_mulhsu_ex_int;
+reg cmd_mulhu_ex_int;
+
 reg cmd_mul_ex_lat;
 reg cmd_mulh_ex_lat;
 reg cmd_mulhsu_ex_lat;
 reg cmd_mulhu_ex_lat;
+
 reg [63:0] mult_ss_lat;
 reg [63:32] mult_su_lat;
 reg [63:32] mult_uu_lat;
 
 always @ ( posedge clk or negedge rst_n) begin   
 	if (~rst_n) begin
+		cmd_mul_ex_int <= 1'b0;
+		cmd_mulh_ex_int <= 1'b0;
+		cmd_mulhsu_ex_int <= 1'b0;
+		cmd_mulhu_ex_int <= 1'b0;
 		cmd_mul_ex_lat <= 1'b0;
 		cmd_mulh_ex_lat <= 1'b0;
 		cmd_mulhsu_ex_lat <= 1'b0;
@@ -73,11 +107,16 @@ always @ ( posedge clk or negedge rst_n) begin
 		mult_su_lat <= 32'd0;
 		mult_uu_lat <= 32'd0;
 	end
-	else begin
-		cmd_mul_ex_lat <= cmd_mul_ex;
-		cmd_mulh_ex_lat <= cmd_mulh_ex;
-		cmd_mulhsu_ex_lat <= cmd_mulhsu_ex;
-		cmd_mulhu_ex_lat <= cmd_mulhu_ex;
+	else if (~stall) begin
+		cmd_mul_ex_int <= cmd_mul_ex;
+		cmd_mulh_ex_int <= cmd_mulh_ex;
+		cmd_mulhsu_ex_int <= cmd_mulhsu_ex;
+		cmd_mulhu_ex_int <= cmd_mulhu_ex;
+
+		cmd_mul_ex_lat <= cmd_mul_ex_int;
+		cmd_mulh_ex_lat <= cmd_mulh_ex_int;
+		cmd_mulhsu_ex_lat <= cmd_mulhsu_ex_int;
+		cmd_mulhu_ex_lat <= cmd_mulhu_ex_int;
 		mult_ss_lat <= mult_ss;
 		mult_su_lat <= mult_su[63:32];
 		mult_uu_lat <= mult_uu[63:32];
@@ -89,20 +128,39 @@ wire [31:0] mult_sel_lat = cmd_mul_ex_lat ? mult_ss_lat[31:0] :
                            cmd_mulhsu_ex_lat ? mult_su_lat[63:32] :
                            cmd_mulhu_ex_lat ? mult_uu_lat[63:32] : 32'd0;
 
+wire mul_cmds_int = cmd_mul_ex_int | cmd_mulh_ex_int | cmd_mulhsu_ex_int | cmd_mulhu_ex_int;
 wire mul_cmds_lat = cmd_mul_ex_lat | cmd_mulh_ex_lat | cmd_mulhsu_ex_lat | cmd_mulhu_ex_lat;
 
 
 // div
 
+// cmd 1 delay
+reg cmd_div_rem_lat;
+reg cmd_div_rem_decode_lat;
+reg cmd_rem_decode_lat;
+
+always @ ( posedge clk or negedge rst_n) begin   
+	if (~rst_n) begin
+		cmd_div_rem_lat <= 32'd0;
+		cmd_div_rem_decode_lat <= 32'd0;
+		cmd_rem_decode_lat <= 32'd0;
+	end
+	else if (~stall) begin
+		cmd_div_rem_lat <= cmd_div_ex | cmd_rem_ex;
+		cmd_div_rem_decode_lat <= cmd_div_decode_ex | cmd_rem_decode_ex;
+		cmd_rem_decode_lat <= cmd_rem_decode_ex;
+	end
+end
+
 // setup: signed -> unsignd
 
-wire [31:0] inv_rs1_sel = ( ~rs1_sel ) + 32'd1;
-wire [31:0] inv_rs2_sel = ( ~rs2_sel ) + 32'd1;
-wire sign_rs1_sel = rs1_sel[31] & (cmd_div_ex | cmd_rem_ex);
-wire sign_rs2_sel = rs2_sel[31] & (cmd_div_ex | cmd_rem_ex);
+wire [31:0] inv_rs1_sel = ( ~rs1_sel_lat ) + 32'd1;
+wire [31:0] inv_rs2_sel = ( ~rs2_sel_lat ) + 32'd1;
+wire sign_rs1_sel = rs1_sel_lat[31] & cmd_div_rem_lat;
+wire sign_rs2_sel = rs2_sel_lat[31] & cmd_div_rem_lat;
 wire sign_result = sign_rs1_sel ^ sign_rs2_sel;
-wire [31:0] us_rs1_sel = sign_rs1_sel ? inv_rs1_sel : rs1_sel;
-wire [31:0] us_rs2_sel = sign_rs2_sel ? inv_rs2_sel : rs2_sel;
+wire [31:0] us_rs1_sel = sign_rs1_sel ? inv_rs1_sel : rs1_sel_lat;
+wire [31:0] us_rs2_sel = sign_rs2_sel ? inv_rs2_sel : rs2_sel_lat;
 
 // upper 0 bit encoder
 
@@ -158,7 +216,8 @@ wire divisor_bigger_dividend = ( us_rs2_sel > us_rs1_sel);
 wire [31:0] rs1_lsh = ( us_rs1_sel << lbits_rs1[4:0] );
 wire [31:0] rs2_lsh = ( us_rs2_sel << lbits_rs2[4:0] );
 
-wire div_start = (cmd_div_decode_ex | cmd_rem_decode_ex) & ~( zero_dividend | divide_by_zero | divisor_bigger_dividend );
+//wire div_start = (cmd_div_decode_ex | cmd_rem_decode_ex) & ~( zero_dividend | divide_by_zero | divisor_bigger_dividend );
+wire div_start = cmd_div_rem_decode_lat & ~( zero_dividend | divide_by_zero | divisor_bigger_dividend );
 
 reg divide_by_zero_lat;
 reg divide_other_status;
@@ -168,7 +227,8 @@ always @ ( posedge clk or negedge rst_n) begin
 		divide_by_zero_lat <= 1'b0;
 		divide_other_status <= 1'b0;
 	end
-	else if (cmd_div_decode_ex | cmd_rem_decode_ex) begin
+	//else if ((cmd_div_decode_ex | cmd_rem_decode_ex) & ~stall) begin
+	else if (cmd_div_rem_decode_lat & ~stall) begin
 		divide_by_zero_lat <= divide_by_zero;
 		divide_other_status <= zero_dividend | divisor_bigger_dividend;
 	end
@@ -177,6 +237,7 @@ end
 always @ ( posedge clk or negedge rst_n) begin   
 	if (~rst_n)
 		div_rd_adr_ex <= 5'd0;
+	//else if ((cmd_div_decode_ex | cmd_rem_decode_ex | mul_cmds) & ~stall)
 	else if (cmd_div_decode_ex | cmd_rem_decode_ex | mul_cmds)
 		div_rd_adr_ex <= rd_adr_ex;
 end
@@ -188,11 +249,13 @@ reg [5:0] cntr;
 always @ ( posedge clk or negedge rst_n) begin   
 	if (~rst_n)
 		div_state <= 2'b00;
-	else if ((div_state == 2'b00)&&(div_start))
+	else if ((div_state == 2'b00)&(div_start))
+		//div_state <= 2'b11;
+	//else if ((div_state == 2'b11)&~stall)
 		div_state <= 2'b01;
-	else if ((div_state == 2'b01)&&(cntr == 6'd0))
+	else if ((div_state == 2'b01)&(cntr == 6'd0)&~stall)
 		div_state <= 2'b10;
-	else if (div_state == 2'b10)
+	else if ((div_state == 2'b10)&~stall)
 		div_state <= 2'b00;
 end
 
@@ -227,7 +290,7 @@ always @ ( posedge clk or negedge rst_n) begin
 		lbits_rs1_mex1 <= 6'd0;
 		lbits_diff_mex1 <= 6'd0;
 	end
-	else if (div_start) begin
+	else if (div_start&~stall) begin
 		dividend_mex1 <= rs1_lsh;
 		divisor_mex1 <= rs2_lsh;
 		quotient_mex1 <= 32'd0;
@@ -235,12 +298,12 @@ always @ ( posedge clk or negedge rst_n) begin
 		sign_div_mx1 <= sign_result;
 		sign_rem1_mx1 <= sign_rs1_sel;
 		sign_rem2_mx1 <= sign_rs2_sel;
-		mode_rem_mx1 <= cmd_rem_decode_ex;
+		mode_rem_mx1 <= cmd_rem_decode_lat;
 		preserved_divisor <= rs2_lsh;
 		lbits_rs1_mex1 <= lbits_rs1;
 		lbits_diff_mex1 <= lbits_diff;
 	end
-	else if(cntr[5] == 1'b0) begin
+	else if((cntr[5] == 1'b0)&~stall) begin
 		dividend_mex1 <= dividend_next;
 		divisor_mex1 <= divisor_next;
 		quotient_mex1[cntr] <= quotient_bit;
@@ -278,17 +341,18 @@ wire signed [31:0] rem_result = $signed( rem_tmp2 ) >>> $signed( lbits_rs1_mex1 
 
 wire [31:0] final_rem_result = div_result_valid_pre ? rem_result :
                                (divide_by_zero_lat|divide_other_status) ? rs1_sel : // need to check detail spec
-                               divisor_bigger_dividend ? rs1_sel : 32'd0;
+                               divisor_bigger_dividend ? rs1_sel_lat : 32'd0;
 
 // for critical path
 
-wire div_ers_stat =  (zero_dividend | divide_by_zero | divisor_bigger_dividend) & (cmd_div_decode_ex | cmd_rem_decode_ex);
+//wire div_ers_stat =  (zero_dividend | divide_by_zero | divisor_bigger_dividend) & (cmd_div_decode_ex | cmd_rem_decode_ex);
+wire div_ers_stat = cmd_div_rem_decode_lat & (zero_dividend | divide_by_zero | divisor_bigger_dividend);
 reg div_ers_stat_lat;
 
 always @ ( posedge clk or negedge rst_n) begin   
 	if (~rst_n)
 		div_ers_stat_lat <= 1'b0;
-	else
+	else if (~stall)
 		div_ers_stat_lat <= div_ers_stat;
 end
 
@@ -302,11 +366,11 @@ assign m_result_ex = mul_cmds_lat ? mult_sel_lat :
 assign m_cmd_finished = mul_cmds_lat | div_stat_valid;
 
 //assign div_stall = div_start | div_ers_stat | (cntr[5] == 1'b0);
-assign div_stall = mul_cmds | cmd_div_decode_ex | cmd_rem_decode_ex | (cntr[5] == 1'b0);
+assign div_stall = mul_cmds | mul_cmds_int | cmd_div_decode_ex | cmd_rem_decode_ex | cmd_div_rem_decode_lat | (cntr[5] == 1'b0);
 
 //assign div_stall = (cntr[5] == 1'b0);
 //assign div_stall_1shot = div_start;
-assign div_stall_fin = (div_state == 2'b01) & (cntr == 6'd0) | div_ers_stat | mul_cmds ;
+assign div_stall_fin = (div_state == 2'b01) & (cntr == 6'd0) | div_ers_stat | mul_cmds_int ;
 assign div_stall_fin2 = div_result_valid_pre | div_ers_stat_lat | mul_cmds_lat;
 
 always @ ( posedge clk or negedge rst_n) begin   

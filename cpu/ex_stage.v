@@ -78,7 +78,11 @@ module ex_stage(
 	input dc_stall_fin,
 	//input dc_stall_early,
     output reg cmd_ld_ma,
+`ifdef SUPPORT_A
+    output cmd_st_ma,
+`else // SUPPORT_A
     output reg cmd_st_ma,
+`endif // SUPPORT_A
 	output reg [4:0] rd_adr_ma,
 	output reg [31:0] rd_data_ma,
 	output [31:0] rd_data_ex,
@@ -145,7 +149,7 @@ module ex_stage(
 	output amo_stall_dly,
 	output amo_stall_fin,
 	output reg amo_stall_fin2,
-	output reg success_scw_ma,
+	output success_scw_ma,
 	output reg cmd_scw_purge_ma,
 `endif // SUPPORT_A
 
@@ -203,7 +207,8 @@ end
 assign reset_flg_cond = (cmd_scw_ex | (cmd_st_ex & (resv_adr[31:2] == rs1_sel[31:2]))) & ~jmp_purge_ma;
 
 // sc.w conditions
-wire success_scw = (cmd_scw_ex & (resv_adr[31:2] == rs1_sel[31:2]) & resv_flg) & ~jmp_purge_ma;
+wire success_scw = cmd_scw_ex & resv_flg & ~jmp_purge_ma;
+wire cmd_scw_hit = ~success_scw | (resv_adr[31:2] == rs1_sel[31:2]);
 
 // sc.w write back to register
 wire cmd_scw_purge = cmd_scw_ex & ~jmp_purge_ma; 
@@ -821,6 +826,15 @@ always @ ( posedge clk or negedge rst_n) begin
 	end
 end
 
+`ifdef SUPPORT_A
+reg cmd_scw_hit_ma;
+reg success_scw_ma_pre;
+reg cmd_st_ma_pre;
+
+assign success_scw_ma = success_scw_ma_pre & cmd_scw_hit_ma;
+assign cmd_st_ma = cmd_st_ma_pre & cmd_scw_hit_ma;
+`endif // SUPPORT_A
+
 always @ ( posedge clk or negedge rst_n) begin   
 	if (~rst_n) begin
 		rd_adr_ma <= 5'd0;
@@ -828,10 +842,15 @@ always @ ( posedge clk or negedge rst_n) begin
 		st_data_ma <= 32'd0;
 		ldst_code_ma <= 3'd0;
         cmd_ld_ma <= 1'b0;
+`ifdef SUPPORT_A
+        cmd_st_ma_pre <= 1'b0;
+`else // SUPPORT_A
         cmd_st_ma <= 1'b0;
+`endif // SUPPORT_A
 		wbk_rd_reg_ma <= 1'b0;
 `ifdef SUPPORT_A
-		success_scw_ma <= 1'b0;
+		cmd_scw_hit_ma <= 1'b1;
+		success_scw_ma_pre <= 1'b0;
 		cmd_scw_purge_ma <= 1'b0;
 `endif // SUPPORT_A
 	end
@@ -844,11 +863,16 @@ always @ ( posedge clk or negedge rst_n) begin
 		//st_data_ma <= st_data_ex_pre; // for debug test
 		ldst_code_ma <= ldst_code_ex;
 	    cmd_ld_ma <= cmd_ld_ex_post & ~wb_mask_with_exception_interrupt;
+`ifdef SUPPORT_A
+        cmd_st_ma_pre <= cmd_st_ex_post & ~wb_mask_with_exception_interrupt;
+`else // SUPPORT_A
         cmd_st_ma <= cmd_st_ex_post & ~wb_mask_with_exception_interrupt;
+`endif // SUPPORT_A
 		wbk_rd_reg_ma <= wbk_rd_reg_ex_post & ~wb_mask_with_exception_interrupt;
 `ifdef SUPPORT_A
-		success_scw_ma <= success_scw & ~wb_mask_with_exception_interrupt;;
-		cmd_scw_purge_ma <= cmd_scw_purge & ~wb_mask_with_exception_interrupt;;
+		cmd_scw_hit_ma <= cmd_scw_hit & ~wb_mask_with_exception_interrupt;
+		success_scw_ma_pre <= success_scw & ~wb_mask_with_exception_interrupt;
+		cmd_scw_purge_ma <= cmd_scw_purge & ~wb_mask_with_exception_interrupt;
 `endif // SUPPORT_A
 	end
 end

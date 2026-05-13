@@ -668,7 +668,8 @@ mex_stage mex_stage (
 	.div_stall(div_stall),
 	.div_stall_fin(div_stall_fin),
 	.div_stall_fin2(div_stall_fin2),
-	.div_stall_dly(div_stall_dly)
+	.div_stall_dly(div_stall_dly),
+	.stall(stall)
 	);
 `endif // SUPPORT_M
 
