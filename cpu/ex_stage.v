@@ -752,7 +752,8 @@ assign fencei_condition_ex = ~stall & fencei_condition_ex_pre;
 assign jmp_adr_ex = jump_adr[31:2];
 
 //wire jmp_condition_ex_pre = ~jmp_purge_ma & (
-wire jmp_condition_ex_pre = ~jmp_purge_ma & ~jmp_purge_ma2 & (
+//wire jmp_condition_ex_pre = ~jmp_purge_ma & ~jmp_purge_ma2 & (
+wire jmp_condition_ex_pre = ~jmp_purge_ma & ~jmp_purge_ma2 & ~fencei_cond & (
                         cmd_jal_ex | cmd_jalr_ex | cmd_br_ex &
 						( seq  & (alu_code_ex == 3'b000) |
 					      sne  & (alu_code_ex == 3'b001) |
@@ -819,8 +820,11 @@ always @ ( posedge clk or negedge rst_n) begin
 		//wbk_rd_reg_ma <= 1'b0;
 	//end
 	//else if (~dc_stall_early) begin
-	else if (~stall & ~ic_stall) begin
 	//else if (~(stall_dly|stall)) begin
+	else if (~stall & fencei_cond) begin
+		jmp_purge_ma <= 1'b1; // workaround
+	end
+	else if (~stall & ~ic_stall) begin
 		jmp_purge_ma <= jmp_purge_ex_post;
 		jmp_purge_ma2 <= jmp_purge_ma;
 	end

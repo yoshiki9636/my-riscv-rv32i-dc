@@ -303,8 +303,9 @@ assign dcw_start_rq = dcw_start_rq_dc;
 
 assign dcw_in_mask = 16'd0;
 
+reg dcflush_cntr_ok_dly2;
 //assign dcw_in_addr = dcflush_running ? dcw_in_addr_dcflush : { rd_data_ma[31:28], dc_tag_radr[27:DWIDTH+2],  rd_data_ma[DWIDTH+1:0] };
-assign dcw_in_addr = dcflush_running ? dcw_in_addr_dcflush : dcw_in_addr_dly;
+assign dcw_in_addr = (dcflush_running | dcflush_cntr_ok_dly2) ? dcw_in_addr_dcflush : dcw_in_addr_dly;
 //assign dcw_in_addr = dcw_in_addr_dly;
 
 assign dcw_in_data = ram_rdata_all;
@@ -318,7 +319,7 @@ assign rqfull_1 = 1'b0;
 // to MA
 //assign ram_wadr_all = current_radr_keeper[12:4];
 assign ram_wdata_all = rdat_m_data;
-assign ram_radr_all = dcflush_running ? dcflush_cntr : rd_data_ma[DWIDTH+1:4];
+assign ram_radr_all = dcflush_running ? dcflush_cntr[DWIDTH+1:4] : rd_data_ma[DWIDTH+1:4];
 assign ram_wadr_all = current_radr_keeper[DWIDTH+1:4];
 assign ram_wen_all = rdat_m_valid;
 assign ram_ren_all = (((dc_miss_current == `DCMS_IDLE) |(dc_miss_current == `DCMS_FLSH)) & (dc_miss_next == `DCMS_MEMW));
@@ -351,10 +352,14 @@ assign dcflush_cntr_ok = (dcflush_cntr != { (DWIDTH-1){ 1'b1 }});
 reg dcflush_cntr_ok_dly;
 
 always @ (posedge clk or negedge rst_n) begin
-    if (~rst_n)
+    if (~rst_n) begin
 		dcflush_cntr_ok_dly <= 1'b0;
-	else
+		dcflush_cntr_ok_dly2 <= 1'b0;
+	end
+	else begin
 		dcflush_cntr_ok_dly <= dcflush_cntr_ok;
+		dcflush_cntr_ok_dly2 <= dcflush_cntr_ok_dly;
+	end
 end
 
 assign dcflush_running = dcflush_cntr_ok | dcflush_cntr_ok_dly;

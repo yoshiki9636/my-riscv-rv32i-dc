@@ -93,7 +93,7 @@ wire [31:2] jmp_adr = (intr_ecall_exception | ecall_condition_ex | g_exception) 
                       //cmd_sret_ex ? csr_sepc_ex : jmp_adr_ex;
 
 assign jmp_adr_if = mret_condition_ex ? csr_mepc_ex :
-                    fencei_cond ? pc_id : // retry for self modify code
+                    fencei_cond ? pc_id - 30'd1 : // retry for self modify code
                     cmd_sret_ex ? csr_sepc_ex : jmp_adr_ex;
 
 reg use_collision;
