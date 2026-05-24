@@ -121,6 +121,51 @@ while(<>) {
 		$pc += 4; }
 	elsif (/^\s*mret/) {
 		$pc += 4; }
+	elsif (/^\s*fence\.i/) {
+		$pc += 4; }
+	elsif (/^\s*fence\s+(\w+)\s+(\w)/) {
+		$pc += 4; }
+# for support M
+	elsif (/^\s*mul\s+x(\d+),\s*x(\d+),\s*x(\d+)/) {
+		$pc += 4; }
+	elsif (/^\s*mulh\s+x(\d+),\s*x(\d+),\s*x(\d+)/) {
+		$pc += 4; }
+	elsif (/^\s*mulhsu\s+x(\d+),\s*x(\d+),\s*x(\d+)/) {
+		$pc += 4; }
+	elsif (/^\s*mulhu\s+x(\d+),\s*x(\d+),\s*x(\d+)/) {
+		$pc += 4; }
+	elsif (/^\s*div\s+x(\d+),\s*x(\d+),\s*x(\d+)/) {
+		$pc += 4; }
+	elsif (/^\s*divu\s+x(\d+),\s*x(\d+),\s*x(\d+)/) {
+		$pc += 4; }
+	elsif (/^\s*rem\s+x(\d+),\s*x(\d+),\s*x(\d+)/) {
+		$pc += 4; }
+	elsif (/^\s*remu\s+x(\d+),\s*x(\d+),\s*x(\d+)/) {
+		$pc += 4; }
+
+	elsif (/^\s*lr.(w\S*)\s+x(\d+),\s*\(x(\d+)\)/) {
+		$pc += 4; }
+	elsif (/^\s*sc.(w\S*)\s+x(\d+),\s*x(\d+),\s*\(x(\d+)\)/) {
+		$pc += 4; }
+	elsif (/^\s*amoswap.(w\S*)\s+x(\d+),\s*x(\d+),\s*\(x(\d+)\)/) {
+		$pc += 4; }
+	elsif (/^\s*amoadd.(w\S*)\s+x(\d+),\s*x(\d+),\s*\(x(\d+)\)/) {
+		$pc += 4; }
+	elsif (/^\s*amoxor.(w\S*)\s+x(\d+),\s*x(\d+),\s*\(x(\d+)\)/) {
+		$pc += 4; }
+	elsif (/^\s*amoand.(w\S*)\s+x(\d+),\s*x(\d+),\s*\(x(\d+)\)/) {
+		$pc += 4; }
+	elsif (/^\s*amoor.(w\S*)\s+x(\d+),\s*x(\d+),\s*\(x(\d+)\)/) {
+		$pc += 4; }
+	elsif (/^\s*amomin.(w\S*)\s+x(\d+),\s*x(\d+),\s*\(x(\d+)\)/) {
+		$pc += 4; }
+	elsif (/^\s*amomax.(w\S*)\s+x(\d+),\s*x(\d+),\s*\(x(\d+)\)/) {
+		$pc += 4; }
+	elsif (/^\s*amominu.(w\S*)\s+x(\d+),\s*x(\d+),\s*\(x(\d+)\)/) {
+		$pc += 4; }
+	elsif (/^\s*amomaxu.(w\S*)\s+x(\d+),\s*x(\d+),\s*\(x(\d+)\)/) {
+		$pc += 4; }
+
 	elsif (/^\s*illegal_ops/) {
 		$pc += 4; }
 }
@@ -542,6 +587,248 @@ while(<>) {
 	elsif (/^\s*mret/) {
 		$code = 0x30200073;
 	}
+
+	elsif (/^\s*fence\.i/) {
+		$code = 0x100f;
+	}
+	elsif (/^\s*fence\s+(\w+)\s+(\w)/) {
+		$w1 = $1;
+		if (defined($defvalue{$w1})) { $pred = $defvalue{$w1} << 24; } elsif ($w1 =~ /^0x/) { $pred = hex($w1) << 24 ; } else { $pred = $w1 << 24; }
+		$code = 0x000f;
+		$w2 = $2;
+		if (defined($defvalue{$w2})) { $succ = $defvalue{$w2} << 20; } elsif ($w2 =~ /^0x/) { $succ = hex($w2) << 20 ; } else { $succ = $w2 << 20; }
+		$code = 0x000f + $pred + $succ;
+	}
+
+# for support M
+	elsif (/^\s*mul\s+x(\d+),\s*x(\d+),\s*x(\d+)/) {
+		$rd = $1 << 7;
+		$rs1 = $2 << 15;
+		$rs2 = $3 << 20;
+		$op1 = 0x0c << 2;
+		$op2 = 0x0 << 12;
+		$op3 = 0x1 << 25;
+		$code = $rs2 + $rs1 + $rd + $op1 + $op2 + $op3 + 3;
+	}
+	elsif (/^\s*mulh\s+x(\d+),\s*x(\d+),\s*x(\d+)/) {
+		$rd = $1 << 7;
+		$rs1 = $2 << 15;
+		$rs2 = $3 << 20;
+		$op1 = 0x0c << 2;
+		$op2 = 0x1 << 12;
+		$op3 = 0x1 << 25;
+		$code = $rs2 + $rs1 + $rd + $op1 + $op2 + $op3 + 3;
+	}
+	elsif (/^\s*mulhsu\s+x(\d+),\s*x(\d+),\s*x(\d+)/) {
+		$rd = $1 << 7;
+		$rs1 = $2 << 15;
+		$rs2 = $3 << 20;
+		$op1 = 0x0c << 2;
+		$op2 = 0x2 << 12;
+		$op3 = 0x1 << 25;
+		$code = $rs2 + $rs1 + $rd + $op1 + $op2 + $op3 + 3;
+	}
+	elsif (/^\s*mulhu\s+x(\d+),\s*x(\d+),\s*x(\d+)/) {
+		$rd = $1 << 7;
+		$rs1 = $2 << 15;
+		$rs2 = $3 << 20;
+		$op1 = 0x0c << 2;
+		$op2 = 0x3 << 12;
+		$op3 = 0x1 << 25;
+		$code = $rs2 + $rs1 + $rd + $op1 + $op2 + $op3 + 3;
+	}
+	elsif (/^\s*div\s+x(\d+),\s*x(\d+),\s*x(\d+)/) {
+		$rd = $1 << 7;
+		$rs1 = $2 << 15;
+		$rs2 = $3 << 20;
+		$op1 = 0x0c << 2;
+		$op2 = 0x4 << 12;
+		$op3 = 0x1 << 25;
+		$code = $rs2 + $rs1 + $rd + $op1 + $op2 + $op3 + 3;
+	}
+	elsif (/^\s*divu\s+x(\d+),\s*x(\d+),\s*x(\d+)/) {
+		$rd = $1 << 7;
+		$rs1 = $2 << 15;
+		$rs2 = $3 << 20;
+		$op1 = 0x0c << 2;
+		$op2 = 0x5 << 12;
+		$op3 = 0x1 << 25;
+		$code = $rs2 + $rs1 + $rd + $op1 + $op2 + $op3 + 3;
+	}
+	elsif (/^\s*rem\s+x(\d+),\s*x(\d+),\s*x(\d+)/) {
+		$rd = $1 << 7;
+		$rs1 = $2 << 15;
+		$rs2 = $3 << 20;
+		$op1 = 0x0c << 2;
+		$op2 = 0x6 << 12;
+		$op3 = 0x1 << 25;
+		$code = $rs2 + $rs1 + $rd + $op1 + $op2 + $op3 + 3;
+	}
+	elsif (/^\s*remu\s+x(\d+),\s*x(\d+),\s*x(\d+)/) {
+		$rd = $1 << 7;
+		$rs1 = $2 << 15;
+		$rs2 = $3 << 20;
+		$op1 = 0x0c << 2;
+		$op2 = 0x7 << 12;
+		$op3 = 0x1 << 25;
+		$code = $rs2 + $rs1 + $rd + $op1 + $op2 + $op3 + 3;
+	}
+
+	elsif (/^\s*lr.(w\S*)\s+x(\d+),\s*\(x(\d+)\)/) {
+		if ( $1 eq w.aqrl) { $aqrl = 3 << 25; }
+		elsif ( $1 eq w.aq) { $aqrl = 2 << 25; }
+		elsif ( $1 eq w.rl) { $aqrl = 1 << 25; }
+		else { $aqrl = 0; }
+		$rd = $2 << 7;
+		$rs1 = $3 << 15;
+		$rs2 = 0x9 << 20;
+		$op1 = 0x0b << 2;
+		$op2 = 0x2 << 12;
+		$op3 = 0x02 << 27;
+		$code = $aqrl + $rs2 + $rs1 + $rd + $op1 + $op2 + $op3 + 3;
+	}
+
+	elsif (/^\s*sc.(w\S*)\s+x(\d+),\s*x(\d+),\s*\(x(\d+)\)/) {
+		if ( $1 eq w.aqrl) { $aqrl = 3 << 25; }
+		elsif ( $1 eq w.aq) { $aqrl = 2 << 25; }
+		elsif ( $1 eq w.rl) { $aqrl = 1 << 25; }
+		else { $aqrl = 0; }
+		$rd = $2 << 7;
+		$rs1 = $4 << 15;
+		$rs2 = $3 << 20;
+		$op1 = 0x0b << 2;
+		$op2 = 0x2 << 12;
+		$op3 = 0x03 << 27;
+		$code = $aqrl + $rs2 + $rs1 + $rd + $op1 + $op2 + $op3 + 3;
+	}
+
+	elsif (/^\s*amoswap.(w\S*)\s+x(\d+),\s*x(\d+),\s*\(x(\d+)\)/) {
+		if ( $1 eq w.aqrl) { $aqrl = 3 << 25; }
+		elsif ( $1 eq w.aq) { $aqrl = 2 << 25; }
+		elsif ( $1 eq w.rl) { $aqrl = 1 << 25; }
+		else { $aqrl = 0; }
+		$rd = $2 << 7;
+		$rs1 = $4 << 15;
+		$rs2 = $3 << 20;
+		$op1 = 0x0b << 2;
+		$op2 = 0x2 << 12;
+		$op3 = 0x01 << 27;
+		$code = $aqrl + $rs2 + $rs1 + $rd + $op1 + $op2 + $op3 + 3;
+	}
+
+	elsif (/^\s*amoadd.(w\S*)\s+x(\d+),\s*x(\d+),\s*\(x(\d+)\)/) {
+		if ( $1 eq w.aqrl) { $aqrl = 3 << 25; }
+		elsif ( $1 eq w.aq) { $aqrl = 2 << 25; }
+		elsif ( $1 eq w.rl) { $aqrl = 1 << 25; }
+		else { $aqrl = 0; }
+		$rd = $2 << 7;
+		$rs1 = $4 << 15;
+		$rs2 = $3 << 20;
+		$op1 = 0x0b << 2;
+		$op2 = 0x2 << 12;
+		$op3 = 0x00 << 27;
+		$code = $aqrl + $rs2 + $rs1 + $rd + $op1 + $op2 + $op3 + 3;
+	}
+
+	elsif (/^\s*amoxor.(w\S*)\s+x(\d+),\s*x(\d+),\s*\(x(\d+)\)/) {
+		if ( $1 eq w.aqrl) { $aqrl = 3 << 25; }
+		elsif ( $1 eq w.aq) { $aqrl = 2 << 25; }
+		elsif ( $1 eq w.rl) { $aqrl = 1 << 25; }
+		else { $aqrl = 0; }
+		$rd = $2 << 7;
+		$rs1 = $4 << 15;
+		$rs2 = $3 << 20;
+		$op1 = 0x0b << 2;
+		$op2 = 0x2 << 12;
+		$op3 = 0x04 << 27;
+		$code = $aqrl + $rs2 + $rs1 + $rd + $op1 + $op2 + $op3 + 3;
+	}
+
+	elsif (/^\s*amoand.(w\S*)\s+x(\d+),\s*x(\d+),\s*\(x(\d+)\)/) {
+		if ( $1 eq w.aqrl) { $aqrl = 3 << 25; }
+		elsif ( $1 eq w.aq) { $aqrl = 2 << 25; }
+		elsif ( $1 eq w.rl) { $aqrl = 1 << 25; }
+		else { $aqrl = 0; }
+		$rd = $2 << 7;
+		$rs1 = $4 << 15;
+		$rs2 = $3 << 20;
+		$op1 = 0x0b << 2;
+		$op2 = 0x2 << 12;
+		$op3 = 0x0a << 27;
+		$code = $aqrl + $rs2 + $rs1 + $rd + $op1 + $op2 + $op3 + 3;
+	}
+
+	elsif (/^\s*amoor.(w\S*)\s+x(\d+),\s*x(\d+),\s*\(x(\d+)\)/) {
+		if ( $1 eq w.aqrl) { $aqrl = 3 << 25; }
+		elsif ( $1 eq w.aq) { $aqrl = 2 << 25; }
+		elsif ( $1 eq w.rl) { $aqrl = 1 << 25; }
+		else { $aqrl = 0; }
+		$rd = $2 << 7;
+		$rs1 = $4 << 15;
+		$rs2 = $3 << 20;
+		$op1 = 0x0b << 2;
+		$op2 = 0x2 << 12;
+		$op3 = 0x08 << 27;
+		$code = $aqrl + $rs2 + $rs1 + $rd + $op1 + $op2 + $op3 + 3;
+	}
+
+
+	elsif (/^\s*amomin.(w\S*)\s+x(\d+),\s*x(\d+),\s*\(x(\d+)\)/) {
+		if ( $1 eq w.aqrl) { $aqrl = 3 << 25; }
+		elsif ( $1 eq w.aq) { $aqrl = 2 << 25; }
+		elsif ( $1 eq w.rl) { $aqrl = 1 << 25; }
+		else { $aqrl = 0; }
+		$rd = $2 << 7;
+		$rs1 = $4 << 15;
+		$rs2 = $3 << 20;
+		$op1 = 0x0b << 2;
+		$op2 = 0x2 << 12;
+		$op3 = 0x10 << 27;
+		$code = $aqrl + $rs2 + $rs1 + $rd + $op1 + $op2 + $op3 + 3;
+	}
+
+	elsif (/^\s*amomax.(w\S*)\s+x(\d+),\s*x(\d+),\s*\(x(\d+)\)/) {
+		if ( $1 eq w.aqrl) { $aqrl = 3 << 25; }
+		elsif ( $1 eq w.aq) { $aqrl = 2 << 25; }
+		elsif ( $1 eq w.rl) { $aqrl = 1 << 25; }
+		else { $aqrl = 0; }
+		$rd = $2 << 7;
+		$rs1 = $4 << 15;
+		$rs2 = $3 << 20;
+		$op1 = 0x0b << 2;
+		$op2 = 0x2 << 12;
+		$op3 = 0x14 << 27;
+		$code = $aqrl + $rs2 + $rs1 + $rd + $op1 + $op2 + $op3 + 3;
+	}
+
+	elsif (/^\s*amominu.(w\S*)\s+x(\d+),\s*x(\d+),\s*\(x(\d+)\)/) {
+		if ( $1 eq w.aqrl) { $aqrl = 3 << 25; }
+		elsif ( $1 eq w.aq) { $aqrl = 2 << 25; }
+		elsif ( $1 eq w.rl) { $aqrl = 1 << 25; }
+		else { $aqrl = 0; }
+		$rd = $2 << 7;
+		$rs1 = $4 << 15;
+		$rs2 = $3 << 20;
+		$op1 = 0x0b << 2;
+		$op2 = 0x2 << 12;
+		$op3 = 0x18 << 27;
+		$code = $aqrl + $rs2 + $rs1 + $rd + $op1 + $op2 + $op3 + 3;
+	}
+
+	elsif (/^\s*amomaxu.(w\S*)\s+x(\d+),\s*x(\d+),\s*\(x(\d+)\)/) {
+		if ( $1 eq w.aqrl) { $aqrl = 3 << 25; }
+		elsif ( $1 eq w.aq) { $aqrl = 2 << 25; }
+		elsif ( $1 eq w.rl) { $aqrl = 1 << 25; }
+		else { $aqrl = 0; }
+		$rd = $2 << 7;
+		$rs1 = $4 << 15;
+		$rs2 = $3 << 20;
+		$op1 = 0x0b << 2;
+		$op2 = 0x2 << 12;
+		$op3 = 0x1a << 27;
+		$code = $aqrl + $rs2 + $rs1 + $rd + $op1 + $op2 + $op3 + 3;
+	}
+
 	elsif (/^\s*illegal_ops/) {
 		$code = 0xffffffff;
 	}
