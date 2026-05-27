@@ -71,6 +71,8 @@ module ma_stage
 `ifdef SUPPORT_A
 	input success_scw_ma,
 	input cmd_scw_purge_ma,
+	output reg success_scw_wb,
+	output reg cmd_scw_purge_wb,
 `endif // SUPPORT_A
 
 	// stall
@@ -236,7 +238,8 @@ assign d_ram_rdata = data_rdata_wb;
 `ifdef SUPPORT_A
 wire wbk_rd_reg_with_scw = wbk_rd_reg_ma | cmd_scw_purge_ma;
 	
-wire [31:0] rd_data_with_scw = cmd_scw_purge_ma ? { 31'd0, ~success_scw_ma } : rd_data_ma;
+//wire [31:0] rd_data_with_scw = cmd_scw_purge_ma ? { 31'd0, ~success_scw_ma } : rd_data_ma;
+wire [31:0] rd_data_with_scw = rd_data_ma;
 `endif // SUPPORT_A
 
 // FF to WB
@@ -249,6 +252,7 @@ always @ ( posedge clk or negedge rst_n) begin
 		wbk_rd_reg_wb <= 1'b0;
 	end
 	else begin
+	//else if (~stall) begin
         cmd_ld_wb <= cmd_ld_ma;
 		ld_code_wb <= ldst_code_ma;
 		rd_adr_wb <= rd_adr_ma;
@@ -265,15 +269,22 @@ end
 always @ ( posedge clk or negedge rst_n) begin   
 	if (~rst_n) begin
 		rd_data_wb <= 32'd0;
+`ifdef SUPPORT_A
+		success_scw_wb <= 1'b0;
+		cmd_scw_purge_wb <= 1'b0;
+`endif // SUPPORT_A
 	end
 	else if (~stall) begin
 `ifdef SUPPORT_A
 		rd_data_wb <= rd_data_with_scw;
+		success_scw_wb <= success_scw_ma;
+		cmd_scw_purge_wb <= cmd_scw_purge_ma;
 `else // SUPPORT_A
 		rd_data_wb <= rd_data_ma;
 `endif // SUPPORT_A
 	end
 end
+
 
 endmodule
 

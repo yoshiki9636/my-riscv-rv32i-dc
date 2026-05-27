@@ -284,6 +284,9 @@ wire amo_stall_fin2;
 wire amo_stall_dly;
 wire success_scw_ma;
 wire cmd_scw_purge_ma;
+wire success_scw_wb;
+wire cmd_scw_purge_wb;
+
 `endif // SUPPORT_A
 
 // LSU
@@ -722,6 +725,8 @@ ma_stage #(.DWIDTH(DWIDTH)) ma_stage (
 `ifdef SUPPORT_A
 	.success_scw_ma(success_scw_ma),
 	.cmd_scw_purge_ma(cmd_scw_purge_ma),
+	.success_scw_wb(success_scw_wb),
+	.cmd_scw_purge_wb(cmd_scw_purge_wb),
 `endif // SUPPORT_A
 	.stall(stall),
 	.stall_1shot(stall_1shot),
@@ -741,6 +746,10 @@ wb_stage wb_stage (
 	.ld_data_wb(ld_data_wb),
 	.wbk_data_wb(wbk_data_wb),
 	.wbk_data_wb2(wbk_data_wb2),
+`ifdef SUPPORT_A
+	.success_scw_wb(success_scw_wb),
+	.cmd_scw_purge_wb(cmd_scw_purge_wb),
+`endif // SUPPORT_A
 	.stall(stall),
 	.rst_pipe(rst_pipe_wb)
 	);

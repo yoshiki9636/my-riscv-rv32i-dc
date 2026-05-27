@@ -180,6 +180,9 @@ wire [31:0] rs2_sel;
 `ifdef SUPPORT_A
 // for A instructions
 
+// lr.w cmd
+wire cmd_lrw_purge = cmd_lrw_ex & ~jmp_purge_ma; 
+
 // lr.w / sc.w
 reg resv_flg;
 reg [31:0] resv_adr;
@@ -190,7 +193,7 @@ wire cmd_st_pur;
 always @ ( posedge clk or negedge rst_n) begin   
 	if (~rst_n)
 		resv_flg <= 1'b0;
-	else if (reset_flg_cond)
+	else if (reset_flg_cond & ~stall)
 		resv_flg <= 1'b0;
 	else if (cmd_lrw_ex)
 		resv_flg <= 1'b1;
@@ -199,16 +202,16 @@ end
 always @ ( posedge clk or negedge rst_n) begin   
 	if (~rst_n)
 		resv_adr <= 32'd0;
-	else if (cmd_lrw_ex)
+	else if (cmd_lrw_purge)
 		resv_adr <= rs1_sel;
 end
 
 // lr.w conditions
-assign reset_flg_cond = (cmd_scw_ex | (cmd_st_ex & (resv_adr[31:2] == rs1_sel[31:2]))) & ~jmp_purge_ma;
+assign reset_flg_cond = (cmd_scw_ex | (cmd_st_ex & (resv_adr[31:2] == rd_data_ex[31:2]))) & ~jmp_purge_ma;
 
 // sc.w conditions
 wire success_scw = cmd_scw_ex & resv_flg & ~jmp_purge_ma;
-wire cmd_scw_hit = ~success_scw | (resv_adr[31:2] == rs1_sel[31:2]);
+wire cmd_scw_hit = success_scw & (resv_adr[31:2] == rs1_sel[31:2]);
 
 // sc.w write back to register
 wire cmd_scw_purge = cmd_scw_ex & ~jmp_purge_ma; 
@@ -416,7 +419,7 @@ wire [31:0] br_ofs = {{ 19{ br_ofs_ex[12] }}, br_ofs_ex, 1'b0 };
 
 `ifdef SUPPORT_A
 assign cmd_ld_pur = (cmd_ld_ex | cmd_lrw_ex | amo_ld_cmd) & ~jmp_purge_ma;
-assign cmd_st_pur = (cmd_st_ex | success_scw | amo_st_cmd) & ~jmp_purge_ma;
+assign cmd_st_pur = (cmd_st_ex | amo_st_cmd) & ~jmp_purge_ma;
 `else // SUPPORT_A
 wire cmd_ld_pur = cmd_ld_ex & ~jmp_purge_ma;
 wire cmd_st_pur = cmd_st_ex & ~jmp_purge_ma;
@@ -424,13 +427,20 @@ wire cmd_st_pur = cmd_st_ex & ~jmp_purge_ma;
 
 // forwarding selector
 
+`ifdef SUPPORT_A
+reg cmd_scw_hit_ma;
+wire [31:0] rd_data_ma_scw = cmd_scw_purge_ma ? { 31'd0, ~cmd_scw_hit_ma } : rd_data_ma;
+//wire [31:0] rd_data_ma_scw = rd_data_ma;
+
+wire [31:0] rs1_fwd = hit_rs1_idex_ex ? rd_data_ma_scw :
+                      hit_rs1_idma_ex ? wbk_data_wb : wbk_data_wb2;
+
+assign rs2_fwd = hit_rs2_idex_ex ? rd_data_ma_scw :
+                 hit_rs2_idma_ex ? wbk_data_wb : wbk_data_wb2;
+`else // SUPPORT_A
 wire [31:0] rs1_fwd = hit_rs1_idex_ex ? rd_data_ma :
                       hit_rs1_idma_ex ? wbk_data_wb : wbk_data_wb2;
 
-`ifdef SUPPORT_A
-assign rs2_fwd = hit_rs2_idex_ex ? rd_data_ma :
-                 hit_rs2_idma_ex ? wbk_data_wb : wbk_data_wb2;
-`else // SUPPORT_A
 wire [31:0] rs2_fwd = hit_rs2_idex_ex ? rd_data_ma :
                       hit_rs2_idma_ex ? wbk_data_wb : wbk_data_wb2;
 `endif // SUPPORT_A
@@ -614,6 +624,24 @@ wire [31:0] alu_sel = alu_selector( alu_code,
 // Lui
 wire [31:0] lui_data = { lui_auipc_imm_ex, 12'd0 };
 
+`ifdef SUPPORT_A
+`ifdef SUPPORT_M
+wire [31:0] rd_data_ex_pre = cmd_lui_ex ? lui_data :
+                             (cmd_jal_ex | cmd_jalr_ex) ? pcp4_ex :
+						      cmd_auipc_ex ? jump_adr :
+                              cmd_csr_ex ? csr_rd_data :
+                              m_cmd_finished ? m_result_ex :
+                              (cmd_lrw_purge | cmd_scw_purge) ? rs1_sel :
+                              alu_sel;
+`else // SUPPORT_M
+wire [31:0] rd_data_ex_pre = cmd_lui_ex ? lui_data :
+                             (cmd_jal_ex | cmd_jalr_ex) ? pcp4_ex :
+						      cmd_auipc_ex ? jump_adr :
+                              cmd_csr_ex ? csr_rd_data :
+                              (cmd_lrw_purge | cmd_scw_purge) ? rs1_sel :
+                              alu_sel;
+`endif // SUPPORT_M
+`else // SUPPORT_A
 `ifdef SUPPORT_M
 wire [31:0] rd_data_ex_pre = cmd_lui_ex ? lui_data :
                              (cmd_jal_ex | cmd_jalr_ex) ? pcp4_ex :
@@ -628,6 +656,7 @@ wire [31:0] rd_data_ex_pre = cmd_lui_ex ? lui_data :
                               cmd_csr_ex ? csr_rd_data :
                               alu_sel;
 `endif // SUPPORT_M
+`endif // SUPPORT_A
 
 /*
 reg cmd_ld_ma_keeper;
@@ -724,6 +753,7 @@ assign rd_data_ex = amo_cmds? rs1_data_ex :
                     (stall_ldst) ? rd_data_roll : rd_data_ex_pre;
 //wire [31:0] st_data_ex = amo_st_term ? amo_sel_data :
 wire [31:0] st_data_ex = amo_ex_term ? amo_sel_data :
+                        cmd_scw_purge ? rs2_sel :
                         (stall_ldst) ? st_data_roll : st_data_ex_pre;
 wire [2:0] ldst_code_ex = (amo_ld_cmd | amo_st_cmd) ? 3'b010 : // select always word
                           (stall_ldst_0) ? ldst_code_roll : alu_code_ex;
@@ -831,13 +861,31 @@ always @ ( posedge clk or negedge rst_n) begin
 end
 
 `ifdef SUPPORT_A
-reg cmd_scw_hit_ma;
+//reg cmd_scw_hit_ma;
 reg success_scw_ma_pre;
 reg cmd_st_ma_pre;
 
+//assign success_scw_ma = ~(success_scw_ma_pre & cmd_scw_hit_ma);
 assign success_scw_ma = success_scw_ma_pre & cmd_scw_hit_ma;
-assign cmd_st_ma = cmd_st_ma_pre & cmd_scw_hit_ma;
+assign cmd_st_ma = cmd_st_ma_pre | cmd_scw_hit_ma;
 `endif // SUPPORT_A
+
+always @ ( posedge clk or negedge rst_n) begin   
+	if (~rst_n) begin
+		//rd_adr_ma <= 5'd0;
+		//rd_data_ma <= 32'd0;
+		//st_data_ma <= 32'd0;
+		//ldst_code_ma <= 3'd0;
+	end
+	else begin
+		//rd_adr_ma <= rd_adr_ex_post;
+		//rd_data_ma <= rd_data_ex; // for debug test
+		//st_data_ma <= st_data_ex; // for debug test
+		//rd_data_ma <= rd_data_ex_pre; // for debug test
+		//st_data_ma <= st_data_ex_pre; // for debug test
+		//ldst_code_ma <= ldst_code_ex;
+	end
+end
 
 always @ ( posedge clk or negedge rst_n) begin   
 	if (~rst_n) begin
@@ -863,8 +911,8 @@ always @ ( posedge clk or negedge rst_n) begin
 		rd_adr_ma <= rd_adr_ex_post;
 		rd_data_ma <= rd_data_ex; // for debug test
 		st_data_ma <= st_data_ex; // for debug test
-		//rd_data_ma <= rd_data_ex_pre; // for debug test
-		//st_data_ma <= st_data_ex_pre; // for debug test
+		////rd_data_ma <= rd_data_ex_pre; // for debug test
+		////st_data_ma <= st_data_ex_pre; // for debug test
 		ldst_code_ma <= ldst_code_ex;
 	    cmd_ld_ma <= cmd_ld_ex_post & ~wb_mask_with_exception_interrupt;
 `ifdef SUPPORT_A

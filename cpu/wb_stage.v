@@ -8,6 +8,8 @@
  * @version		0.1
  */
 
+`define SUPPORT_A
+
 module wb_stage(
 	input clk,
 	input rst_n,
@@ -21,6 +23,10 @@ module wb_stage(
 	output [31:0] wbk_data_wb,
 	// to EX forwarding
 	output reg [31:0] wbk_data_wb2,
+`ifdef SUPPORT_A
+	input success_scw_wb,
+	input cmd_scw_purge_wb,
+`endif // SUPPORT_A
 	// stall
 	input stall,
 	input rst_pipe
@@ -91,7 +97,12 @@ wire [31:0] ld_data = ld_selector( ld_code_wb,
 								   
 // selector
 
+`ifdef SUPPORT_A
+assign wbk_data_wb = cmd_ld_wb ? ld_data :
+                     cmd_scw_purge_wb ? { 31'd0, ~success_scw_wb } : rd_data_wb;
+`else // SUPPORT_A
 assign wbk_data_wb = cmd_ld_wb ? ld_data : rd_data_wb;
+`endif // SUPPORT_A
 
 // for fowarding
 
