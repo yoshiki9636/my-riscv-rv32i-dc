@@ -80,7 +80,8 @@ module uart_top
 	input [15:0] uart_term,
 	output rout_en,
 	output [7:0] rout,
-	input rx_disable_echoback
+	input rx_disable_echoback,
+	output start_dcflush
 
 	);
 
@@ -208,7 +209,8 @@ uart_rec_char uart_rec_char (
 	.inst_data_en(inst_data_en),
 	.pc_print(pc_print),
 	.pc_print_sel(pc_print_sel),
-	.crlf_in(crlf_in)
+	.crlf_in(crlf_in),
+	.start_dcflush(start_dcflush)
 	);
 
 uart_send_char uart_send_char (
