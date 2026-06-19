@@ -9,8 +9,9 @@
  */
 
 module uart_top
-    #(parameter IWIDTH = 14,
-      parameter DWIDTH = 14)
+    #(parameter IWIDTH = 12,
+      parameter DWIDTH = 12,
+      parameter SWIDTH = 13)
 	(
 
 	input clk,
@@ -40,6 +41,13 @@ module uart_top
     output [15:0] d_ram_mask,
     output d_ram_wen,
     input uart_finish_wresp,
+	output [SWIDTH+1:2] scr_ram_radr,
+	output [SWIDTH+1:2] scr_ram_wadr,
+	input [31:0] scr_ram_rdata,
+	output [31:0] scr_ram_wdata,
+	output scr_ram_wen,
+	output scr_read_sel,
+
     //output d_read_sel,
 
 	output dma_io_we,
@@ -130,6 +138,7 @@ wire trush_running;
 wire crlf_in;
 wire [2:0] rx_fifo_rcntr;
 
+// change to wide data
 
 uart_if uart_if (
 	.clk(clk),
@@ -226,7 +235,7 @@ uart_send_char uart_send_char (
 	);
 
 
-uart_logics uart_logics (
+uart_logics #(.SWIDTH(SWIDTH)) uart_logics (
 	.clk(clk),
 	.rst_n(rst_n),
 	.d_ram_radr(d_ram_radr),
@@ -238,6 +247,12 @@ uart_logics uart_logics (
 	.d_ram_mask(d_ram_mask),
 	.d_ram_wen(d_ram_wen),
 	.uart_finish_wresp(uart_finish_wresp),
+	.scr_ram_radr(scr_ram_radr),
+	.scr_ram_wadr(scr_ram_wadr),
+	.scr_ram_rdata(scr_ram_rdata),
+	.scr_ram_wdata(scr_ram_wdata),
+	.scr_ram_wen(scr_ram_wen),
+	.scr_read_sel(scr_read_sel),
 	//.d_read_sel(d_read_sel),
 	.dma_io_we(dma_io_we),
 	.dma_io_wadr(dma_io_wadr),

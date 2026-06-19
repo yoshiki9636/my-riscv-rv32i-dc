@@ -11,7 +11,8 @@
 `define SUPPORT_A
 
 module ma_stage
-	#(parameter DWIDTH = 14)
+	#(parameter DWIDTH = 12,
+	  parameter SWIDTH = 13)
 	(
 	input clk,
 	input rst_n,
@@ -46,13 +47,13 @@ module ma_stage
     input dc_st_wt_ma,
     output dc_cache_wr_ma,
     //output dc_cache_clr_bits,
-	// to Memory
-	input [DWIDTH+1:2] d_ram_radr,
-	output [31:0] d_ram_rdata,
-	input [DWIDTH+1:2] d_ram_wadr,
-	input [31:0] d_ram_wdata,
-	input d_ram_wen,
-	input d_read_sel,
+	// to UART monitor
+	input [SWIDTH+1:2] scr_ram_radr,
+	output [31:0] scr_ram_rdata,
+	input [SWIDTH+1:2] scr_ram_wadr,
+	input [31:0] scr_ram_wdata,
+	input scr_ram_wen,
+	input scr_read_sel,
 	// from/to IO
 	output dma_io_we,
 	output [15:2] dma_io_wadr,
@@ -61,12 +62,19 @@ module ma_stage
 	output dma_io_radr_en,
     input [31:0] dma_io_rdata,
 	// from/to dma memory access interface
-    input dma_we_ma,
-    input [15:2] dataram_wadr_ma,
-    input [15:0] dataram_wdata_ma,
-    input dma_re_ma,
-    input [15:2] dataram_radr_ma,
-    output [15:0] dataram_rdata_wb,
+	input [SWIDTH-3:0] scr_ram_radr_all,
+	output [127:0] scr_ram_rdata_all,
+	input scr_ram_ren_all,
+	input [SWIDTH-3:0] scr_ram_wadr_all,
+	input [127:0] scr_ram_wdata_all,
+	input scr_ram_wen_all,
+
+    //input dma_we_ma,
+    //input [31:4] dataram_wadr_ma,
+    //input [127:0] dataram_wdata_ma,
+    //input dma_re_ma,
+    //input [31:4] dataram_radr_ma,
+    //output [127:0] dataram_rdata_wb,
 
 `ifdef SUPPORT_A
 	input success_scw_ma,
@@ -146,7 +154,9 @@ wire [3:0] st_we = (ldst_code_ma == 3'b000) ? be_byte :
                    (ldst_code_ma == 3'b001) ? be_half :
 				   (ldst_code_ma == 3'b010) ? { cmd_st_ma, cmd_st_ma, cmd_st_ma, cmd_st_ma } : 4'd0;
 
-wire [3:0] st_we_mem = st_we & { 4{ (rd_data_ma[31:30] != 2'b11) }};
+//wire [3:0] st_we_mem = st_we & { 4{ (rd_data_ma[31:30] != 2'b11) }};
+wire [3:0] st_we_mem = st_we & { 4{ (rd_data_ma[31] == 1'b0) }};
+wire [3:0] st_we_scr_mem = st_we & { 4{ (0d_data_ma[31:30] == 2'b10) }};
 assign dma_io_we = (&st_we) & (rd_data_ma[31:30] == 2'b11);
 assign dma_io_wadr = rd_data_ma[15:2];
 assign dma_io_wdata = st_wdata;
@@ -165,25 +175,40 @@ wire [DWIDTH+1:2] data_wadr_ma;
 wire [31:0] data_wdata_ma;
 wire [3:0] data_we_ma;
 
+// for D$
+//wire d_ram_wen = 1'b0;
+//wire d_read_sel = 1'b0;
+
+
+//assign data_radr_ma = d_read_sel ? scr_ram_radr : rd_data_ma[DWIDTH+1:2]; // new
+assign data_radr_ma = rd_data_ma[DWIDTH+1:2];
+//assign data_wadr_ma = d_ram_wen ? scr_ram_wadr : rd_data_ma[DWIDTH+1:2]; // new
+assign data_wadr_ma = rd_data_ma[DWIDTH+1:2];
+
+
+/*
 generate
 if (DWIDTH < 15) begin
-assign data_radr_ma = d_read_sel ? d_ram_radr :
+assign data_radr_ma = d_read_sel ? scr_ram_radr :
                       dma_re_ma ? dataram_radr_ma[DWIDTH+1:2] : rd_data_ma[DWIDTH+1:2];
-assign data_wadr_ma = d_ram_wen ? d_ram_wadr :
+assign data_wadr_ma = d_ram_wen ? scr_ram_wadr :
                       dma_we_ma ? dataram_wadr_ma[DWIDTH+1:2] : rd_data_ma[DWIDTH+1:2];
 end
 else if (DWIDTH >= 15) begin
-assign data_radr_ma = d_read_sel ? d_ram_radr :
+assign data_radr_ma = d_read_sel ? scr_ram_radr :
                       dma_re_ma ? { { (DWIDTH-14){ 1'b0 }}, dataram_radr_ma[15:2] } : rd_data_ma[DWIDTH+1:2];
-assign data_wadr_ma = d_ram_wen ? d_ram_wadr :
+assign data_wadr_ma = d_ram_wen ? scr_ram_wadr :
                       dma_we_ma ? { { (DWIDTH-14){ 1'b0 }}, dataram_wadr_ma[15:2] } : rd_data_ma[DWIDTH+1:2];
 end
 endgenerate
+*/
 
-assign data_wdata_ma = d_ram_wen ? d_ram_wdata :
-					   dma_we_ma ? { 16'd0, dataram_wdata_ma } : st_wdata;
+//assign data_wdata_ma = d_ram_wen ? scr_ram_wdata : st_wdata; // new
+assign data_wdata_ma = st_wdata; // new
+
 //assign data_we_ma = ((d_ram_wen | dma_we_ma) ? 4'b1111 : st_we_mem) & { 4{ dc_tag_hit_ma | dc_st_wt_ma }};
-assign data_we_ma = ((d_ram_wen | dma_we_ma) ? 4'b1111 : st_we_mem & { 4{ dc_st_ok}}) & { 4{ dc_tag_hit_ma }};
+//assign data_we_ma = (d_ram_wen ? 4'b1111 : st_we_mem & { 4{ dc_st_ok}}) & { 4{ dc_tag_hit_ma }};
+assign data_we_ma = st_we_mem & { 4{ dc_st_ok}} & { 4{ dc_tag_hit_ma }};
 
 assign dc_cache_wr_ma = |data_we_ma;
 
@@ -207,17 +232,58 @@ data_ram #(.DWIDTH(DWIDTH)) data_ram (
 	.ram_wen_all(ram_wen_all)
 	);
 
+// scrach memory
+wire [SWIDTH+1:2] scr_data_radr_ma;  // read adr
+wire [31:0] scr_data_rdata_wb_mem; // read data to wb
+wire [SWIDTH+1:2] scr_data_wadr_ma; // write adr
+wire [31:0] scr_data_wdata_ma; // write data
+wire [3:0] scr_data_we_ma; // write enabe
+
+assign scr_data_radr_ma = scr_read_sel ? scr_ram_radr : rd_data_ma[SWIDTH+1:2];
+assign scr_data_wadr_ma = scr_ram_wen ? scr_ram_wadr : rd_data_ma[SWIDTH+1:2];
+
+assign scr_data_wdata_ma = scr_ram_wen ? scr_ram_wdata : st_wdata;
+
+assign scr_data_we_ma = (scr_ram_wen) ? 4'b1111 : st_we_scr_mem;
+
+data_ram #(.DWIDTH(SWIDTH)) scr_ram (
+	.clk(clk),
+	.rst_n(rst_n),
+	.ram_radr_part(scr_data_radr_ma),
+	.ram_rdata(scr_data_rdata_wb_mem),
+	.ram_wadr_part(scr_data_wadr_ma),
+	.ram_wdata(scr_data_wdata_ma),
+	.ram_wen(scr_data_we_ma),
+
+    // for DMA
+	.ram_radr_all(scr_ram_radr_all),
+	.ram_rdata_all(scr_ram_rdata_all),
+	.ram_ren_all(scr_ram_ren_all),
+	.ram_wadr_all(scr_ram_wadr_all),
+	.ram_wdata_all(scr_ram_wdata_all),
+	.ram_wen_all(scr_ram_wen_all)
+	);
+
+
+// io bus & scr memory
 wire dma_io_ren_ma = cmd_ld_ma & (rd_data_ma[31:30] == 2'b11);
+wire scr_ren_ma = cmd_ld_ma & (rd_data_ma[31:30] == 2'b10);
 
 reg dma_io_ren_wb;
+reg scr_ren_wb;
 always @ ( posedge clk or negedge rst_n) begin   
-	if (~rst_n)
+	if (~rst_n) begin
 		dma_io_ren_wb <= 1'b0;
-	else
+		scr_ren_wb <= 1'b0;
+	end
+	else begin
 		dma_io_ren_wb <= dma_io_ren_ma;
+		scr_ren_wb <= scr_ren_ma;
+	end
 end
 
-assign data_rdata_wb = dma_io_ren_wb ? dma_io_rdata : data_rdata_wb_mem;
+assign data_rdata_wb = dma_io_ren_wb ? dma_io_rdata :
+                       scr_ren_wb ? scr_data_rdata_wb_mem : data_rdata_wb_mem;
 
 always @ ( posedge clk or negedge rst_n) begin
     if (~rst_n)
@@ -233,7 +299,7 @@ end
 //assign ld_data_wb = stall_dly ? ld_data_roll : data_rdata_wb;
 //assign ld_data_wb = (stall_dly & ~cpu_stopping) ? ld_data_roll : data_rdata_wb; // for test
 assign ld_data_wb = (1'b0) ? ld_data_roll : data_rdata_wb;
-assign d_ram_rdata = data_rdata_wb;
+assign scr_ram_rdata = scr_data_rdata_wb_mem;
 
 `ifdef SUPPORT_A
 wire wbk_rd_reg_with_scw = wbk_rd_reg_ma | cmd_scw_purge_ma;

@@ -12,8 +12,9 @@
 `define ARTY_A7
 
 module fpga_top
-    #(parameter IWIDTH = 13,
-      parameter DWIDTH = 13)
+    #(parameter IWIDTH = 12,
+      parameter DWIDTH = 12,
+      parameter SWIDTH = 13)
     (
 	input clkin,
 	input rst_n,
@@ -120,12 +121,17 @@ wire [127:0] app_rd_data; // input
 wire app_rd_data_end; // input
 wire app_rd_data_valid; // input
 
-wire [DWIDTH+1:2] d_ram_radr = { DWIDTH{ 1'b0 }};
-wire [DWIDTH+1:2] d_ram_wadr = { DWIDTH{ 1'b0 }};
-wire [31:0] d_ram_rdata;
-wire [31:0] d_ram_wdata = 32'd0;
-wire d_ram_wen = 1'b0;
-wire d_read_sel = 1'b0;
+//wire [DWIDTH+1:2] d_ram_radr = { DWIDTH{ 1'b0 }};
+//wire [DWIDTH+1:2] d_ram_wadr = { DWIDTH{ 1'b0 }};
+//wire [31:0] d_ram_wdata = 32'd0;
+wire [SWIDTH+1:2] scr_ram_radr;
+wire [SWIDTH+1:2] scr_ram_wadr;
+wire [31:0] scr_ram_rdata;
+wire [31:0] scr_ram_wdata;
+wire scr_ram_wen;
+wire scr_read_sel;
+//wire d_ram_wen = 1'b0;
+//wire d_read_sel = 1'b0;
 
 wire [IWIDTH+1:2] i_ram_radr = 0;
 wire [IWIDTH+1:2] i_ram_wadr = 0;
@@ -307,7 +313,7 @@ wire g_interrupt;
 //wire ic_stall;
 wire stall;
 
-cpu_top #(.DWIDTH(DWIDTH), .IWIDTH(IWIDTH)) cpu_top (
+cpu_top #(.DWIDTH(DWIDTH), .IWIDTH(IWIDTH), .SWIDTH(SWIDTH)) cpu_top (
 	.clk(clk),
 	.rst_n(rst_n),
 	.init_calib_complete(init_calib_complete),
@@ -316,12 +322,18 @@ cpu_top #(.DWIDTH(DWIDTH), .IWIDTH(IWIDTH)) cpu_top (
 	.start_adr(start_adr),
 	.cpu_run_state(cpu_run_state),
 
-	.d_ram_radr(d_ram_radr),
-	.d_ram_wadr(d_ram_wadr),
-	.d_ram_rdata(d_ram_rdata),
-	.d_ram_wdata(d_ram_wdata),
-	.d_ram_wen(d_ram_wen),
-	.d_read_sel(d_read_sel),
+	//.d_ram_radr(d_ram_radr),
+	//.d_ram_wadr(d_ram_wadr),
+	//.d_ram_rdata(d_ram_rdata),
+	//.d_ram_wdata(d_ram_wdata),
+    .scr_ram_radr(scr_ram_radr),
+    .scr_ram_wadr(scr_ram_wadr),
+    .scr_ram_wdata(scr_ram_wdata),
+    .scr_ram_rdata(scr_ram_rdata),
+	.scr_ram_wen(scr_ram_wen),
+	.scr_read_sel(_read_sel),
+	//.d_ram_wen(d_ram_wen),
+	//.d_read_sel(d_read_sel),
 
 	.i_ram_radr(i_ram_radr),
 	.i_ram_wadr(i_ram_wadr),
@@ -561,7 +573,7 @@ dummy_mig dummy_mig (
 	);
 */
 
-uart_top #(.DWIDTH(DWIDTH), .IWIDTH(IWIDTH)) uart_top (
+uart_top #(.DWIDTH(DWIDTH), .IWIDTH(IWIDTH), .SWIDTH(SWIDTH)) uart_top (
 	.clk(clk),
 	.rst_n(rst_n),
 	.rx(rx),
@@ -573,6 +585,12 @@ uart_top #(.DWIDTH(DWIDTH), .IWIDTH(IWIDTH)) uart_top (
     .d_ram_wdata(uart_in_wdata),
     .d_ram_wen(uart_wstart_rq),
     .uart_finish_wresp(uart_finish_wresp),
+    .scr_ram_radr(scr_ram_radr),
+    .scr_ram_wadr(scr_ram_wadr),
+    .scr_ram_wdata(scr_ram_wdata),
+    .scr_ram_rdata(scr_ram_rdata),
+	.scr_ram_wen(scr_ram_wen),
+	.scr_read_sel(_read_sel),
     //.d_read_sel(uart_d_read_sel),
     .d_ram_mask(uart_in_mask),
     .u_read_req(uart_rstart_rq),
@@ -625,8 +643,8 @@ uart_top #(.DWIDTH(DWIDTH), .IWIDTH(IWIDTH)) uart_top (
 	.uart_term(uart_term),
 	.rout_en(rout_en),
 	.rout(rout),
-	.rx_disable_echoback(rx_disable_echoback),
-	.start_dcflush(start_dcflush)
+	.rx_disable_echoback(rx_disable_echoback)
+	//.start_dcflush(start_dcflush)
 	);
 
 io_led io_led (

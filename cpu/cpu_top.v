@@ -12,8 +12,9 @@
 `define SUPPORT_A
 
 module cpu_top
-    #(parameter IWIDTH = 14,
-      parameter DWIDTH = 14)
+    #(parameter IWIDTH = 12,
+      parameter DWIDTH = 12,
+      parameter SWIDTH = 13)
 	(
 
 	input clk,
@@ -25,12 +26,14 @@ module cpu_top
 	input [31:2] start_adr,
 	output cpu_run_state,
 
-	input [DWIDTH+1:2] d_ram_radr,
-	input [DWIDTH+1:2] d_ram_wadr,
-	output [31:0] d_ram_rdata,
-	input [31:0] d_ram_wdata,
-	input d_ram_wen,
-	input d_read_sel,
+	input [SWIDTH+1:2] scr_ram_radr,
+	input [SWIDTH+1:2] scr_ram_wadr,
+	output [31:0] scr_ram_rdata,
+	input [31:0] scr_ram_wdata,
+	input scr_ram_wen,
+	input scr_read_sel,
+	//input d_ram_wen,
+	//input d_read_sel,
 
 	input [IWIDTH+1:2] i_ram_radr,
 	input [IWIDTH+1:2] i_ram_wadr,
@@ -232,12 +235,24 @@ wire [1:0] g_current_priv = `M_MODE; // temp
 wire post_jump_cmd_cond;
 //wire csr_meie;
 //wire csr_msie;
+
+// under construction
+wire [SWIDTH-3:0] scr_ram_radr_all = 0;
+wire [127:0] scr_ram_rdata_all;
+wire scr_ram_ren_all = 1'b0;
+wire [SWIDTH-3:0] scr_ram_wadr_all = 0;
+wire [127:0] scr_ram_wdata_all = 128'd0;
+wire scr_ram_wen_all = 1'b0;
+
+
+// temp fixed
 wire dma_we_ma;
 wire [15:2] dataram_wadr_ma;
 wire [15:0] dataram_wdata_ma;
 wire dma_re_ma;
 wire [15:2] dataram_radr_ma;
-wire [15:0] dataram_rdata_wb;
+wire [15:0] dataram_rdata_wb = 128'd0;
+
 wire [31:0] dma_io_rdata;
 
 // for M arch support
@@ -676,7 +691,7 @@ mex_stage mex_stage (
 	);
 `endif // SUPPORT_M
 
-ma_stage #(.DWIDTH(DWIDTH)) ma_stage (
+ma_stage #(.DWIDTH(DWIDTH), .SWIDTH(SWIDTH)) ma_stage (
 	.clk(clk),
 	.rst_n(rst_n),
 	.cmd_ld_ma(cmd_ld_ma),
@@ -704,24 +719,26 @@ ma_stage #(.DWIDTH(DWIDTH)) ma_stage (
 	.dc_tag_hit_ma(dc_tag_hit_ma),
 	.dc_st_wt_ma(dc_st_wt_ma),
 	.dc_cache_wr_ma(dc_cache_wr_ma),
-	.d_ram_radr(d_ram_radr),
-	.d_ram_rdata(d_ram_rdata),
-	.d_ram_wadr(d_ram_wadr),
-	.d_ram_wdata(d_ram_wdata),
-	.d_ram_wen(d_ram_wen),
-	.d_read_sel(d_read_sel),
+	.scr_ram_radr(scr_ram_radr),
+	.scr_ram_rdata(scr_ram_rdata),
+	.scr_ram_wadr(scr_ram_wadr),
+	.scr_ram_wdata(scr_ram_wdata),
+	.scr_ram_wen(scr_ram_wen),
+	.scr_read_sel(scr_read_sel),
+	//.d_ram_wen(d_ram_wen),
+	//.d_read_sel(d_read_sel),
 	.dma_io_we(dma_io_we),
 	.dma_io_wadr(dma_io_wadr),
 	.dma_io_wdata(dma_io_wdata),
 	.dma_io_radr(dma_io_radr),
 	.dma_io_radr_en(dma_io_radr_en),
 	.dma_io_rdata(dma_io_rdata),
-	.dma_we_ma(dma_we_ma),
-	.dataram_wadr_ma(dataram_wadr_ma),
-	.dataram_wdata_ma(dataram_wdata_ma),
-	.dma_re_ma(dma_re_ma),
-	.dataram_radr_ma(dataram_radr_ma),
-	.dataram_rdata_wb(dataram_rdata_wb),
+	//.dma_we_ma(dma_we_ma),
+	//.dataram_wadr_ma(dataram_wadr_ma),
+	//.dataram_wdata_ma(dataram_wdata_ma),
+	//.dma_re_ma(dma_re_ma),
+	//.dataram_radr_ma(dataram_radr_ma),
+	//.dataram_rdata_wb(dataram_rdata_wb),
 `ifdef SUPPORT_A
 	.success_scw_ma(success_scw_ma),
 	.cmd_scw_purge_ma(cmd_scw_purge_ma),
