@@ -12,6 +12,20 @@ module axi_bus_top (
 	input clk,
 	input rst_n,
 
+// dma axi bus interface
+// dma axi write bus manager
+	input dma_wstart_rq,
+	input [31:0] dma_win_addr,
+	input [127:0] dma_in_wdata,
+	input [15:0] dma_in_mask,
+	output dma_finish_wresp,
+// dma axi read bus manager
+	input dma_rstart_rq,
+	input [31:0] dma_rin_addr,
+	output [127:0] dma_rdat_m_data,
+	output [15:0] dma_rdat_m_mask,
+	output dma_rdat_m_valid,
+	output dma_finish_mrd,
 // uart axi bus interface
 // uart axi write bus manager
 	input uart_wstart_rq,
@@ -83,23 +97,30 @@ module axi_bus_top (
 // fixed unused signal
 assign dc_rdat_m_mask = 16'd0;
 assign ic_rdat_m_mask = 16'd0;
+assign uart_rdat_m_mask = 16'd0;
+assign dma_rdat_m_mask = 16'd0;
 wire [3:0] uart_rnext_id;
 wire [3:0] dc_rnext_id;
 wire [3:0] ic_rnext_id;
+wire [3:0] dma_rnext_id;
 
 // arbiter signals
+wire dma_req_wt;
 wire uart_req_wt;
 wire dc_req_wt;
+wire dma_gnt_wt;
 wire uart_gnt_wt;
 wire dc_gnt_wt;
-wire [2:0] sel_wt;
+wire [3:0] sel_wt;
+wire dma_req_rd;
 wire uart_req_rd;
 wire dc_req_rd;
 wire ic_req_rd;
+wire dma_gnt_rd;
 wire uart_gnt_rd;
 wire dc_gnt_rd;
 wire ic_gnt_rd;
-wire [2:0] sel_rd;
+wire [3:0] sel_rd;
 
 wire gnt2_wt;
 //wire gnt2_rd;
@@ -165,9 +186,34 @@ wire [3:0] uart_rid;
 wire [31:0] uart_rdata;
 wire uart_rlast;
 
+// dma axi bus signals
+wire dma_awvalid;
+wire dma_awready;
+wire [3:0] dma_awid;
+wire [31:0] dma_awaddr;
+wire [5:0] dma_awatop;
+wire dma_wvalid;
+wire dma_wready;
+wire [31:0] dma_wdata;
+wire [3:0] dma_wstrb;
+wire dma_wlast;
+wire dma_bvalid;
+wire dma_bready;
+wire [3:0] dma_bid;
+wire dma_bcomp;
+wire dma_arvalid;
+wire dma_arready;
+wire [3:0] dma_arid;
+wire [31:0] dma_araddr;
+wire dma_rvalid;
+wire dma_rready;
+wire [3:0] dma_rid;
+wire [31:0] dma_rdata;
+wire dma_rlast;
+
 // instruction cache bus
 
-read_channels_mngr #(.REQC_M_ID(2'b10)) ic_read_channels_mngr (
+read_channels_mngr #(.REQC_M_ID(3'b001)) ic_read_channels_mngr (
 	.clk(clk),
 	.rst_n(rst_n),
 	.req_rq(ic_req_rd),
@@ -194,7 +240,7 @@ read_channels_mngr #(.REQC_M_ID(2'b10)) ic_read_channels_mngr (
 
 // data cache bus
 
-write_channels_mngr #(.REQC_M_ID(2'b00)) dc_write_channels_mngr (
+write_channels_mngr #(.REQC_M_ID(3'b010)) dc_write_channels_mngr (
 	.clk(clk),
 	.rst_n(rst_n),
 	.req_rq(dc_req_wt),
@@ -220,7 +266,7 @@ write_channels_mngr #(.REQC_M_ID(2'b00)) dc_write_channels_mngr (
 	.finish_wresp(dc_finish_wresp)
 	);
 
-read_channels_mngr #(.REQC_M_ID(2'b01)) dc_read_channels_mngr (
+read_channels_mngr #(.REQC_M_ID(3'b011)) dc_read_channels_mngr (
 	.clk(clk),
 	.rst_n(rst_n),
 	.req_rq(dc_req_rd),
@@ -246,7 +292,7 @@ read_channels_mngr #(.REQC_M_ID(2'b01)) dc_read_channels_mngr (
 	);
 
 // uart bus
-write_channels_mngr #(.REQC_M_ID(2'b10)) uart_write_channels_mngr (
+write_channels_mngr #(.REQC_M_ID(3'b100)) uart_write_channels_mngr (
 	.clk(clk),
 	.rst_n(rst_n),
 	.req_rq(uart_req_wt),
@@ -272,7 +318,7 @@ write_channels_mngr #(.REQC_M_ID(2'b10)) uart_write_channels_mngr (
 	.finish_wresp(uart_finish_wresp)
 	);
 
-read_channels_mngr #(.REQC_M_ID(2'b11)) uart_read_channels_mngr (
+read_channels_mngr #(.REQC_M_ID(3'b101)) uart_read_channels_mngr (
 	.clk(clk),
 	.rst_n(rst_n),
 	.req_rq(uart_req_rd),
@@ -297,80 +343,149 @@ read_channels_mngr #(.REQC_M_ID(2'b11)) uart_read_channels_mngr (
 	.finish_mrd(uart_finish_mrd)
 	);
 
+
+// dma bus
+write_channels_mngr #(.REQC_M_ID(3'b110)) dma_write_channels_mngr (
+	.clk(clk),
+	.rst_n(rst_n),
+	.req_rq(dma_req_wt),
+	.gnt_rq(dma_gnt_wt),
+	.awvalid(dma_awvalid),
+	.awready(dma_awready),
+	.awid(dma_awid),
+	.awaddr(dma_awaddr),
+	.awatop(dma_awatop),
+	.wvalid(dma_wvalid),
+	.wready(dma_wready),
+	.wdata(dma_wdata),
+	.wstrb(dma_wstrb),
+	.wlast(dma_wlast),
+	.bvalid(dma_bvalid),
+	.bready(dma_bready),
+	.bid(dma_bid),
+	.bcomp(dma_bcomp),
+	.wstart_rq(dma_wstart_rq),
+	.win_addr(dma_win_addr),
+	.in_wdata(dma_in_wdata),
+	.in_mask(dma_in_mask),
+	.finish_wresp(dma_finish_wresp)
+	);
+
+read_channels_mngr #(.REQC_M_ID(3'b111)) dma_read_channels_mngr (
+	.clk(clk),
+	.rst_n(rst_n),
+	.req_rq(dma_req_rd),
+	.gnt_rq(dma_gnt_rd),
+	.arvalid(dma_arvalid),
+	.arready(dma_arready),
+	.arid(dma_arid),
+	.araddr(dma_araddr),
+	.rvalid(dma_rvalid),
+	.rready(dma_rready),
+	.rid(dma_rid),
+	.rdata(dma_rdata),
+	.rlast(dma_rlast),
+	.rstart_rq(dma_rstart_rq),
+	.rin_addr(dma_rin_addr),
+	.rnext_rq(),
+	.next_rid(dma_rnext_id),
+	.rnext_id(dma_rnext_id),
+	.rqfull_1(1'b0),
+	.rdat_m_data(dma_rdat_m_data),
+	.rdat_m_valid(dma_rdat_m_valid),
+	.finish_mrd(dma_finish_mrd)
+	);
+
 // bus logics
 // write request
-assign awvalid = sel_wt[0] ? dc_awvalid : sel_wt[1] ? uart_awvalid :  sel_wt[1] ? 1'b0 : 1'b0;
+assign awvalid = sel_wt[0] ? dc_awvalid : sel_wt[1] ? uart_awvalid : sel_wt[2] ? 1'b0 : sel_wt[3] ? dma_awvalid : 1'b0;
 assign dc_awready = awready;
 assign uart_awready = awready;
-assign awid = sel_wt[0] ? dc_awid : sel_wt[1] ? uart_awid : sel_wt[2] ? 4'd0 : 4'd0;
-assign awaddr = sel_wt[0] ? dc_awaddr : sel_wt[1] ? uart_awaddr : sel_wt[2] ? 32'd0 : 32'd0;
-assign awatop =  sel_wt[0] ? dc_awatop : sel_wt[1] ? uart_awatop : sel_wt[2] ? 6'd0 : 6'd0;
+assign dma_awready = awready;
+assign awid = sel_wt[0] ? dc_awid : sel_wt[1] ? uart_awid : sel_wt[2] ? 4'd0 : sel_wt[3] ? dma_awid : 4'd0;
+assign awaddr = sel_wt[0] ? dc_awaddr : sel_wt[1] ? uart_awaddr : sel_wt[2] ? 32'd0 :  sel_wt[3] ? dma_awaddr : 32'd0;
+assign awatop =  sel_wt[0] ? dc_awatop : sel_wt[1] ? uart_awatop : sel_wt[2] ? 6'd0 : sel_wt[3] ? dma_awatop :  6'd0;
 // write data
-assign wvalid =  sel_wt[0] ? dc_wvalid : sel_wt[1] ? uart_wvalid : sel_wt[2] ? 1'b0 : 1'b0;
+assign wvalid =  sel_wt[0] ? dc_wvalid : sel_wt[1] ? uart_wvalid : sel_wt[2] ? 1'b0 : sel_wt[3] ? dma_wvalid : 1'b0;
 assign dc_wready = wready;
 assign uart_wready = wready;
-assign wdata = sel_wt[0] ? dc_wdata : sel_wt[1] ? uart_wdata : sel_wt[2] ? 32'd0 : 32'd0;
-assign wstrb = sel_wt[0] ? dc_wstrb : sel_wt[1] ? uart_wstrb : sel_wt[2] ? 4'd0 : 4'd0;
-assign wlast = sel_wt[0] ? dc_wlast : sel_wt[1] ? uart_wlast : sel_wt[2] ? 1'b0 : 1'b0;
+assign dma_wready = wready;
+assign wdata = sel_wt[0] ? dc_wdata : sel_wt[1] ? uart_wdata : sel_wt[2] ? 32'd0 : sel_wt[3] ? dma_wdata : 32'd0;
+assign wstrb = sel_wt[0] ? dc_wstrb : sel_wt[1] ? uart_wstrb : sel_wt[2] ? 4'd0 : sel_wt[3] ? dma_wstrb : 4'd0;
+assign wlast = sel_wt[0] ? dc_wlast : sel_wt[1] ? uart_wlast : sel_wt[2] ? 1'b0 : sel_wt[3] ? dma_wlast : 1'b0;
 // write response
 assign dc_bvalid = bvalid;
 assign uart_bvalid = bvalid;
-assign bready = sel_wt[0] ? dc_bready : sel_wt[1] ? uart_bready : sel_wt[2] ? 1'b0 : 1'b0;
+assign dma_bvalid = bvalid;
+assign bready = sel_wt[0] ? dc_bready : sel_wt[1] ? uart_bready : sel_wt[2] ? 1'b0 : sel_wt[3] ? dma_bready : 1'b0;
 assign dc_bid = bid;
 assign uart_bid = bid;
+assign dma_bid = bid;
 assign dc_bcomp = bcomp;
 assign uart_bcomp = bcomp;
+assign dma_bcomp = bcomp;
 // read request
-assign arvalid =  sel_rd[0] ? dc_arvalid : sel_rd[1] ? uart_arvalid :  sel_rd[2] ? ic_arvalid : 1'b0;
+assign arvalid =  sel_rd[0] ? dc_arvalid : sel_rd[1] ? uart_arvalid :  sel_rd[2] ? ic_arvalid : sel_rd[3] ? dma_arvalid : 1'b0;
 assign ic_arready = arready;
 assign dc_arready = arready;
 assign uart_arready = arready;
-assign arid = sel_rd[0] ? dc_arid : sel_rd[1] ? uart_arid : sel_rd[2] ? ic_arid : 4'd0;
-assign araddr = sel_rd[0] ? dc_araddr : sel_rd[1] ? uart_araddr : sel_rd[2] ? ic_araddr : 32'd0;
+assign dma_arready = arready;
+assign arid = sel_rd[0] ? dc_arid : sel_rd[1] ? uart_arid : sel_rd[2] ? ic_arid : sel_rd[3] ? dma_arid : 4'd0;
+assign araddr = sel_rd[0] ? dc_araddr : sel_rd[1] ? uart_araddr : sel_rd[2] ? ic_araddr : sel_rd[3] ? dma_araddr : 32'd0;
     // read data
 assign ic_rvalid = rvalid;
 assign dc_rvalid = rvalid;
 assign uart_rvalid = rvalid;
-assign rready = sel_rd[0] ? dc_rready : sel_rd[1] ? uart_rready : sel_rd[2] ? ic_rready : 1'b0;
+assign dma_rvalid = rvalid;
+assign rready = sel_rd[0] ? dc_rready : sel_rd[1] ? uart_rready : sel_rd[2] ? ic_rready : sel_rd[3] ? dma_rready : 1'b0;
 assign ic_rid = rid;
 assign dc_rid = rid;
 assign uart_rid = rid;
+assign dma_rid = rid;
 assign ic_rdata = rdata;
 assign dc_rdata = rdata;
 assign uart_rdata = rdata;
+assign dma_rdata = rdata;
 assign ic_rlast = rlast;
 assign dc_rlast = rlast;
 assign uart_rlast = rlast;
+assign dma_rlast = rlast;
 
 // arbitors
-arbitor3 write_arb (
+arbitor4 write_arb (
 	.clk(clk),
 	.rst_n(rst_n),
 	.req0(dc_req_wt),
 	.req1(uart_req_wt),
 	.req2(1'b0),
+	.req3(dma_req_wt),
 	.gnt0(dc_gnt_wt),
 	.gnt1(uart_gnt_wt),
 	.gnt2(gnt2_wt),
+	.gnt3(dma_gnt_wt),
 	.sel(sel_wt),
 	.finish0(dc_finish_wresp),
 	.finish1(uart_finish_wresp),
-	.finish2(1'b0)
+	.finish2(1'b0),
+	.finish3(dma_finish_wresp)
 	);
 
-arbitor3 read_arb (
+arbitor4 read_arb (
 	.clk(clk),
 	.rst_n(rst_n),
 	.req0(dc_req_rd),
 	.req1(uart_req_rd),
 	.req2(ic_req_rd),
+	.req3(dma_req_rd),
 	.gnt0(dc_gnt_rd),
 	.gnt1(uart_gnt_rd),
 	.gnt2(ic_gnt_rd),
+	.gnt3(dma_gnt_rd),
 	.sel(sel_rd),
 	.finish0(dc_finish_mrd),
 	.finish1(uart_finish_mrd),
-	.finish2(ic_finish_mrd)
+	.finish2(ic_finish_mrd),
+	.finish3(dma_finish_mrd)
 	);
 
 endmodule

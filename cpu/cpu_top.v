@@ -50,12 +50,24 @@ module cpu_top
 	output dma_io_radr_en,
 	input [31:0] dma_io_rdata_in,
 
-    output ibus_ren,
-    output [19:2] ibus_radr,
-    input [15:0] ibus32_rdata,
-    output ibus_wen,
-    output [19:2] ibus_wadr,
-    output [15:0] ibus32_wdata,
+	input dma_io_we_u,
+	input [15:2] dma_io_wadr_u,
+	input [31:0] dma_io_wdata_u,
+	input [15:2] dma_io_radr_u,
+	input dma_io_radr_en_u,
+	output [31:0] dma_io_rdata_in_u_fin,
+
+	output dma_wstart_rq,
+	output [31:0] dma_win_addr,
+	output [127:0] dma_in_wdata,
+	output [15:0] dma_in_mask,
+	input dma_finish_wresp,
+	output dma_rstart_rq,
+	output [31:0] dma_rin_addr,
+	input [127:0] dma_rdat_m_data,
+	input [15:0] dma_rdat_m_mask,
+	input dma_rdat_m_valid,
+	input dma_finish_mrd,
 
 	output icr_start_rq,
 	output [31:0] ic_rin_addr,
@@ -236,24 +248,37 @@ wire post_jump_cmd_cond;
 //wire csr_meie;
 //wire csr_msie;
 
-// under construction
-wire [SWIDTH-3:0] scr_ram_radr_all = 0;
-wire [127:0] scr_ram_rdata_all;
-wire scr_ram_ren_all = 1'b0;
-wire [SWIDTH-3:0] scr_ram_wadr_all = 0;
-wire [127:0] scr_ram_wdata_all = 128'd0;
-wire scr_ram_wen_all = 1'b0;
 
+// io bus for cpu
+wire dma_io_we_c; // output
+wire [15:2] dma_io_wadr_c; // output
+wire [31:0] dma_io_wdata_c; // output
+wire [15:2] dma_io_radr_c; // output
+wire dma_io_radr_en_c; // output
 
-// temp fixed
-wire dma_we_ma;
-wire [15:2] dataram_wadr_ma;
-wire [15:0] dataram_wdata_ma;
-wire dma_re_ma;
-wire [15:2] dataram_radr_ma;
-wire [15:0] dataram_rdata_wb = 128'd0;
+// io bus logics
+assign dma_io_we = dma_io_we_c | dma_io_we_u;
+assign dma_io_wadr = dma_io_we_u ? dma_io_wadr_u : dma_io_wadr_c;
+assign dma_io_wdata = dma_io_we_u ? dma_io_wdata_u : dma_io_wdata_c;
+assign dma_io_radr_en = dma_io_radr_en_c | dma_io_radr_en_u;
+assign dma_io_radr = dma_io_radr_en_u ? dma_io_radr_u : dma_io_radr_c;
 
 wire [31:0] dma_io_rdata;
+assign dma_io_rdata_in_u_fin = dma_io_rdata;
+
+// temp fixed
+//wire dma_we_ma;
+//wire [15:2] dataram_wadr_ma;
+//wire [15:0] dataram_wdata_ma;
+//wire dma_re_ma;
+//wire [15:2] dataram_radr_ma;
+//wire [15:0] dataram_rdata_wb = 128'd0;
+wire [SWIDTH-3:0] scr_ram_radr_all; // output
+wire [127:0] scr_ram_rdata_all; // input
+wire scr_ram_ren_all; // output
+wire [SWIDTH-3:0] scr_ram_wadr_all; // output
+wire [127:0] scr_ram_wdata_all; // output
+wire scr_ram_wen_all; // output
 
 // for M arch support
 `ifdef SUPPORT_M
@@ -727,12 +752,19 @@ ma_stage #(.DWIDTH(DWIDTH), .SWIDTH(SWIDTH)) ma_stage (
 	.scr_read_sel(scr_read_sel),
 	//.d_ram_wen(d_ram_wen),
 	//.d_read_sel(d_read_sel),
-	.dma_io_we(dma_io_we),
-	.dma_io_wadr(dma_io_wadr),
-	.dma_io_wdata(dma_io_wdata),
-	.dma_io_radr(dma_io_radr),
-	.dma_io_radr_en(dma_io_radr_en),
+	.dma_io_we(dma_io_we_c),
+	.dma_io_wadr(dma_io_wadr_c),
+	.dma_io_wdata(dma_io_wdata_c),
+	.dma_io_radr(dma_io_radr_c),
+	.dma_io_radr_en(dma_io_radr_en_c),
 	.dma_io_rdata(dma_io_rdata),
+	.scr_ram_radr_all(scr_ram_radr_all),
+	.scr_ram_rdata_all(scr_ram_rdata_all),
+	.scr_ram_ren_all(scr_ram_ren_all),
+	.scr_ram_wadr_all(scr_ram_wadr_all),
+	.scr_ram_wdata_all(scr_ram_wdata_all),
+	.scr_ram_wen_all(scr_ram_wen_all),
+
 	//.dma_we_ma(dma_we_ma),
 	//.dataram_wadr_ma(dataram_wadr_ma),
 	//.dataram_wdata_ma(dataram_wdata_ma),
@@ -897,28 +929,33 @@ ilu_stage #(.IWIDTH(IWIDTH)) ilu_stage (
 	.rst_pipe(rst_pipe)
 	);
 
-dma #(.DWIDTH(DWIDTH)) dma (
+dma #(.SWIDTH(SWIDTH)) dma (
 	.clk(clk),
 	.rst_n(rst_n),
 	.dma_io_we(dma_io_we),
 	.dma_io_wadr(dma_io_wadr),
 	.dma_io_wdata(dma_io_wdata),
 	.dma_io_radr(dma_io_radr),
+	.dma_io_radr_en(dma_io_radr_en),
 	.dma_io_rdata_in(dma_io_rdata_in),
 	.dma_io_rdata(dma_io_rdata),
-	.dma_we_ma(dma_we_ma),
-	.dataram_wadr_ma(dataram_wadr_ma),
-	.dataram_wdata_ma(dataram_wdata_ma),
-	.dma_re_ma(dma_re_ma),
-	.dataram_radr_ma(dataram_radr_ma),
-	.dataram_rdata_wb(dataram_rdata_wb),
-	.ibus_ren(ibus_ren),
-	.ibus_radr(ibus_radr),
-	.ibus32_rdata(ibus32_rdata),
-	.ibus_wen(ibus_wen),
-	.ibus_wadr(ibus_wadr),
-	.ibus32_wdata(ibus32_wdata),
-	.rst_pipe(rst_pipe)
+	.scr_ram_radr_all(scr_ram_radr_all),
+	.scr_ram_rdata_all(scr_ram_rdata_all),
+	.scr_ram_ren_all(scr_ram_ren_all),
+	.scr_ram_wadr_all(scr_ram_wadr_all),
+	.scr_ram_wdata_all(scr_ram_wdata_all),
+	.scr_ram_wen_all(scr_ram_wen_all),
+	.dma_wstart_rq(dma_wstart_rq),
+	.dma_win_addr(dma_win_addr),
+	.dma_in_wdata(dma_in_wdata),
+	.dma_in_mask(dma_in_mask),
+	.dma_finish_wresp(dma_finish_wresp),
+	.dma_rstart_rq(dma_rstart_rq),
+	.dma_rin_addr(dma_rin_addr),
+	.dma_rdat_m_data(dma_rdat_m_data),
+	.dma_rdat_m_mask(dma_rdat_m_mask),
+	.dma_rdat_m_valid(dma_rdat_m_valid),
+	.dma_finish_mrd(dma_finish_mrd)
 	);
 
 endmodule

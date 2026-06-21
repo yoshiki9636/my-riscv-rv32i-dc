@@ -30,6 +30,7 @@ module wdata_chan_subo (
 
 `define WDAT_SIDLE 3'b000
 `define WDAT_SBINP 3'b001
+`define WDAT_NRQWT 3'b101
 `define WDAT_SLST1 3'b010
 `define WDAT_SBUSY 3'b011
 `define WDAT_SDEFO 3'b111
@@ -46,11 +47,16 @@ input sqfull_1;
 begin
     case(wdat_s_current)
 		`WDAT_SIDLE: begin
-    		case(next_srq)
-				1'b1: wdat_s_decode = `WDAT_SBINP;
-				1'b0: wdat_s_decode = `WDAT_SIDLE;
+    		casex({next_srq,sqfull_1})
+				2'b0x: wdat_s_decode = `WDAT_SIDLE;
+				2'b10: wdat_s_decode = `WDAT_SBINP;
+				2'b11: wdat_s_decode = `WDAT_NRQWT;
 				default: wdat_s_decode = `WDAT_SDEFO;
     		endcase
+		end
+		`WDAT_NRQWT: begin
+			if (sqfull_1 == 0) wdat_s_decode = `WDAT_SBINP;
+			else wdat_s_decode = `WDAT_NRQWT;
 		end
 		`WDAT_SBINP: begin
     		casex({wvalid, wlast, sqfull_1, next_srq})

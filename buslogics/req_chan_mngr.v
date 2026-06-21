@@ -9,7 +9,7 @@
  */
 
 module req_chan_mngr
-    #(parameter REQC_M_ID = 2'b00)
+    #(parameter REQC_M_ID = 3'b000)
     (
 	input clk,
 	input rst_n,
@@ -149,7 +149,8 @@ sfifo
     );
 
 assign a_addr = out_addr;
-assign a_id = { REQC_M_ID, out_id_data[145:144] };
+//assign a_id = { REQC_M_ID, out_id_data[145:144] };
+assign a_id = { REQC_M_ID, out_id_data[144] };
 assign next_mask = out_id_data[143:128];
 assign next_data = out_id_data[127:0];
 assign next_id = a_id;

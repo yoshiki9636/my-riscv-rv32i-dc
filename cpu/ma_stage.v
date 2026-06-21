@@ -156,7 +156,7 @@ wire [3:0] st_we = (ldst_code_ma == 3'b000) ? be_byte :
 
 //wire [3:0] st_we_mem = st_we & { 4{ (rd_data_ma[31:30] != 2'b11) }};
 wire [3:0] st_we_mem = st_we & { 4{ (rd_data_ma[31] == 1'b0) }};
-wire [3:0] st_we_scr_mem = st_we & { 4{ (0d_data_ma[31:30] == 2'b10) }};
+wire [3:0] st_we_scr_mem = st_we & { 4{ (rd_data_ma[31:30] == 2'b10) }};
 assign dma_io_we = (&st_we) & (rd_data_ma[31:30] == 2'b11);
 assign dma_io_wadr = rd_data_ma[15:2];
 assign dma_io_wdata = st_wdata;
