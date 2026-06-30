@@ -365,14 +365,17 @@ end
 // mepc
 // capture PC when ecall occured
 wire [31:2] sel_pc_ex;
+wire [31:2] sel_pc_ex_2;
 wire [31:2] sel_pc_id;
 
 always @ ( posedge clk or negedge rst_n) begin   
 	if (~rst_n) begin
 		csr_mepc <= 30'd0;
 	end
+	else if ( ecall_condition_ex | g_exception ) begin
+		csr_mepc <= sel_pc_ex_2;
+	end
 	else if ( m_interrupt ) begin
-	//else if ( g_exception ) begin
 		csr_mepc <= sel_pc_ex;
 	end
 	else if ((~stall)&(cmd_csr_ex)&(adr_mepc)) begin
@@ -395,9 +398,9 @@ wire interrupt_bit = g_interrupt | frc_cntr_val_leq;
                           //ecall_condition_ex ?  31'd3 : 31'd0;
 
 assign mcause_code = g_interrupt ? 6'd11 :
-                     illegal_ops_ex ? 6'd2 :
                      frc_cntr_val_leq ? 6'd7 :
                      ecall_condition_ex ?  6'd11 :
+                     illegal_ops_ex ? 6'd2 :
                      //cmd_ebreak_ex ?  6'd3 :
                      6'h3f;
 
@@ -508,7 +511,9 @@ end
 // post_jump_cmd_cond : 2 empty slots after jump command 
 	//input cmd_mret_ex,
 //assign sel_pc_ex = post_jump_cmd_cond ? jmp_adr_ex : pc_ex; // ayashii
+//assign sel_pc_ex = post_jump_cmd_cond ? post_pc_ex : pc_ex + 30'd1; // ayashii
 assign sel_pc_ex = post_jump_cmd_cond ? post_pc_ex : pc_ex; // ayashii
+assign sel_pc_ex_2 = pc_ex;
 //assign sel_pc_ex = post_jump_cmd_cond ? post_pc_ex :
                    //jmp_condition_ex ? jmp_adr_ex : pc_ex; // zantei
 //assign sel_pc_id = cmd_mret_ex ? csr_mepc_ex :
