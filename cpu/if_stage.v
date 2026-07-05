@@ -382,20 +382,30 @@ always @ (posedge clk or negedge rst_n) begin
 end
 
 // post cump command condition
+wire jump_only = jmp_condition_ex | mret_condition_ex | fencei_cond;
+
 reg post_jump_cmd_c;
+reg jump_only_c1;
+reg jump_only_c2;
 
 always @ (posedge clk or negedge rst_n) begin   
 	if (~rst_n) begin
         post_jump_cmd_c <= 1'b0;
         post_jump_cmd_c2 <= 1'b0;
+        jump_only_c1 <= 1'b0;
+        jump_only_c2 <= 1'b0;
 	end
 	else begin
+        //post_jump_cmd_c <= jump_cmd_cond;
         post_jump_cmd_c <= jump_cmd_cond;
         post_jump_cmd_c2 <= post_jump_cmd_c;
+        jump_only_c1 <= jump_only;
+        jump_only_c2 <= jump_only_c1;
 	end
 end
 
-assign post_jump_cmd_cond = post_jump_cmd_c | post_jump_cmd_c2;
+assign post_jump_cmd_cond = jump_only_c1 | jump_only_c2;
+//assign post_jump_cmd_cond = post_jump_cmd_c | post_jump_cmd_c2;
 
 // patch for ic_stall & dc_stall
 

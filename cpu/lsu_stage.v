@@ -363,7 +363,8 @@ always @ (posedge clk or negedge rst_n) begin
 end
 
 assign dcflush_running = dcflush_cntr_ok | dcflush_cntr_ok_dly;
-assign fencei_dcflush_end = ~dcflush_cntr_ok & dcflush_cntr_ok_dly;
+//assign fencei_dcflush_end = ~dcflush_cntr_ok & dcflush_cntr_ok_dly;
+assign fencei_dcflush_end = ~dcflush_cntr_ok_dly & dcflush_cntr_ok_dly2;
 
 assign dcflush_nohit_ent = (dc_miss_current == `DCMS_FLSH) & (dc_tag_empty_ma | ~dc_cache_dirty_ma);
 

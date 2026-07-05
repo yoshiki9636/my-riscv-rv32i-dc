@@ -372,9 +372,9 @@ always @ ( posedge clk or negedge rst_n) begin
 	if (~rst_n) begin
 		csr_mepc <= 30'd0;
 	end
-	else if ( ecall_condition_ex | g_exception ) begin
-		csr_mepc <= sel_pc_ex_2;
-	end
+	//else if ( ecall_condition_ex | g_exception ) begin
+		//csr_mepc <= sel_pc_ex_2;
+	//end
 	else if ( m_interrupt ) begin
 		csr_mepc <= sel_pc_ex;
 	end
@@ -508,7 +508,7 @@ always @ ( posedge clk or negedge rst_n) begin
 		//post_pc_ex <= jmp_condition_ex ? jmp_adr_ex : pc_ex;
 end
 
-// post_jump_cmd_cond : 2 empty slots after jump command 
+// post_jump_cmd_cond : 1 empty slot after jump command 
 	//input cmd_mret_ex,
 //assign sel_pc_ex = post_jump_cmd_cond ? jmp_adr_ex : pc_ex; // ayashii
 //assign sel_pc_ex = post_jump_cmd_cond ? post_pc_ex : pc_ex + 30'd1; // ayashii
