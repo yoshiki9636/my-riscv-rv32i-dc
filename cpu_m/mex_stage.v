@@ -334,7 +334,8 @@ wire [31:0] final_div_result = divide_by_zero_lat ? 32'hffff_ffff :
 wire sing_ptn_xor = sign_rem1_mx1 ^ sign_rem2_mx1;
 
 wire [31:0] onemore_dividend_mex1 = dividend_mex1 - preserved_divisor;
-wire [31:0] rem_tmp = sing_ptn_xor ? onemore_dividend_mex1 : dividend_mex1;
+//wire [31:0] rem_tmp = sing_ptn_xor ? onemore_dividend_mex1 : dividend_mex1; // floor
+wire [31:0] rem_tmp = dividend_mex1; // truncation
 wire [31:0] inv_rem_tmp = ( ~rem_tmp ) + 32'd1;
 wire [31:0] rem_tmp2 = sign_rem1_mx1 ? inv_rem_tmp : rem_tmp;
 wire signed [31:0] rem_result = $signed( rem_tmp2 ) >>> $signed( lbits_rs1_mex1 );
