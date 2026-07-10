@@ -180,11 +180,13 @@ wire [31:0] rs2_sel;
 // for A instructions
 //assign jmp_purge_ex = jmp_condition_ex | ecall_condition_ex | mret_condition_ex | interrupt_condition_ex | timer_condition_ex | fencei_cond;
 
-wire intexp_purge_ex = interrupt_condition_ex | timer_condition_ex;
+wire intexp_purge_ex = interrupt_condition_ex | timer_condition_ex | g_exception;
+
+reg jmp_purge_ma2;
 
 `ifdef SUPPORT_A
 // lr.w cmd
-wire cmd_lrw_purge = cmd_lrw_ex  & ~intexp_purge_ex & ~jmp_purge_ma; 
+wire cmd_lrw_purge = cmd_lrw_ex  & ~intexp_purge_ex & ~jmp_purge_ma & ~jmp_purge_ma2; 
 
 // lr.w / sc.w
 reg resv_flg;
@@ -213,27 +215,27 @@ end
 // lr.w conditions
 wire [31:0] rd_data_ex_pre;
 
-assign reset_flg_cond = (cmd_scw_ex | (cmd_st_ex & (resv_adr[29:2] == rd_data_ex_pre[29:2]))) & ~intexp_purge_ex & ~jmp_purge_ma;
+assign reset_flg_cond = (cmd_scw_ex | (cmd_st_ex & (resv_adr[29:2] == rd_data_ex_pre[29:2]))) & ~intexp_purge_ex & ~jmp_purge_ma & ~jmp_purge_ma2;
 
 // sc.w conditions
-wire success_scw = cmd_scw_ex & resv_flg & ~intexp_purge_ex & ~intexp_purge_ex & ~jmp_purge_ma;
+wire success_scw = cmd_scw_ex & resv_flg & ~intexp_purge_ex & ~intexp_purge_ex & ~jmp_purge_ma & ~jmp_purge_ma2;
 //wire cmd_scw_hit = success_scw & (resv_adr[31:2] == rs1_sel[31:2]);
 wire cmd_scw_hit = success_scw & (resv_adr[29:2] == rd_data_ex_pre[29:2]);
 
 // sc.w write back to register
-wire cmd_scw_purge = cmd_scw_ex & ~intexp_purge_ex & ~jmp_purge_ma; 
+wire cmd_scw_purge = cmd_scw_ex & ~intexp_purge_ex & ~jmp_purge_ma & ~jmp_purge_ma2; 
 
 // amo instructions
 
-wire cmd_amoswapw_pur = ~intexp_purge_ex & ~jmp_purge_ma & cmd_amoswapw_ex;
-wire cmd_amoaddw_pur = ~intexp_purge_ex & ~jmp_purge_ma & cmd_amoaddw_ex;
-wire cmd_amoxorw_pur = ~intexp_purge_ex & ~jmp_purge_ma & cmd_amoxorw_ex;
-wire cmd_amoandw_pur = ~intexp_purge_ex & ~jmp_purge_ma & cmd_amoandw_ex;
-wire cmd_amoorw_pur = ~intexp_purge_ex & ~jmp_purge_ma & cmd_amoorw_ex;
-wire cmd_amominw_pur = ~intexp_purge_ex & ~jmp_purge_ma & cmd_amominw_ex;
-wire cmd_amomaxw_pur = ~intexp_purge_ex & ~jmp_purge_ma & cmd_amomaxw_ex;
-wire cmd_amominuw_pur = ~intexp_purge_ex & ~jmp_purge_ma & cmd_amominuw_ex;
-wire cmd_amomaxuw_pur = ~intexp_purge_ex & ~jmp_purge_ma & cmd_amomaxuw_ex;
+wire cmd_amoswapw_pur = ~intexp_purge_ex & ~jmp_purge_ma & ~jmp_purge_ma2 & cmd_amoswapw_ex;
+wire cmd_amoaddw_pur = ~intexp_purge_ex & ~jmp_purge_ma & ~jmp_purge_ma2 & cmd_amoaddw_ex;
+wire cmd_amoxorw_pur = ~intexp_purge_ex & ~jmp_purge_ma & ~jmp_purge_ma2 & cmd_amoxorw_ex;
+wire cmd_amoandw_pur = ~intexp_purge_ex & ~jmp_purge_ma & ~jmp_purge_ma2 & cmd_amoandw_ex;
+wire cmd_amoorw_pur = ~intexp_purge_ex & ~jmp_purge_ma & ~jmp_purge_ma2 & cmd_amoorw_ex;
+wire cmd_amominw_pur = ~intexp_purge_ex & ~jmp_purge_ma & ~jmp_purge_ma2 & cmd_amominw_ex;
+wire cmd_amomaxw_pur = ~intexp_purge_ex & ~jmp_purge_ma & ~jmp_purge_ma2 & cmd_amomaxw_ex;
+wire cmd_amominuw_pur = ~intexp_purge_ex & ~jmp_purge_ma & ~jmp_purge_ma2 & cmd_amominuw_ex;
+wire cmd_amomaxuw_pur = ~intexp_purge_ex & ~jmp_purge_ma & ~jmp_purge_ma2 & cmd_amomaxuw_ex;
 
 wire amo_cmds = cmd_amoswapw_pur | cmd_amoaddw_pur | cmd_amoxorw_pur | cmd_amoandw_pur | cmd_amoorw_pur | cmd_amominw_pur | cmd_amomaxw_pur | cmd_amominuw_pur | cmd_amomaxuw_pur;
 
@@ -434,15 +436,15 @@ wire [31:0] jalr_ofs = {{ 20{ jalr_ofs_ex[11] }}, jalr_ofs_ex };
 wire [31:0] br_ofs = {{ 19{ br_ofs_ex[12] }}, br_ofs_ex, 1'b0 };
 
 `ifdef SUPPORT_A
-assign cmd_ld_pur = (cmd_ld_ex | cmd_lrw_ex | amo_ld_cmd) & ~intexp_purge_ex & ~jmp_purge_ma;
-assign cmd_st_pur = (cmd_st_ex | amo_st_cmd) & ~intexp_purge_ex & ~jmp_purge_ma;
+assign cmd_ld_pur = (cmd_ld_ex | cmd_lrw_ex | amo_ld_cmd) & ~intexp_purge_ex & ~jmp_purge_ma & ~jmp_purge_ma2;
+assign cmd_st_pur = (cmd_st_ex | amo_st_cmd) & ~intexp_purge_ex & ~jmp_purge_ma & ~jmp_purge_ma2;
 `else // SUPPORT_A
-wire cmd_ld_pur = cmd_ld_ex & ~intexp_purge_ex & ~jmp_purge_ma;
-wire cmd_st_pur = cmd_st_ex & ~intexp_purge_ex & ~jmp_purge_ma;
+wire cmd_ld_pur = cmd_ld_ex & ~intexp_purge_ex & ~jmp_purge_ma & ~jmp_purge_ma2;
+wire cmd_st_pur = cmd_st_ex & ~intexp_purge_ex & ~jmp_purge_ma & ~jmp_purge_ma2;
 `endif // SUPPORT_A
 
 // csr cmd need to purge
-wire cmd_csr_pur = cmd_csr_ex & ~intexp_purge_ex & ~jmp_purge_ma;
+wire cmd_csr_pur = cmd_csr_ex & ~intexp_purge_ex & ~jmp_purge_ma & ~jmp_purge_ma2;
 
 // forwarding selector
 
@@ -791,7 +793,6 @@ wire jmp_purge_ex_post =  (stall_ldst_0) ? jmp_purge_roll : jmp_purge_ex;
 // fence.i
 // (1) purge I$
 // (2) jump to next instruction for reload new instructions
-reg jmp_purge_ma2;
 
 wire fencei_condition_ex_pre = ~intexp_purge_ex & ~jmp_purge_ma & ~jmp_purge_ma2 & cmd_fencei_ex;
 assign fencei_condition_ex = ~stall & fencei_condition_ex_pre;
@@ -828,7 +829,9 @@ assign timer_condition_ex = ~stall & frc_cntr_val_leq_1shot & csr_rmie;
 // purge signal
 assign jmp_purge_ex = jmp_condition_ex | ecall_condition_ex | mret_condition_ex | interrupt_condition_ex | timer_condition_ex | fencei_cond;
 
-assign wbk_rd_reg_tmp = wbk_rd_reg_ex & ~intexp_purge_ex & ~jmp_purge_ma & ~illegal_ops_ex;
+wire no_wbk_cmds = cmd_st_ex | cmd_br_ex | ecall_condition_ex | mret_condition_ex | cmd_fencei_ex;
+
+assign wbk_rd_reg_tmp = wbk_rd_reg_ex & ~no_wbk_cmds & ~intexp_purge_ex & ~jmp_purge_ma & ~jmp_purge_ma2 & ~illegal_ops_ex;
 //assign wbk_rd_reg_tmp = wbk_rd_reg_ex & ~jmp_purge_ma & ~illegal_ops_ex;
 //assign cmd_st_tmp = cmd_st_ex & ~jmp_purge_ma;
 
