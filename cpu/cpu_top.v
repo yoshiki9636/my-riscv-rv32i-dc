@@ -300,6 +300,7 @@ wire m_cmd_finished; // output
 //wire divide_by_zero; // output // not used in risc-v
 wire div_result_valid;
 wire [4:0] div_rd_adr_ex;
+wire div_stall_start; // output
 wire div_stall; // output
 wire div_stall_fin; // output
 wire div_stall_fin2; // output
@@ -655,6 +656,8 @@ ex_stage ex_stage (
 	.m_cmd_finished(m_cmd_finished),
 	.div_result_valid(div_result_valid),
 	.div_rd_adr_ex(div_rd_adr_ex),
+	.div_stall_start(div_stall_start),
+	.div_stall_dly(div_stall_dly),
 `endif // SUPPORT_M
 `ifdef SUPPORT_A
 	.cmd_lrw_ex(cmd_lrw_ex),
@@ -708,6 +711,7 @@ mex_stage mex_stage (
 	//.divide_by_zero(divide_by_zero), // not used in risc-v
 	.div_result_valid(div_result_valid),
 	.div_rd_adr_ex(div_rd_adr_ex),
+	.div_stall_start(div_stall_start),
 	.div_stall(div_stall),
 	.div_stall_fin(div_stall_fin),
 	.div_stall_fin2(div_stall_fin2),

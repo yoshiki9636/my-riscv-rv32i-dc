@@ -256,6 +256,7 @@ always @ (posedge clk or negedge rst_n) begin
 end
 */
 
+reg post_jump_cmd_c;
 reg post_jump_cmd_c2;
 reg stall_ld_ex_smpl;
 
@@ -264,7 +265,7 @@ always @ (posedge clk or negedge rst_n) begin
 		stall_ld_ex_smpl <= 1'b0;
 	else if (~ic_stall)
 		stall_ld_ex_smpl <= 1'b0;
-	else if (ic_stall & ~ic_stall_dly & ~post_jump_cmd_c2 & stall_ld_ex)
+	else if (ic_stall & ~ic_stall_dly & ~post_jump_cmd_c & ~post_jump_cmd_c2 & stall_ld_ex)
 		stall_ld_ex_smpl <= 1'b1;
 end
 
@@ -384,21 +385,27 @@ end
 // post cump command condition
 wire jump_only = jmp_condition_ex | mret_condition_ex | fencei_cond;
 
-reg post_jump_cmd_c;
+always @ (posedge clk or negedge rst_n) begin   
+	if (~rst_n) begin
+        post_jump_cmd_c <= 1'b0;
+        post_jump_cmd_c2 <= 1'b0;
+	end
+	else begin
+        post_jump_cmd_c <= jump_cmd_cond;
+        post_jump_cmd_c2 <= post_jump_cmd_c;
+	end
+end
+
 reg jump_only_c1;
 reg jump_only_c2;
 
 always @ (posedge clk or negedge rst_n) begin   
 	if (~rst_n) begin
-        post_jump_cmd_c <= 1'b0;
-        post_jump_cmd_c2 <= 1'b0;
         jump_only_c1 <= 1'b0;
         jump_only_c2 <= 1'b0;
 	end
-	else begin
-        //post_jump_cmd_c <= jump_cmd_cond;
-        post_jump_cmd_c <= jump_cmd_cond;
-        post_jump_cmd_c2 <= post_jump_cmd_c;
+	//else if (~stall & ~ic_stall) begin
+	else if (~ic_stall_dly) begin
         jump_only_c1 <= jump_only;
         jump_only_c2 <= jump_only_c1;
 	end

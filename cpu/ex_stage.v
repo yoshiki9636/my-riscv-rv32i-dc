@@ -132,6 +132,8 @@ module ex_stage(
 	input m_cmd_finished,
 	input div_result_valid,
 	input [4:0] div_rd_adr_ex,
+	input div_stall_start,
+	input div_stall_dly,
 `endif // SUPPORT_M
 `ifdef SUPPORT_A
 	input cmd_lrw_ex,
@@ -579,6 +581,10 @@ csr_array csr_array(
 	.jmp_condition_ex(jmp_condition_ex),
 	.fencei_condition_ex(fencei_cond),
 	.mret_condition_ex(mret_condition_ex),
+`ifdef SUPPORT_M
+	.div_stall_start(div_stall_start),
+	.div_stall_dly(div_stall_dly),
+`endif // SUPPORT_M
 	.stall(stall),
 	.csr_radr_en_mon(csr_radr_en_mon), // new
 	.csr_radr_mon(csr_radr_mon), // new

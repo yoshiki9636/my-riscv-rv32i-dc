@@ -8,6 +8,8 @@
  * @version		0.1
  */
 
+`define SUPPORT_M
+
 module csr_array(
 	input clk,
 	input rst_n,
@@ -47,6 +49,10 @@ module csr_array(
 	input jmp_condition_ex,
 	input fencei_condition_ex,
 	input mret_condition_ex,
+`ifdef SUPPORT_M
+	input div_stall_start,
+	input div_stall_dly,
+`endif // SUPPORT_M
 	input stall,
     input csr_radr_en_mon, // new
     input [11:0] csr_radr_mon, // new
@@ -506,13 +512,23 @@ always @ ( posedge clk or negedge rst_n) begin
 	else if ( jmp_condition_ex | mret_condition_ex | fencei_condition_ex )
 		post_pc_ex <= jmp_adr_if;
 		//post_pc_ex <= jmp_condition_ex ? jmp_adr_ex : pc_ex;
+`ifdef SUPPORT_M
+	else if ( div_stall_start )
+		post_pc_ex <= pc_ex;
+		//post_pc_ex <= jmp_condition_ex ? jmp_adr_ex : pc_ex;
+`endif // SUPPORT_M
 end
 
 // post_jump_cmd_cond : 1 empty slot after jump command 
 	//input cmd_mret_ex,
 //assign sel_pc_ex = post_jump_cmd_cond ? jmp_adr_ex : pc_ex; // ayashii
 //assign sel_pc_ex = post_jump_cmd_cond ? post_pc_ex : pc_ex + 30'd1; // ayashii
+`ifdef SUPPORT_M
+assign sel_pc_ex = (post_jump_cmd_cond | div_stall_dly) ? post_pc_ex : pc_ex; // ayashii
+`else // SUPPORT_M
 assign sel_pc_ex = post_jump_cmd_cond ? post_pc_ex : pc_ex; // ayashii
+`endif // SUPPORT_M
+
 assign sel_pc_ex_2 = pc_ex;
 //assign sel_pc_ex = post_jump_cmd_cond ? post_pc_ex :
                    //jmp_condition_ex ? jmp_adr_ex : pc_ex; // zantei

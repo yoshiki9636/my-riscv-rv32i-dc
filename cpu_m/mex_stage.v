@@ -37,6 +37,7 @@ module mex_stage(
 	output div_result_valid,
 	output reg [4:0] div_rd_adr_ex,
 	// to ILU
+	output div_stall_start,
 	output div_stall,
 	//output div_stall_1shot,
 	output div_stall_fin,
@@ -367,7 +368,8 @@ assign m_result_ex = mul_cmds_lat ? mult_sel_lat :
 assign m_cmd_finished = mul_cmds_lat | div_stat_valid;
 
 //assign div_stall = div_start | div_ers_stat | (cntr[5] == 1'b0);
-assign div_stall = mul_cmds | mul_cmds_int | cmd_div_decode_ex | cmd_rem_decode_ex | cmd_div_rem_decode_lat | (cntr[5] == 1'b0);
+assign div_stall_start = mul_cmds | cmd_div_decode_ex | cmd_rem_decode_ex;
+assign div_stall = div_stall_start | mul_cmds_int | cmd_div_rem_decode_lat | (cntr[5] == 1'b0);
 
 //assign div_stall = (cntr[5] == 1'b0);
 //assign div_stall_1shot = div_start;
