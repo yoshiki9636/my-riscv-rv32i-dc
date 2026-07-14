@@ -96,6 +96,24 @@ assign jmp_adr_if = mret_condition_ex ? csr_mepc_ex :
                     fencei_cond ? pc_id - 30'd1 : // retry for self modify code
                     cmd_sret_ex ? csr_sepc_ex : jmp_adr_ex;
 
+reg keep_jmp_between;
+reg [31:2] pc_if_between;
+always @ (posedge clk or negedge rst_n) begin
+	if (~rst_n)
+		keep_jmp_between <= 1'b0;
+	else if (jmp_cond)
+		keep_jmp_between <= 1'b0;
+	else if (jump_between_stall)
+		keep_jmp_between <= 1'b1;
+end
+
+always @ (posedge clk or negedge rst_n) begin
+	if (~rst_n)
+		pc_if_between <= 30'd0;
+	else if (jump_between_stall)
+		pc_if_between <= jmp_adr;
+end
+
 reg use_collision;
 reg [31:2] pc_if_pre;
 
@@ -105,8 +123,10 @@ always @ (posedge clk or negedge rst_n) begin
 	else if (pc_start)
 		pc_if_pre <= start_adr_lat;
 	//else if (interrupt_condition_ex | timer_condition_ex)
-	else if (interrupt_condition_ex | timer_condition_ex | jump_between_stall)
+	else if (interrupt_condition_ex | timer_condition_ex)
 		pc_if_pre <= jmp_adr;
+	else if (keep_jmp_between)
+		pc_if_pre <= pc_if_between;
 	else if (stall | stall_ld)
 		pc_if_pre <= pc_if_pre;	
 	else if (jmp_cond)
@@ -124,8 +144,10 @@ always @ (posedge clk or negedge rst_n) begin
         pc_if_roll <= 30'd0;
 	else if (pc_start)
 		pc_if_roll <= start_adr_lat;
-	else if (interrupt_condition_ex | timer_condition_ex | jump_between_stall)
+	else if (interrupt_condition_ex | timer_condition_ex)
         pc_if_roll <= jmp_adr;
+	else if (keep_jmp_between)
+		pc_if_roll <= pc_if_between;
 	else if (jmp_cond)
         pc_if_roll <= jmp_adr;
 	else if (~ic_stall)
