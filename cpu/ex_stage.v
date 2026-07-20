@@ -132,6 +132,8 @@ module ex_stage(
 	input m_cmd_finished,
 	input div_result_valid,
 	input [4:0] div_rd_adr_ex,
+	input div_stall_start,
+	input div_stall_dly,
 `endif // SUPPORT_M
 `ifdef SUPPORT_A
 	input cmd_lrw_ex,
@@ -156,6 +158,11 @@ module ex_stage(
 	// to ID
 	output reg jmp_purge_ma,
 	output jmp_purge_ex,
+	// FPGA FIX (2026-07-19): fence.i window purge - see fencei_wb_purge
+	// block below.  Exported so cpu_top can also cancel an in-flight
+	// mul/div started by the shadowed instruction (mex_stage
+	// intexp_cancel_mex).
+	output reg fencei_wb_purge,
 	// stall
 	//input dc_stall_1shot_re,
 	input ic_stall,
@@ -177,11 +184,46 @@ wire [31:0] rs2_sel;
 `endif // SUPPORT_A
 `endif // SUPPORT_M
 
-`ifdef SUPPORT_A
 // for A instructions
+//assign jmp_purge_ex = jmp_condition_ex | ecall_condition_ex | mret_condition_ex | interrupt_condition_ex | timer_condition_ex | fencei_cond;
 
+wire intexp_purge_ex = interrupt_condition_ex | timer_condition_ex | g_exception;
+
+// FPGA FIX (2026-07-19): fence.i executes as: EX(fence.i) -> full D$ flush
+// (dc_stall for its whole duration) -> fencei_dcflush_end -> 2 cycles ->
+// fencei_cond = "retry jump" to pc_id-1 (the instruction AFTER fence.i),
+// whose whole point is that the shadowed next instruction re-executes with
+// the freshly synced caches.  BUT: that next instruction entered EX one
+// cycle after the fence.i and sat there FROZEN through the flush; on the
+// FIRST ~stall cycle after the flush (one or two cycles BEFORE fencei_cond
+// fires) it committed via the roll path - stores/writebacks/CSR ops/jumps
+// all landed - and then the retry jump executed it AGAIN.  Idempotent
+// instructions hide this; `addi sp,sp,N` / csr RMW / `mul a,a,b` forms get
+// silently double-applied (this is almost certainly why the 2026-07-05-era
+// kernel saw wild jumps / stack-protector panics around jump_label
+// patching whenever fence.i was executed, which led to fence.i being
+// removed from the kernel on 2026-07-07 - trading the bug for a total loss
+// of I$/D$ coherence).  Fix: latch a purge from the fence.i's own EX cycle
+// (fencei_condition_ex) until the retry jump (fencei_cond) and mask every
+// commit path with it, so the shadowed instruction's ONLY execution is the
+// post-retry one.  An interrupt taken in the commit window is fine: the
+// existing post_intr_ecall_exception guard swallows the retry jump and
+// mepc (= pc_ex = the shadowed instruction, never executed) re-runs it
+// after mret.
+always @ ( posedge clk or negedge rst_n) begin
+	if (~rst_n)
+		fencei_wb_purge <= 1'b0;
+	else if (fencei_cond)
+		fencei_wb_purge <= 1'b0;
+	else if (fencei_condition_ex)
+		fencei_wb_purge <= 1'b1;
+end
+
+reg jmp_purge_ma2;
+
+`ifdef SUPPORT_A
 // lr.w cmd
-wire cmd_lrw_purge = cmd_lrw_ex & ~jmp_purge_ma; 
+wire cmd_lrw_purge = cmd_lrw_ex  & ~intexp_purge_ex & ~jmp_purge_ma & ~jmp_purge_ma2; 
 
 // lr.w / sc.w
 reg resv_flg;
@@ -195,7 +237,8 @@ always @ ( posedge clk or negedge rst_n) begin
 		resv_flg <= 1'b0;
 	else if (reset_flg_cond & ~stall)
 		resv_flg <= 1'b0;
-	else if (cmd_lrw_ex)
+	//else if (cmd_lrw_ex)
+	else if (cmd_lrw_purge)
 		resv_flg <= 1'b1;
 end
 
@@ -207,19 +250,31 @@ always @ ( posedge clk or negedge rst_n) begin
 end
 
 // lr.w conditions
-assign reset_flg_cond = (cmd_scw_ex | (cmd_st_ex & (resv_adr[31:2] == rd_data_ex[31:2]))) & ~jmp_purge_ma;
+wire [31:0] rd_data_ex_pre;
+
+assign reset_flg_cond = (cmd_scw_ex | (cmd_st_ex & (resv_adr[29:2] == rd_data_ex_pre[29:2]))) & ~intexp_purge_ex & ~jmp_purge_ma & ~jmp_purge_ma2;
 
 // sc.w conditions
-wire success_scw = cmd_scw_ex & resv_flg & ~jmp_purge_ma;
-wire cmd_scw_hit = success_scw & (resv_adr[31:2] == rs1_sel[31:2]);
+wire success_scw = cmd_scw_ex & resv_flg & ~intexp_purge_ex & ~intexp_purge_ex & ~jmp_purge_ma & ~jmp_purge_ma2;
+//wire cmd_scw_hit = success_scw & (resv_adr[31:2] == rs1_sel[31:2]);
+wire cmd_scw_hit = success_scw & (resv_adr[29:2] == rd_data_ex_pre[29:2]);
 
 // sc.w write back to register
-wire cmd_scw_purge = cmd_scw_ex & ~jmp_purge_ma; 
+wire cmd_scw_purge = cmd_scw_ex & ~intexp_purge_ex & ~jmp_purge_ma & ~jmp_purge_ma2; 
 
 // amo instructions
 
-wire amo_cmds = cmd_amoswapw_ex | cmd_amoaddw_ex | cmd_amoxorw_ex | cmd_amoandw_ex |
-                cmd_amoorw_ex | cmd_amominw_ex | cmd_amomaxw_ex | cmd_amominuw_ex | cmd_amomaxuw_ex;
+wire cmd_amoswapw_pur = ~intexp_purge_ex & ~jmp_purge_ma & ~jmp_purge_ma2 & cmd_amoswapw_ex;
+wire cmd_amoaddw_pur = ~intexp_purge_ex & ~jmp_purge_ma & ~jmp_purge_ma2 & cmd_amoaddw_ex;
+wire cmd_amoxorw_pur = ~intexp_purge_ex & ~jmp_purge_ma & ~jmp_purge_ma2 & cmd_amoxorw_ex;
+wire cmd_amoandw_pur = ~intexp_purge_ex & ~jmp_purge_ma & ~jmp_purge_ma2 & cmd_amoandw_ex;
+wire cmd_amoorw_pur = ~intexp_purge_ex & ~jmp_purge_ma & ~jmp_purge_ma2 & cmd_amoorw_ex;
+wire cmd_amominw_pur = ~intexp_purge_ex & ~jmp_purge_ma & ~jmp_purge_ma2 & cmd_amominw_ex;
+wire cmd_amomaxw_pur = ~intexp_purge_ex & ~jmp_purge_ma & ~jmp_purge_ma2 & cmd_amomaxw_ex;
+wire cmd_amominuw_pur = ~intexp_purge_ex & ~jmp_purge_ma & ~jmp_purge_ma2 & cmd_amominuw_ex;
+wire cmd_amomaxuw_pur = ~intexp_purge_ex & ~jmp_purge_ma & ~jmp_purge_ma2 & cmd_amomaxuw_ex;
+
+wire amo_cmds = cmd_amoswapw_pur | cmd_amoaddw_pur | cmd_amoxorw_pur | cmd_amoandw_pur | cmd_amoorw_pur | cmd_amominw_pur | cmd_amomaxw_pur | cmd_amominuw_pur | cmd_amomaxuw_pur;
 
 // critical path 
 // state machine for amo instructions
@@ -418,12 +473,15 @@ wire [31:0] jalr_ofs = {{ 20{ jalr_ofs_ex[11] }}, jalr_ofs_ex };
 wire [31:0] br_ofs = {{ 19{ br_ofs_ex[12] }}, br_ofs_ex, 1'b0 };
 
 `ifdef SUPPORT_A
-assign cmd_ld_pur = (cmd_ld_ex | cmd_lrw_ex | amo_ld_cmd) & ~jmp_purge_ma;
-assign cmd_st_pur = (cmd_st_ex | amo_st_cmd) & ~jmp_purge_ma;
+assign cmd_ld_pur = (cmd_ld_ex | cmd_lrw_ex | amo_ld_cmd) & ~intexp_purge_ex & ~jmp_purge_ma & ~jmp_purge_ma2;
+assign cmd_st_pur = (cmd_st_ex | amo_st_cmd) & ~intexp_purge_ex & ~jmp_purge_ma & ~jmp_purge_ma2;
 `else // SUPPORT_A
-wire cmd_ld_pur = cmd_ld_ex & ~jmp_purge_ma;
-wire cmd_st_pur = cmd_st_ex & ~jmp_purge_ma;
+wire cmd_ld_pur = cmd_ld_ex & ~intexp_purge_ex & ~jmp_purge_ma & ~jmp_purge_ma2;
+wire cmd_st_pur = cmd_st_ex & ~intexp_purge_ex & ~jmp_purge_ma & ~jmp_purge_ma2;
 `endif // SUPPORT_A
+
+// csr cmd need to purge
+wire cmd_csr_pur = cmd_csr_ex & ~intexp_purge_ex & ~jmp_purge_ma & ~jmp_purge_ma2 & ~fencei_wb_purge;
 
 // forwarding selector
 
@@ -522,7 +580,7 @@ wire [31:0] csr_rd_data;
 csr_array csr_array(
 	.clk(clk),
 	.rst_n(rst_n),
-	.cmd_csr_ex(cmd_csr_ex),
+	.cmd_csr_ex(cmd_csr_pur),
 	.csr_ofs_ex(csr_ofs_ex),
 	.csr_uimm_ex(csr_uimm_ex),
 	.csr_op2_ex(csr_op2_ex),
@@ -558,6 +616,10 @@ csr_array csr_array(
 	.jmp_condition_ex(jmp_condition_ex),
 	.fencei_condition_ex(fencei_cond),
 	.mret_condition_ex(mret_condition_ex),
+`ifdef SUPPORT_M
+	.div_stall_start(div_stall_start),
+	.div_stall_dly(div_stall_dly),
+`endif // SUPPORT_M
 	.stall(stall),
 	.csr_radr_en_mon(csr_radr_en_mon), // new
 	.csr_radr_mon(csr_radr_mon), // new
@@ -626,34 +688,34 @@ wire [31:0] lui_data = { lui_auipc_imm_ex, 12'd0 };
 
 `ifdef SUPPORT_A
 `ifdef SUPPORT_M
-wire [31:0] rd_data_ex_pre = cmd_lui_ex ? lui_data :
-                             (cmd_jal_ex | cmd_jalr_ex) ? pcp4_ex :
-						      cmd_auipc_ex ? jump_adr :
-                              cmd_csr_ex ? csr_rd_data :
-                              m_cmd_finished ? m_result_ex :
-                              (cmd_lrw_purge | cmd_scw_purge) ? rs1_sel :
-                              alu_sel;
+assign rd_data_ex_pre = cmd_lui_ex ? lui_data :
+                        (cmd_jal_ex | cmd_jalr_ex) ? pcp4_ex :
+						cmd_auipc_ex ? jump_adr :
+                        cmd_csr_pur ? csr_rd_data :
+                        m_cmd_finished ? m_result_ex :
+                        (cmd_lrw_purge | cmd_scw_purge) ? rs1_sel :
+                        alu_sel;
 `else // SUPPORT_M
-wire [31:0] rd_data_ex_pre = cmd_lui_ex ? lui_data :
-                             (cmd_jal_ex | cmd_jalr_ex) ? pcp4_ex :
-						      cmd_auipc_ex ? jump_adr :
-                              cmd_csr_ex ? csr_rd_data :
-                              (cmd_lrw_purge | cmd_scw_purge) ? rs1_sel :
-                              alu_sel;
+assign rd_data_ex_pre = cmd_lui_ex ? lui_data :
+                        (cmd_jal_ex | cmd_jalr_ex) ? pcp4_ex :
+						cmd_auipc_ex ? jump_adr :
+                        cmd_csr_pur ? csr_rd_data :
+                        (cmd_lrw_purge | cmd_scw_purge) ? rs1_sel :
+                        alu_sel;
 `endif // SUPPORT_M
 `else // SUPPORT_A
 `ifdef SUPPORT_M
-wire [31:0] rd_data_ex_pre = cmd_lui_ex ? lui_data :
-                             (cmd_jal_ex | cmd_jalr_ex) ? pcp4_ex :
-						      cmd_auipc_ex ? jump_adr :
-                              cmd_csr_ex ? csr_rd_data :
-                              m_cmd_finished ? m_result_ex :
-                              alu_sel;
+assign rd_data_ex_pre = cmd_lui_ex ? lui_data :
+                        (cmd_jal_ex | cmd_jalr_ex) ? pcp4_ex :
+						cmd_auipc_ex ? jump_adr :
+                        cmd_csr_pur ? csr_rd_data :
+                        m_cmd_finished ? m_result_ex :
+                        alu_sel;
 `else // SUPPORT_M
-wire [31:0] rd_data_ex_pre = cmd_lui_ex ? lui_data :
-                             (cmd_jal_ex | cmd_jalr_ex) ? pcp4_ex :
-						      cmd_auipc_ex ? jump_adr :
-                              cmd_csr_ex ? csr_rd_data :
+assign rd_data_ex_pre = cmd_lui_ex ? lui_data :
+                        (cmd_jal_ex | cmd_jalr_ex) ? pcp4_ex :
+					    cmd_auipc_ex ? jump_adr :
+                        cmd_csr_pur ? csr_rd_data :
                               alu_sel;
 `endif // SUPPORT_M
 `endif // SUPPORT_A
@@ -772,9 +834,8 @@ wire jmp_purge_ex_post =  (stall_ldst_0) ? jmp_purge_roll : jmp_purge_ex;
 // fence.i
 // (1) purge I$
 // (2) jump to next instruction for reload new instructions
-reg jmp_purge_ma2;
 
-wire fencei_condition_ex_pre = ~jmp_purge_ma & ~jmp_purge_ma2 & cmd_fencei_ex;
+wire fencei_condition_ex_pre = ~intexp_purge_ex & ~jmp_purge_ma & ~jmp_purge_ma2 & ~fencei_wb_purge & cmd_fencei_ex;
 assign fencei_condition_ex = ~stall & fencei_condition_ex_pre;
 
 // jamp/br
@@ -783,7 +844,7 @@ assign jmp_adr_ex = jump_adr[31:2];
 
 //wire jmp_condition_ex_pre = ~jmp_purge_ma & (
 //wire jmp_condition_ex_pre = ~jmp_purge_ma & ~jmp_purge_ma2 & (
-wire jmp_condition_ex_pre = ~jmp_purge_ma & ~jmp_purge_ma2 & ~fencei_cond & (
+wire jmp_condition_ex_pre = ~intexp_purge_ex & ~jmp_purge_ma & ~jmp_purge_ma2 & ~fencei_cond & ~fencei_wb_purge & (
                         cmd_jal_ex | cmd_jalr_ex | cmd_br_ex &
 						( seq  & (alu_code_ex == 3'b000) |
 					      sne  & (alu_code_ex == 3'b001) |
@@ -796,10 +857,10 @@ assign jmp_condition_ex = ~stall & jmp_condition_ex_pre;
 
 // ecall
 //wire ecall_condition_ex_pre = ~jmp_purge_ma & ((cmd_ecall_ex & csr_rmie) | illegal_ops_ex);
-wire ecall_condition_ex_pre = ~jmp_purge_ma & ~jmp_purge_ma2 & (cmd_ecall_ex | illegal_ops_ex);
+wire ecall_condition_ex_pre = ~intexp_purge_ex & ~jmp_purge_ma & ~jmp_purge_ma2 & ~fencei_wb_purge & (cmd_ecall_ex | illegal_ops_ex);
 assign ecall_condition_ex = ~stall & ecall_condition_ex_pre;
 // mret
-wire mret_condition_ex_pre = ~jmp_purge_ma & ~jmp_purge_ma2 & cmd_mret_ex;
+wire mret_condition_ex_pre = ~intexp_purge_ex & ~jmp_purge_ma & ~jmp_purge_ma2 & ~fencei_wb_purge & cmd_mret_ex;
 assign mret_condition_ex = ~stall & mret_condition_ex_pre;
 // interrupt
 assign interrupt_condition_ex = ~stall & g_interrupt_1shot & csr_rmie;
@@ -809,10 +870,13 @@ assign timer_condition_ex = ~stall & frc_cntr_val_leq_1shot & csr_rmie;
 // purge signal
 assign jmp_purge_ex = jmp_condition_ex | ecall_condition_ex | mret_condition_ex | interrupt_condition_ex | timer_condition_ex | fencei_cond;
 
-assign wbk_rd_reg_tmp = wbk_rd_reg_ex & ~jmp_purge_ma & ~illegal_ops_ex;
+wire no_wbk_cmds = cmd_st_ex | cmd_br_ex | ecall_condition_ex | mret_condition_ex | cmd_fencei_ex;
+
+assign wbk_rd_reg_tmp = wbk_rd_reg_ex & ~no_wbk_cmds & ~intexp_purge_ex & ~jmp_purge_ma & ~jmp_purge_ma2 & ~illegal_ops_ex;
+//assign wbk_rd_reg_tmp = wbk_rd_reg_ex & ~jmp_purge_ma & ~illegal_ops_ex;
 //assign cmd_st_tmp = cmd_st_ex & ~jmp_purge_ma;
 
-wire wb_mask_with_exception_interrupt = interrupt_condition_ex | timer_condition_ex | g_exception;
+wire wb_mask_with_exception_interrupt = interrupt_condition_ex | timer_condition_ex | g_exception | fencei_wb_purge;
 
 // workaround for jump between stall and stall
 reg dc_stall_fin2;

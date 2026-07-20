@@ -58,6 +58,18 @@ begin
     		casex({rvalid, check_ok, rlast, rqfull_1, next_rrq})
 				5'b0xxxx: rdat_m_decode = `RDAT_MBINP;
 				5'b00xxx: rdat_m_decode = `RDAT_MBINP;
+				// FPGA (2026-07-17): rvalid=1 & check_ok=0 = a read response
+				// for ANOTHER read manager. rvalid/rid are broadcast raw to
+				// every read manager (axi_bus_top.v: ic_rvalid=dc_rvalid=..=
+				// rvalid), so while THIS manager waits for its own beat it
+				// also sees other managers' responses; their rid != our
+				// latched id -> check_ok=0. Such a beat is NOT ours: ignore
+				// it and keep waiting, instead of falling through to
+				// default->MDEFO, which pinned dc_stall forever (= the
+				// silent, panic-less "PC stuck on a load" hang). check_ok
+				// already gates data capture / burst_cntr / rdat_m_valid, so
+				// the foreign beat is never mis-captured.
+				5'b10xxx: rdat_m_decode = `RDAT_MBINP;
 				5'b110xx: rdat_m_decode = `RDAT_MBINP;
 				5'b11100: rdat_m_decode = `RDAT_MIDLE;
 				5'b11101: rdat_m_decode = `RDAT_MBINP;
@@ -67,7 +79,12 @@ begin
     		endcase
 		end
 		`RDAT_MLST1: begin
-    		casex({rvalid, rlast, rqfull_1, next_rrq})
+    		// FPGA (2026-07-17): gate the incoming beat by check_ok here too,
+    		// so a broadcast read response destined for another manager (rid
+    		// mismatch -> check_ok=0) is ignored rather than driving a
+    		// spurious transition (e.g. a foreign rlast beat would otherwise
+    		// kick us to MIDLE and abandon the wait for our own response).
+    		casex({rvalid & check_ok, rlast, rqfull_1, next_rrq})
 				4'b0xxx: rdat_m_decode = `RDAT_MLST1;
 				4'b10xx: rdat_m_decode = `RDAT_MLST1;
 				4'b111x: rdat_m_decode = `RDAT_MBUSY;

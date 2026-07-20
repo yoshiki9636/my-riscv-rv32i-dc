@@ -12,8 +12,9 @@
 `define ARTY_A7
 
 module fpga_top
-    #(parameter IWIDTH = 13,
-      parameter DWIDTH = 13)
+    #(parameter IWIDTH = 12,
+      parameter DWIDTH = 12,
+      parameter SWIDTH = 13)
     (
 	input clkin,
 	input rst_n,
@@ -48,6 +49,18 @@ module fpga_top
 	output [0:0] ddr3_odt
 
 	);
+
+wire dma_wstart_rq; // input
+wire [31:0] dma_win_addr; // input
+wire [127:0] dma_in_wdata; // input
+wire [15:0] dma_in_mask; // input
+wire dma_finish_wresp; // output
+wire dma_rstart_rq; // input
+wire [31:0] dma_rin_addr; // input
+wire [127:0] dma_rdat_m_data; // output
+wire [15:0] dma_rdat_m_mask; // output
+wire dma_rdat_m_valid; // output
+wire dma_finish_mrd; // output
 
 wire uart_wstart_rq; // input
 wire [31:0] uart_win_addr; // input
@@ -120,12 +133,17 @@ wire [127:0] app_rd_data; // input
 wire app_rd_data_end; // input
 wire app_rd_data_valid; // input
 
-wire [DWIDTH+1:2] d_ram_radr = { DWIDTH{ 1'b0 }};
-wire [DWIDTH+1:2] d_ram_wadr = { DWIDTH{ 1'b0 }};
-wire [31:0] d_ram_rdata;
-wire [31:0] d_ram_wdata = 32'd0;
-wire d_ram_wen = 1'b0;
-wire d_read_sel = 1'b0;
+//wire [DWIDTH+1:2] d_ram_radr = { DWIDTH{ 1'b0 }};
+//wire [DWIDTH+1:2] d_ram_wadr = { DWIDTH{ 1'b0 }};
+//wire [31:0] d_ram_wdata = 32'd0;
+wire [SWIDTH+1:2] scr_ram_radr;
+wire [SWIDTH+1:2] scr_ram_wadr;
+wire [31:0] scr_ram_rdata;
+wire [31:0] scr_ram_wdata;
+wire scr_ram_wen;
+wire scr_read_sel;
+//wire d_ram_wen = 1'b0;
+//wire d_read_sel = 1'b0;
 
 wire [IWIDTH+1:2] i_ram_radr = 0;
 wire [IWIDTH+1:2] i_ram_wadr = 0;
@@ -139,12 +157,12 @@ wire i_read_sel = 0;
 //wire [31:0] dma_io_wdata;
 //wire [15:2] dma_io_radr;
 //wire dma_io_radr_en;
-// io bus for cpu
-wire dma_io_we_c; // output
-wire [15:2] dma_io_wadr_c; // output
-wire [31:0] dma_io_wdata_c; // output
-wire [15:2] dma_io_radr_c; // output
-wire dma_io_radr_en_c; // output
+// io bus for all
+wire dma_io_we; // output
+wire [15:2] dma_io_wadr; // output
+wire [31:0] dma_io_wdata; // output
+wire [15:2] dma_io_radr; // output
+wire dma_io_radr_en; // output
 // io bus for uart
 wire dma_io_we_u; // output
 wire [15:2] dma_io_wadr_u; // output
@@ -153,12 +171,13 @@ wire [15:2] dma_io_radr_u; // output
 wire dma_io_radr_en_u; // output
 
 // io bus logics
-wire dma_io_we = dma_io_we_c | dma_io_we_u;
-wire [15:2] dma_io_wadr = dma_io_we_u ? dma_io_wadr_u : dma_io_wadr_c;
-wire [31:0] dma_io_wdata = dma_io_we_u ? dma_io_wdata_u : dma_io_wdata_c;
-wire dma_io_radr_en = dma_io_radr_en_c | dma_io_radr_en_u;
-wire [15:2] dma_io_radr = dma_io_radr_en_u ? dma_io_radr_u : dma_io_radr_c;
+//wire dma_io_we = dma_io_we_c | dma_io_we_u;
+//wire [15:2] dma_io_wadr = dma_io_we_u ? dma_io_wadr_u : dma_io_wadr_c;
+//wire [31:0] dma_io_wdata = dma_io_we_u ? dma_io_wdata_u : dma_io_wdata_c;
+//wire dma_io_radr_en = dma_io_radr_en_c | dma_io_radr_en_u;
+//wire [15:2] dma_io_radr = dma_io_radr_en_u ? dma_io_radr_u : dma_io_radr_c;
 
+wire [31:0] dma_io_rdata_u_fin;
 wire [31:0] dma_io_rdata;
 wire [31:0] dma_io_rdata_in = 32'hdeadbeef; // input
 //wire [31:0] dma_io_rdata_in = 32'd0; // input
@@ -307,7 +326,7 @@ wire g_interrupt;
 //wire ic_stall;
 wire stall;
 
-cpu_top #(.DWIDTH(DWIDTH), .IWIDTH(IWIDTH)) cpu_top (
+cpu_top #(.DWIDTH(DWIDTH), .IWIDTH(IWIDTH), .SWIDTH(SWIDTH)) cpu_top (
 	.clk(clk),
 	.rst_n(rst_n),
 	.init_calib_complete(init_calib_complete),
@@ -316,12 +335,18 @@ cpu_top #(.DWIDTH(DWIDTH), .IWIDTH(IWIDTH)) cpu_top (
 	.start_adr(start_adr),
 	.cpu_run_state(cpu_run_state),
 
-	.d_ram_radr(d_ram_radr),
-	.d_ram_wadr(d_ram_wadr),
-	.d_ram_rdata(d_ram_rdata),
-	.d_ram_wdata(d_ram_wdata),
-	.d_ram_wen(d_ram_wen),
-	.d_read_sel(d_read_sel),
+	//.d_ram_radr(d_ram_radr),
+	//.d_ram_wadr(d_ram_wadr),
+	//.d_ram_rdata(d_ram_rdata),
+	//.d_ram_wdata(d_ram_wdata),
+    .scr_ram_radr(scr_ram_radr),
+    .scr_ram_wadr(scr_ram_wadr),
+    .scr_ram_wdata(scr_ram_wdata),
+    .scr_ram_rdata(scr_ram_rdata),
+	.scr_ram_wen(scr_ram_wen),
+	.scr_read_sel(_read_sel),
+	//.d_ram_wen(d_ram_wen),
+	//.d_read_sel(d_read_sel),
 
 	.i_ram_radr(i_ram_radr),
 	.i_ram_wadr(i_ram_wadr),
@@ -330,19 +355,32 @@ cpu_top #(.DWIDTH(DWIDTH), .IWIDTH(IWIDTH)) cpu_top (
 	.i_ram_wen(i_ram_wen),
 	.i_read_sel(i_read_sel),
 	.pc_data(pc_data),
-	.dma_io_we(dma_io_we_c),
-	.dma_io_wadr(dma_io_wadr_c),
-	.dma_io_wdata(dma_io_wdata_c),
-	.dma_io_radr(dma_io_radr_c),
-	.dma_io_radr_en(dma_io_radr_en_c),
+	.dma_io_we(dma_io_we),
+	.dma_io_wadr(dma_io_wadr),
+	.dma_io_wdata(dma_io_wdata),
+	.dma_io_radr(dma_io_radr),
+	.dma_io_radr_en(dma_io_radr_en),
 	//.dma_io_rdata_in(dma_io_rdata_in),
 	.dma_io_rdata_in(dma_io_rdata),
-	.ibus_ren(ibus_ren),
-	.ibus_radr(ibus_radr),
-	.ibus32_rdata(ibus32_rdata),
-	.ibus_wen(ibus_wen),
-	.ibus_wadr(ibus_wadr),
-	.ibus32_wdata(ibus32_wdata),
+
+	.dma_io_we_u(dma_io_we_u),
+	.dma_io_wadr_u(dma_io_wadr_u),
+	.dma_io_wdata_u(dma_io_wdata_u),
+	.dma_io_radr_u(dma_io_radr_u),
+	.dma_io_radr_en_u(dma_io_radr_en_u),
+	.dma_io_rdata_in_u_fin(dma_io_rdata_u_fin),
+
+	.dma_wstart_rq(dma_wstart_rq),
+	.dma_win_addr(dma_win_addr),
+	.dma_in_wdata(dma_in_wdata),
+	.dma_in_mask(dma_in_mask),
+	.dma_finish_wresp(dma_finish_wresp),
+	.dma_rstart_rq(dma_rstart_rq),
+	.dma_rin_addr(dma_rin_addr),
+	.dma_rdat_m_data(dma_rdat_m_data),
+	.dma_rdat_m_mask(dma_rdat_m_mask),
+	.dma_rdat_m_valid(dma_rdat_m_valid),
+	.dma_finish_mrd(dma_finish_mrd),
 
 	.icr_start_rq(ic_rstart_rq),
 	.ic_rin_addr(ic_rin_addr),
@@ -350,7 +388,12 @@ cpu_top #(.DWIDTH(DWIDTH), .IWIDTH(IWIDTH)) cpu_top (
 	.ic_rdat_m_mask(ic_rdat_m_mask),
 	.ic_rdat_m_valid(ic_rdat_m_valid),
 	.ic_finish_mrd(ic_finish_mrd),
-	.start_icflush(1'b0),
+	// FPGA FIX (2026-07-19): was 1'b0 - the monitor had NO way to
+	// invalidate the I$, so a reflash/restart without an FPGA
+	// reconfigure executed stale old-kernel lines out of the 16KB I$.
+	// The existing D$-flush monitor command (zcmd_setdfl) now flushes
+	// BOTH caches; issue it after quit and before loading a new image.
+	.start_icflush(start_dcflush),
 
     .csr_radr_en_mon(csr_radr_en_mon),
     .csr_radr_mon(csr_radr_mon),
@@ -397,6 +440,17 @@ cpu_top #(.DWIDTH(DWIDTH), .IWIDTH(IWIDTH)) cpu_top (
 axi_bus_top axi_bus_top (
 	.clk(clk),
 	.rst_n(rst_n),
+	.dma_wstart_rq(dma_wstart_rq),
+	.dma_win_addr(dma_win_addr),
+	.dma_in_wdata(dma_in_wdata),
+	.dma_in_mask(dma_in_mask),
+	.dma_finish_wresp(dma_finish_wresp),
+	.dma_rstart_rq(dma_rstart_rq),
+	.dma_rin_addr(dma_rin_addr),
+	.dma_rdat_m_data(dma_rdat_m_data),
+	.dma_rdat_m_mask(dma_rdat_m_mask),
+	.dma_rdat_m_valid(dma_rdat_m_valid),
+	.dma_finish_mrd(dma_finish_mrd),
 	.uart_wstart_rq(uart_wstart_rq),
 	.uart_win_addr(uart_win_addr),
 	.uart_in_wdata(uart_in_wdata),
@@ -561,7 +615,7 @@ dummy_mig dummy_mig (
 	);
 */
 
-uart_top #(.DWIDTH(DWIDTH), .IWIDTH(IWIDTH)) uart_top (
+uart_top #(.DWIDTH(DWIDTH), .IWIDTH(IWIDTH), .SWIDTH(SWIDTH)) uart_top (
 	.clk(clk),
 	.rst_n(rst_n),
 	.rx(rx),
@@ -573,6 +627,12 @@ uart_top #(.DWIDTH(DWIDTH), .IWIDTH(IWIDTH)) uart_top (
     .d_ram_wdata(uart_in_wdata),
     .d_ram_wen(uart_wstart_rq),
     .uart_finish_wresp(uart_finish_wresp),
+    .scr_ram_radr(scr_ram_radr),
+    .scr_ram_wadr(scr_ram_wadr),
+    .scr_ram_wdata(scr_ram_wdata),
+    .scr_ram_rdata(scr_ram_rdata),
+	.scr_ram_wen(scr_ram_wen),
+	.scr_read_sel(_read_sel),
     //.d_read_sel(uart_d_read_sel),
     .d_ram_mask(uart_in_mask),
     .u_read_req(uart_rstart_rq),
@@ -593,7 +653,7 @@ uart_top #(.DWIDTH(DWIDTH), .IWIDTH(IWIDTH)) uart_top (
 	.dma_io_wdata(dma_io_wdata_u),
 	.dma_io_radr(dma_io_radr_u),
 	.dma_io_radr_en(dma_io_radr_en_u),
-	.dma_io_rdata_in(dma_io_rdata),
+	.dma_io_rdata_in(dma_io_rdata_u_fin),
 
 	.csr_radr_en_mon(csr_radr_en_mon),
 	.csr_radr_mon(csr_radr_mon),
@@ -725,3 +785,4 @@ io_spi_lite io_spi_lite(
     );
 
 endmodule
+

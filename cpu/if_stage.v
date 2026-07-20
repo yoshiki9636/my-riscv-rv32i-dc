@@ -96,6 +96,24 @@ assign jmp_adr_if = mret_condition_ex ? csr_mepc_ex :
                     fencei_cond ? pc_id - 30'd1 : // retry for self modify code
                     cmd_sret_ex ? csr_sepc_ex : jmp_adr_ex;
 
+reg keep_jmp_between;
+reg [31:2] pc_if_between;
+always @ (posedge clk or negedge rst_n) begin
+	if (~rst_n)
+		keep_jmp_between <= 1'b0;
+	else if (jmp_cond)
+		keep_jmp_between <= 1'b0;
+	else if (jump_between_stall)
+		keep_jmp_between <= 1'b1;
+end
+
+always @ (posedge clk or negedge rst_n) begin
+	if (~rst_n)
+		pc_if_between <= 30'd0;
+	else if (jump_between_stall)
+		pc_if_between <= jmp_adr;
+end
+
 reg use_collision;
 reg [31:2] pc_if_pre;
 
@@ -105,8 +123,10 @@ always @ (posedge clk or negedge rst_n) begin
 	else if (pc_start)
 		pc_if_pre <= start_adr_lat;
 	//else if (interrupt_condition_ex | timer_condition_ex)
-	else if (interrupt_condition_ex | timer_condition_ex | jump_between_stall)
+	else if (interrupt_condition_ex | timer_condition_ex)
 		pc_if_pre <= jmp_adr;
+	else if (keep_jmp_between)
+		pc_if_pre <= pc_if_between;
 	else if (stall | stall_ld)
 		pc_if_pre <= pc_if_pre;	
 	else if (jmp_cond)
@@ -124,8 +144,10 @@ always @ (posedge clk or negedge rst_n) begin
         pc_if_roll <= 30'd0;
 	else if (pc_start)
 		pc_if_roll <= start_adr_lat;
-	else if (interrupt_condition_ex | timer_condition_ex | jump_between_stall)
+	else if (interrupt_condition_ex | timer_condition_ex)
         pc_if_roll <= jmp_adr;
+	else if (keep_jmp_between)
+		pc_if_roll <= pc_if_between;
 	else if (jmp_cond)
         pc_if_roll <= jmp_adr;
 	else if (~ic_stall)
@@ -256,6 +278,7 @@ always @ (posedge clk or negedge rst_n) begin
 end
 */
 
+reg post_jump_cmd_c;
 reg post_jump_cmd_c2;
 reg stall_ld_ex_smpl;
 
@@ -264,7 +287,7 @@ always @ (posedge clk or negedge rst_n) begin
 		stall_ld_ex_smpl <= 1'b0;
 	else if (~ic_stall)
 		stall_ld_ex_smpl <= 1'b0;
-	else if (ic_stall & ~ic_stall_dly & ~post_jump_cmd_c2 & stall_ld_ex)
+	else if (ic_stall & ~ic_stall_dly & ~post_jump_cmd_c & ~post_jump_cmd_c2 & stall_ld_ex)
 		stall_ld_ex_smpl <= 1'b1;
 end
 
@@ -363,7 +386,19 @@ wire inst_masked_in_icdc_sync_start;
 assign inst_id =
                  //(inst_masked_in_icdc_sync_start | inst_mask_condition_with_jmp_lat) ? 32'h0000_0013 :
                  (inst_masked_in_icdc_sync_start) ? 32'h0000_0013 :
-                 use_collision  ?  inst_collision : // for load store btb
+                 // FPGA (2026-07-17): close a remaining hole in the 2026-07-16
+                 // "interrupt-during-ic_stall" mask. jump_under_ic_stall forces
+                 // NOP so a stale in-flight instruction can't be double-executed
+                 // (once into the ISR, again after mret via mepc) — but it sat
+                 // BELOW use_collision here, so when a load/store D$-stall replay
+                 // (use_collision -> inst_collision/pc_collision) overlapped an
+                 // interrupt taken mid-ic_stall, the replayed STORE leaked past
+                 // the mask and double-executed (ISR-dependent, narrow overlap =
+                 // rare/non-deterministic = the wild/stale-pointer corruption).
+                 // Gate the collision replay with ~jump_under_ic_stall so the
+                 // redirect mask wins (NOP is safe; the instruction re-runs after
+                 // mret from mepc).
+                 (use_collision & ~jump_under_ic_stall)  ?  inst_collision : // for load store btb
 				 jump_under_ic_stall ?  32'h0000_0013 : // for test
                  dc_fin_after_ic ? inst_roll : //ok
                  ic_fin_after_dc ? inst_roll : //ok
@@ -382,7 +417,7 @@ always @ (posedge clk or negedge rst_n) begin
 end
 
 // post cump command condition
-reg post_jump_cmd_c;
+wire jump_only = jmp_condition_ex | mret_condition_ex | fencei_cond;
 
 always @ (posedge clk or negedge rst_n) begin   
 	if (~rst_n) begin
@@ -395,7 +430,23 @@ always @ (posedge clk or negedge rst_n) begin
 	end
 end
 
-assign post_jump_cmd_cond = post_jump_cmd_c | post_jump_cmd_c2;
+reg jump_only_c1;
+reg jump_only_c2;
+
+always @ (posedge clk or negedge rst_n) begin   
+	if (~rst_n) begin
+        jump_only_c1 <= 1'b0;
+        jump_only_c2 <= 1'b0;
+	end
+	//else if (~stall & ~ic_stall) begin
+	else if (~ic_stall_dly) begin
+        jump_only_c1 <= jump_only;
+        jump_only_c2 <= jump_only_c1;
+	end
+end
+
+assign post_jump_cmd_cond = jump_only_c1 | jump_only_c2;
+//assign post_jump_cmd_cond = post_jump_cmd_c | post_jump_cmd_c2;
 
 // patch for ic_stall & dc_stall
 
@@ -555,13 +606,50 @@ assign inst_masked_in_icdc_sync_start = (cache_miss_current == `IDST_SYWB);
 //end
 
 // status latch for jump under ic_stall state
-
+//
+// FIX (2026-07-16): also arm this mask for INTERRUPTS taken during
+// ic_stall, not only for jump/ecall/mret/fencei (jump_cmd_cond).
+// interrupt_condition_ex/timer_condition_ex are gated only by ~stall
+// (= ~dc_stall) in ex_stage, so an interrupt CAN be taken in the middle
+// of an I$ miss / AMO / DIV stall (all of which are ic_stall here).
+// When that happened, the fetch PC was correctly redirected to mtvec
+// (see the pc_if_pre priority mux above), but nothing masked the
+// in-flight refill's instruction delivery paths (inst_roll /
+// dc_fin_after_ic / ic_fin_after_dc), and ex_stage's jmp_purge_ma
+// latch is only updated on ~stall & ~ic_stall so the one-cycle
+// jmp_purge_ex pulse from the interrupt was lost.  The stale
+// instruction at the interrupted PC could then be delivered into ID
+// after the refill finished and execute once on the way into the ISR -
+// and, since mepc also points at it, execute AGAIN after mret (double
+// execution / ghost execution: stores, register increments etc. applied
+// twice).  This is the same hazard class as the 2026-07-13
+// "purge-target mid-I$-miss" fix, just for the interrupt flavor of the
+// redirect instead of the jump flavor.  The mask is cleared by
+// ic_stall_fin2 exactly like the jump case, after which fetch resumes
+// from the already-redirected pc_if (mtvec).
+// FIX (2026-07-19): the fin2 that clears this mask is the COMPOSITE
+// ic_stall_fin2_add_div (I$ LDRD | fencei | amo | div/mul fin2 - see
+// ilu_stage/cpu_top wiring).  When TWO stall components overlap - e.g.
+// a MUL/DIV in EX (its own 2..35-cycle "ic" stall, whose internal
+// pipeline advances on ~stall only, i.e. it keeps running through an
+// I$ miss) while an I$ refill is in flight on a later fetch - the
+// FIRST component to finish pulses the composite fin2 and used to
+// clear this mask while the OTHER stall was still running.  If an
+// interrupt had been taken during the overlap, the still-pending
+// stale-delivery legs (inst_roll / inst_collision, armed when a D$
+// stall or load-use replay is also in the mix) were then unmasked at
+// the real refill end and delivered a pre-redirect instruction: it
+// executed once on the way into the ISR and again after mret (mepc)
+// = double execution.  Qualify the clear with ~ic_stall (composite)
+// so the mask holds until the WHOLE stall complex is over; in the
+// single-component case ic_stall is already low at the fin2 cycle so
+// the timing is unchanged.
 always @ (posedge clk or negedge rst_n) begin
     if (~rst_n)
         jump_under_ic_stall <= 1'b0;
-    else if (ic_stall_fin2)
+    else if (ic_stall_fin2 & ~ic_stall)
         jump_under_ic_stall <= 1'b0;
-    else if (ic_stall & jump_cmd_cond)
+    else if (ic_stall & (jump_cmd_cond | intr_ecall_exception))
         jump_under_ic_stall <= 1'b1;
 end
 

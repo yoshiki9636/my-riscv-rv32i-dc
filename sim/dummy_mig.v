@@ -33,8 +33,10 @@ module dummy_mig (
 `define DMIG_IDLE 2'b00
 `define DMIG_WWIT 2'b01
 `define DMIG_RWIT 2'b10
-`define DMIG_DEFO 2'b10
+`define DMIG_WTWT 2'b11
+`define DMIG_DEFO 2'b00
 `define READ_LATENCY 8'd15
+`define WRITE_LATENCY 8'd15
 
 // mask is not used
 // signal / sampler
@@ -51,6 +53,9 @@ always @ (posedge mclk or negedge mrst_n) begin
 end
 
 // write data channel manager state machine
+wire write_end;
+wire under_write;
+
 reg [1:0] dmig_current;
 
 function [1:0] dmig_decode;
@@ -59,13 +64,22 @@ input app_en;
 input read_flg;
 input app_wdf_wren;
 input read_end;
+input under_write;
 begin
     case(dmig_current)
         `DMIG_IDLE: begin
-            casez({app_en, read_flg})
-                2'b0?: dmig_decode = `DMIG_IDLE;
-                2'b10: dmig_decode = `DMIG_WWIT;
-                2'b11: dmig_decode = `DMIG_RWIT;
+            casez({app_en, read_flg, under_write})
+                3'b0??: dmig_decode = `DMIG_IDLE;
+                3'b11?: dmig_decode = `DMIG_RWIT;
+                3'b100: dmig_decode = `DMIG_WWIT;
+                3'b101: dmig_decode = `DMIG_WTWT;
+                default: dmig_decode = `DMIG_DEFO;
+            endcase
+        end
+        `DMIG_WTWT: begin
+            case(under_write)
+                1'b1: dmig_decode = `DMIG_WTWT;
+                1'b0: dmig_decode = `DMIG_WWIT;
                 default: dmig_decode = `DMIG_DEFO;
             endcase
         end
@@ -90,7 +104,7 @@ begin
 end
 endfunction
 
-wire [1:0] dmig_next = dmig_decode( dmig_current, app_en, read_flg, app_wdf_wren, read_end );
+wire [1:0] dmig_next = dmig_decode( dmig_current, app_en, read_flg, app_wdf_wren, read_end, under_write );
 
 always @ (posedge mclk or negedge mrst_n) begin
     if (~mrst_n)
@@ -139,5 +153,21 @@ sfifo_1r1w
     .ram_wdata(app_wdf_data),
     .ram_wen(app_wdf_wren)
     );
+
+// write wait counter
+
+reg [7:0] write_cntr;
+
+always @ (posedge mclk or negedge mrst_n) begin
+    if (~mrst_n)
+        write_cntr <= 8'd0;
+    else if (app_wdf_wren & app_wdf_rdy)
+        write_cntr <= `WRITE_LATENCY;
+    else if (write_cntr > 8'd0)
+        write_cntr <= write_cntr - 8'd1;
+end
+
+assign under_write = (write_cntr > 8'd0);
+assign write_end = (write_cntr == 8'd1);
 
 endmodule

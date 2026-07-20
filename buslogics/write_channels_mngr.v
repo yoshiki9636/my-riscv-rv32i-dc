@@ -9,7 +9,7 @@
  */
 
 module write_channels_mngr
-    #(parameter REQC_M_ID = 2'b00)
+    #(parameter REQC_M_ID = 3'b000)
 	(
 	input clk,
 	input rst_n,

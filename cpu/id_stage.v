@@ -309,10 +309,34 @@ wire cmd_rem_decode_id = cmd_rem_id | cmd_remu_id;
 
 //wire dc_notc = (inst_set == 2'b11); // bit 1-9
 wire dc_op1_01011 = (inst_op1 == 5'b01011);
-//wire dc_op2_010 
-wire dc_uimm_00000 = (inst_uimm == 5'b00000); 
+//wire dc_op2_010
+wire dc_uimm_00000 = (inst_uimm == 5'b00000);
 
-wire a_cmds_decode = dc_op1_01011 & dc_op2_010;
+// FIX (2026-07-16): A-extension DISABLED at decode - lr.w/sc.w/amo*.w now
+// raise illegal-instruction traps and are emulated by the kernel
+// (arch/riscv/kernel/traps.c rv32a_emulate(), which has proper
+// reservation tracking and covers both kernel and user mode as of
+// 2026-07-16).  Rationale, from the 2026-07-16 RTL review
+// (RTL_REVIEW_2026-07-16.md 2-2..2-4): the hardware A implementation has
+// three known-unresolved hazards - (1) the AMO load address uses the
+// unforwarded rs1_data_ex while the store uses the forwarded rs1_sel
+// (ex_stage.v rd_data_ex mux), so an AMO whose address register is
+// produced by the immediately preceding instruction loads from a stale
+// address and writes a wrong value to the right one; (2) the lr/sc
+// reservation (resv_flg) is not invalidated by traps/mret, so sc.w can
+// succeed across a context switch; (3) an interrupt taken during
+// amo_stall has no mepc special-casing (csr_array post_pc_ex has a
+// div_stall term but no AMO term), risking double-executed AMOs.  The
+// kernel itself contains zero A instructions (verified by objdump), but
+// busybox's static glibc has ~677 of them; trapping to the emulator is
+// the safe path.  misa already advertises RV32I only, so no
+// discoverability change.  To re-enable hardware A after fixing
+// (1)-(3), set a_ext_disable back to 1'b0 - everything downstream
+// (cmd_*_id wires, cmd_all_except_nop terms, the ex_stage AMO FSM) is
+// left intact and simply sees zeros while disabled.
+wire a_ext_disable = 1'b1;
+
+wire a_cmds_decode = dc_op1_01011 & dc_op2_010 & ~a_ext_disable;
 
 // op3 decode for A insts
 function [10:0] op3_decoder_a;
@@ -415,12 +439,31 @@ wire cmd_wfi_id    = cmd_ec_id & dc_op3_00010 & dc_op4_00101;
 // nop command
 wire cmd_nop = (inst_id == 32'h0000_0013);
 // all command except nop
+//
+// FIX (2026-07-16): cmd_alu_add_id / cmd_alu_sub_id REMOVED from every
+// cmd_all_except_nop variant below.  They are bare funct5 matches with
+// no opcode qualification at all (cmd_alu_add_id = dc_op3_00000,
+// cmd_alu_sub_id = dc_op3_01000), kept that way deliberately because
+// cmd_alu_sub_ex doubles as the SRA/SRAI selector in ex_stage
+// (alu_srl_sra) for BOTH the OP and OP-IMM opcodes - so their VALUES
+// must not change.  But as standalone terms in the valid-instruction
+// list they declared every word with inst[31:27]==5'b00000 (the whole
+// 0x00000000-0x07FFFFFF pattern space - all-zero words, small
+// integers, most pointers on this 128MB board...) or 5'b01000
+// (0x40000000-0x47FFFFFF) to be a "valid" instruction, defeating
+// illegal-instruction detection for the most common garbage/data
+// patterns: a wild jump into zeroed or small-value data executed it
+// silently as quasi-NOPs and kept walking instead of trapping at the
+// first word.  It also made amoadd.w (funct5=00000) decode as "valid"
+// even with the A extension disabled above.  Every real RV32IM
+// instruction remains covered: OP-opcode add/sub/sra by cmd_alu_id,
+// OP-IMM addi/srai by cmd_alui_id/cmd_alui_shamt_id.
 
 `ifdef SUPPORT_A
 `ifdef SUPPORT_M
 wire cmd_all_except_nop = mcmd_decode |
 	cmd_lui_id | cmd_auipc_id | cmd_ld_id | cmd_alui_id | cmd_alui_shamt_id
-	| cmd_alu_id | cmd_alu_add_id | cmd_alu_sub_id | cmd_st_id | cmd_jal_id
+	| cmd_alu_id | cmd_st_id | cmd_jal_id
 	| cmd_jalr_id | cmd_br_id | cmd_fence_id | cmd_fencei_id | cmd_sfence_id
 	| cmd_csr_id | cmd_ec_id | cmd_ecall_id | cmd_ebreak_id | cmd_uret_id  
 	| cmd_sret_id | cmd_mret_id | cmd_wfi_id
@@ -430,7 +473,7 @@ wire cmd_all_except_nop = mcmd_decode |
 `else // SUPPORT_M
 wire cmd_all_except_nop =
 	cmd_lui_id | cmd_auipc_id | cmd_ld_id | cmd_alui_id | cmd_alui_shamt_id
-	| cmd_alu_id | cmd_alu_add_id | cmd_alu_sub_id | cmd_st_id | cmd_jal_id
+	| cmd_alu_id | cmd_st_id | cmd_jal_id
 	| cmd_jalr_id | cmd_br_id | cmd_fence_id | cmd_fencei_id | cmd_sfence_id
 	| cmd_csr_id | cmd_ec_id | cmd_ecall_id | cmd_ebreak_id | cmd_uret_id  
 	| cmd_sret_id | cmd_mret_id | cmd_wfi_id
@@ -442,14 +485,14 @@ wire cmd_all_except_nop =
 `ifdef SUPPORT_M
 wire cmd_all_except_nop = mcmd_decode |
 	cmd_lui_id | cmd_auipc_id | cmd_ld_id | cmd_alui_id | cmd_alui_shamt_id
-	| cmd_alu_id | cmd_alu_add_id | cmd_alu_sub_id | cmd_st_id | cmd_jal_id
+	| cmd_alu_id | cmd_st_id | cmd_jal_id
 	| cmd_jalr_id | cmd_br_id | cmd_fence_id | cmd_fencei_id | cmd_sfence_id
 	| cmd_csr_id | cmd_ec_id | cmd_ecall_id | cmd_ebreak_id | cmd_uret_id  
 	| cmd_sret_id | cmd_mret_id | cmd_wfi_id;
 `else // SUPPORT_M
 wire cmd_all_except_nop =
 	cmd_lui_id | cmd_auipc_id | cmd_ld_id | cmd_alui_id | cmd_alui_shamt_id
-	| cmd_alu_id | cmd_alu_add_id | cmd_alu_sub_id | cmd_st_id | cmd_jal_id
+	| cmd_alu_id | cmd_st_id | cmd_jal_id
 	| cmd_jalr_id | cmd_br_id | cmd_fence_id | cmd_fencei_id | cmd_sfence_id
 	| cmd_csr_id | cmd_ec_id | cmd_ecall_id | cmd_ebreak_id | cmd_uret_id  
 	| cmd_sret_id | cmd_mret_id | cmd_wfi_id;

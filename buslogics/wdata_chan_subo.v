@@ -30,6 +30,7 @@ module wdata_chan_subo (
 
 `define WDAT_SIDLE 3'b000
 `define WDAT_SBINP 3'b001
+`define WDAT_NRQWT 3'b101
 `define WDAT_SLST1 3'b010
 `define WDAT_SBUSY 3'b011
 `define WDAT_SDEFO 3'b111
@@ -46,11 +47,16 @@ input sqfull_1;
 begin
     case(wdat_s_current)
 		`WDAT_SIDLE: begin
-    		case(next_srq)
-				1'b1: wdat_s_decode = `WDAT_SBINP;
-				1'b0: wdat_s_decode = `WDAT_SIDLE;
+    		casex({next_srq,sqfull_1})
+				2'b0x: wdat_s_decode = `WDAT_SIDLE;
+				2'b10: wdat_s_decode = `WDAT_SBINP;
+				2'b11: wdat_s_decode = `WDAT_NRQWT;
 				default: wdat_s_decode = `WDAT_SDEFO;
     		endcase
+		end
+		`WDAT_NRQWT: begin
+			if (sqfull_1 == 0) wdat_s_decode = `WDAT_SBINP;
+			else wdat_s_decode = `WDAT_NRQWT;
 		end
 		`WDAT_SBINP: begin
     		casex({wvalid, wlast, sqfull_1, next_srq})
@@ -110,11 +116,27 @@ always @ (posedge clk or negedge rst_n) begin
         burst_cntr <= burst_cntr + 2'd1;
 end
 
+// FPGA (2026-07-17): ROOT-CAUSE FIX for the long-standing DRAM write-loss.
+// wdat_s_valid is the write-data-queue (afifo) enqueue enable. It was
+// registered from RAW wlast, unlike the write-DATA-beat captures below
+// (wdata_ofs*_wen) and unlike the ADDRESS-side enqueue (req_chan_subo.v:
+// reqc_s_valid = (a_valid & a_ready) delayed 1 cycle), both of which are
+// gated by accept (valid & ready). Because afifo.v advances its write
+// pointer on wen WITHOUT checking wqfull, this asymmetry is catastrophic:
+// when the write-data FIFO is full the FSM drops wready (SBUSY) but an
+// AXI master holds wvalid & wlast asserted, so `wdat_s_valid <= wlast`
+// pulses EVERY cycle -> repeated enqueues into a full afifo -> pointer
+// overrun AND more data entries than address entries -> the separate
+// write_addr_queue / write_data_queue afifos DESYNC -> every subsequent
+// write lands with the wrong data at the wrong address (~99.6% loss under
+// dense bursts, none for isolated/gentle writes). Gate it exactly like the
+// data-beat captures so it enqueues once, only when the last beat is
+// actually accepted (which the FSM only allows when the FIFO has room).
 always @ (posedge clk or negedge rst_n) begin
     if (~rst_n)
         wdat_s_valid <= 1'b0;
     else
-        wdat_s_valid <= wlast;
+        wdat_s_valid <= wlast & wvalid & wready;
 end
 
 assign finish_swd = wdat_s_valid;

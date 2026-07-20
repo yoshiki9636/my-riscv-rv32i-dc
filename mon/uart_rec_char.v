@@ -45,7 +45,8 @@ module uart_rec_char (
 	output inst_data_en,
 	output pc_print,
 	output pc_print_sel,
-	output crlf_in
+	output crlf_in,
+	output start_dcflush
 	//output reg [3:0] cmd_status,
 	//output reg data_en,
 	//output [2:0] test
@@ -100,7 +101,7 @@ begin
 		8'h70 : data_decoder = 29'b0_0000_0100_0000_0000_0000_0000_0000; // p : read IO
 		8'h69 : data_decoder = 29'b0_0000_1000_0000_0000_0000_0000_0000; // i : write IO
 		8'h6a : data_decoder = 29'b0_0001_0000_0000_0000_0000_0000_0000; // j : print PC
-		8'h7a : data_decoder = 29'b0_0010_0000_0000_0000_0000_0000_0000; // z : unused
+		8'h7a : data_decoder = 29'b0_0010_0000_0000_0000_0000_0000_0000; // z : I purge and D flush (as fence.i)
 		8'h6c : data_decoder = 29'b0_0100_0000_0000_0000_0000_0000_0000; // l : set read data break point
 		8'h6d : data_decoder = 29'b0_1000_0000_0000_0000_0000_0000_0000; // m : set write data break point
 		8'h0d : data_decoder = 29'b1_0000_0000_0000_0000_0000_0000_0000; // CR : change to CRLF
@@ -141,19 +142,34 @@ wire num_char = | decode_bits[15:0];
 //assign test = decode_bits[18:16];
 //assign test = pdata[2:0];
 
-wire cmd_g = decode_bits[16] & data_en;
+// FPGA FIX (2026-07-19): console RX support - while the CPU is running,
+// every received byte is LINUX CONSOLE input (latched by io_uart_out's
+// SYS_UART_RXCH register for the kernel's myuart driver to poll), so
+// the monitor's LETTER commands must NOT be interpreted then: typing
+// 'q' in the shell used to assert quit_cmd and silently STOP THE CPU.
+// Gate the letter commands with ~cpu_run_state.  cmd_q (Ctrl-c, 0x03)
+// is intentionally left UNGATED: it's a control code, never present in
+// normal typed shell text, and the author's own original design intent
+// is "quit from any command/state" (see the format comment below) - it
+// is the normal, muscle-memory way back to the monitor while Linux is
+// running and must keep working (2026-07-19: an earlier version of
+// this fix gated cmd_q too and added a separate Ctrl-] escape, which
+// broke that workflow; reverted - Ctrl-c alone is correct and simpler).
+wire mon_en = ~cpu_run_state;
+
+wire cmd_g = decode_bits[16] & data_en & mon_en;
 wire cmd_q = decode_bits[17] & data_en;
-wire cmd_w = decode_bits[18] & data_en;
-wire cmd_r = decode_bits[19] & data_en;
-wire cmd_t = decode_bits[20] & data_en;
-wire cmd_s = decode_bits[21] & data_en;
-wire cmd_p = decode_bits[22] & data_en;
-wire cmd_i = decode_bits[23] & data_en;
-wire cmd_j = decode_bits[24] & data_en;
-wire cmd_z = decode_bits[25] & data_en;
-wire cmd_l = decode_bits[26] & data_en;
-wire cmd_m = decode_bits[27] & data_en;
-wire cmd_crlf = decode_bits[28] & data_en;
+wire cmd_w = decode_bits[18] & data_en & mon_en;
+wire cmd_r = decode_bits[19] & data_en & mon_en;
+wire cmd_t = decode_bits[20] & data_en & mon_en;
+wire cmd_s = decode_bits[21] & data_en & mon_en;
+wire cmd_p = decode_bits[22] & data_en & mon_en;
+wire cmd_i = decode_bits[23] & data_en & mon_en;
+wire cmd_j = decode_bits[24] & data_en & mon_en;
+wire cmd_z = decode_bits[25] & data_en & mon_en;
+wire cmd_l = decode_bits[26] & data_en & mon_en;
+wire cmd_m = decode_bits[27] & data_en & mon_en;
+wire cmd_crlf = decode_bits[28] & data_en & mon_en;
 
 // command format
 // g : goto PC address ( run program until quit ) : format:  g <start addess>
@@ -165,7 +181,7 @@ wire cmd_crlf = decode_bits[28] & data_en;
 // p : read instruction memory                    : format:  p <start address> <end adderss>
 // i : write instruction memory                   : format:  i <start adderss> <data> ....<data> q
 // j : print current PC value                     : format:  j
-// z : flush D-cache                              : format:  z
+// z : purge I-cache and flush D-cache            : format:  z
 // l : data read stop address set                 : format:  l <data address>
 // m : data write stop address set                : format:  m <data address>
 // state machine
@@ -341,10 +357,11 @@ begin
 			else
 				cmd_statemachine = `C_PCPRINT;
 		`C_DCFLUSH :
-			if (cmd_q )
-				cmd_statemachine = `C_STAIDLE;
-			else
-				cmd_statemachine = `C_DCFLUSH;
+			cmd_statemachine = `C_STAIDLE;
+			//if (cmd_q )
+				//cmd_statemachine = `C_STAIDLE;
+			//else
+				//cmd_statemachine = `C_DCFLUSH;
 		`C_RDATABP :
 			casez({cmd_q,word_valid})
 				2'b1? : cmd_statemachine = `C_STAIDLE;
@@ -411,6 +428,7 @@ wire tcmd_setsta = ( cmd_status == `C_TSTARTN );
 wire tcmd_setend = ( cmd_status == `C_TENDNUM );
 wire lcmd_setdat = ( cmd_status == `C_RDATABP );
 wire mcmd_setdat = ( cmd_status == `C_WDATABP );
+wire zcmd_setdfl = ( cmd_status == `C_DCFLUSH );
 
 wire g_crlf = ( cmd_status == `C_GSETNUM ) & ( next_cmd_status == `C_GOTONUM );
 wire r_crlf = ( cmd_status == `C_RENDNUM ) & ( next_cmd_status == `C_RDUMPDT );
@@ -423,6 +441,7 @@ wire l_crlf = ( cmd_status == `C_RDATABP ) & ( next_cmd_status == `C_STAIDLE );
 wire m_crlf = ( cmd_status == `C_WDATABP ) & ( next_cmd_status == `C_STAIDLE );
 assign pc_print_sel = (cmd_status == `C_PCPRINT);
 assign pc_print = idle_status & (next_cmd_status == `C_PCPRINT);
+assign start_dcflush = zcmd_setdfl;
 
 //wire cmd_t_crlf = cmd_t & ~cpu_run_state;
 wire cmd_j_crlf = cmd_j & ~cpu_run_state;

@@ -60,11 +60,25 @@ wire frg = (wadr < radr);
 
 //wire wqfull_0 = (wadr == radr);
 //wire wqfull_1 = (wg&(wadr - radr == 2'd1))|(rg&(radr - wadr <= 2'd3));
-wire wqfull_2 = (fwg&(wadr - radr == SFIFODP-2))|(frg&(radr - wadr <= 2));
+//wire wqfull_2 = (fwg&(wadr - radr == SFIFODP-2))|(frg&(radr - wadr <= 2));
 wire wqfull_3 = (fwg&(wadr - radr == SFIFODP-1))|(frg&(radr - wadr <= 1));
-assign wqfull = wqfull_2 | wqfull_3 ;
+//assign wqfull = wqfull_2 | wqfull_3 ;
+assign wqfull = wqfull_3 ;
 
 // qempty checker
-assign rqempty = (wadr == radr);
+reg mask_next_of_radr_cntup;
+
+assign rqempty = (wadr == radr) | mask_next_of_radr_cntup;
+
+// mask 1cycle after radr + 1 because of 1 cycle read latency
+
+always @ (posedge clk or negedge rst_n) begin
+    if (~rst_n)
+        mask_next_of_radr_cntup  <= 1'b0;
+    else
+        mask_next_of_radr_cntup  <= rnext;
+end
+
+
 
 endmodule

@@ -26,12 +26,13 @@ module afifo
 
 reg [1:0] wadr;
 reg [1:0] radr;
+wire [AFIFODW-1:0] rdata_inner;
 
 afifo_1r1w #(.AFIFODW(AFIFODW)) afifo_1r1w (
 	.iclk(wclk),
 	.oclk(rclk),
 	.ram_radr(radr),
-	.ram_rdata(rdata),
+	.ram_rdata(rdata_inner),
 	.ram_wadr(wadr),
 	.ram_wdata(wdata),
 	.ram_wen(wen)
@@ -46,10 +47,11 @@ end
 
 wire [1:0] gwadr = { wadr[1], wadr[1] ^ wadr[0] };
 
-reg [1:0] gwadr_l0;
-reg [1:0] gwadr_l1;
-reg [1:0] gwadr_l2;
-reg [1:0] gwadr_l15;
+(* ASYC_REG = "TRUE", SHREG_EXTRACT="NO" *) reg [1:0] gwadr_l0;
+(* ASYC_REG = "TRUE", SHREG_EXTRACT="NO" *) reg [1:0] gwadr_l1;
+(* ASYC_REG = "TRUE", SHREG_EXTRACT="NO" *) reg [1:0] gwadr_l2;
+(* ASYC_REG = "TRUE", SHREG_EXTRACT="NO" *) reg [1:0] gwadr_l15;
+(* ASYC_REG = "TRUE", SHREG_EXTRACT="NO" *) reg [1:0] gwadr_l155;
 
 always @ (posedge wclk or negedge wrst_n) begin
 	if (~wrst_n)
@@ -64,12 +66,14 @@ always @ (posedge rclk or negedge rrst_n) begin
 	if (~rrst_n) begin
 		gwadr_l1  <= 2'd0;
 		gwadr_l15  <= 2'd0;
+		gwadr_l155  <= 2'd0;
 		gwadr_l2  <= 2'd0;
 	end
 	else begin
 		gwadr_l1  <= gwadr_l0;
 		gwadr_l15  <= gwadr_l1;
-		gwadr_l2  <= gwadr_l15;
+		gwadr_l155  <= gwadr_l15;
+		gwadr_l2  <= gwadr_l155;
 	end
 end
 
@@ -84,10 +88,11 @@ end
 
 wire [1:0] gradr = { radr[1], radr[1] ^ radr[0] } ;
 
-reg [1:0] gradr_l0;
-reg [1:0] gradr_l1;
-reg [1:0] gradr_l2;
-reg [1:0] gradr_l15;
+(* ASYC_REG = "TRUE", SHREG_EXTRACT="NO" *) reg [1:0] gradr_l0;
+(* ASYC_REG = "TRUE", SHREG_EXTRACT="NO" *) reg [1:0] gradr_l1;
+(* ASYC_REG = "TRUE", SHREG_EXTRACT="NO" *) reg [1:0] gradr_l2;
+(* ASYC_REG = "TRUE", SHREG_EXTRACT="NO" *) reg [1:0] gradr_l15;
+(* ASYC_REG = "TRUE", SHREG_EXTRACT="NO" *) reg [1:0] gradr_l155;
 
 always @ (posedge rclk or negedge rrst_n) begin
 	if (~rrst_n)
@@ -102,12 +107,14 @@ always @ (posedge wclk or negedge wrst_n) begin
 	if (~wrst_n) begin
 		gradr_l1  <= 2'd0;
 		gradr_l15  <= 2'd0;
+		gradr_l155  <= 2'd0;
 		gradr_l2  <= 2'd0;
 	end
 	else begin
 		gradr_l1  <= gradr_l0;
 		gradr_l15  <= gradr_l1;
-		gradr_l2  <= gradr_l15;
+		gradr_l155  <= gradr_l15;
+		gradr_l2  <= gradr_l155;
 	end
 end
 
@@ -119,11 +126,27 @@ wire frg = (wadr < bradr);
 
 //wire wqfull_0 = (wadr == bradr);
 //wire wqfull_1 = (wg&(wadr - bradr == 2'd1))|(rg&(bradr - wadr <= 2'd3));
-wire wqfull_2 = (fwg&(wadr - bradr == 2'd2))|(frg&(bradr - wadr <= 2'd2));
+//wire wqfull_2 = (fwg&(wadr - bradr == 2'd2))|(frg&(bradr - wadr <= 2'd2));
 wire wqfull_3 = (fwg&(wadr - bradr == 2'd3))|(frg&(bradr - wadr <= 2'd1));
-assign wqfull = wqfull_2 | wqfull_3 ;
+//assign wqfull = wqfull_2 | wqfull_3 ;
+assign wqfull =  wqfull_3 ;
 
 // qempty checker
-assign rqempty = (bwadr == radr);
+reg mask_next_of_radr_cntup;
+
+assign rqempty = (bwadr == radr) | mask_next_of_radr_cntup; // masking after radr + 1
+
+// mask read data for meta-stable
+assign rdata = rdata_inner & { (AFIFODW){ ~rqempty }};
+
+// mask 1cycle after radr + 1 because of 1 cycle read latency 
+
+always @ (posedge rclk or negedge rrst_n) begin
+	if (~rrst_n)
+		mask_next_of_radr_cntup  <= 1'b0;
+	else
+		mask_next_of_radr_cntup  <= rnext;
+end
+
 
 endmodule

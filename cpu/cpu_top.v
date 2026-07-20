@@ -12,8 +12,9 @@
 `define SUPPORT_A
 
 module cpu_top
-    #(parameter IWIDTH = 14,
-      parameter DWIDTH = 14)
+    #(parameter IWIDTH = 12,
+      parameter DWIDTH = 12,
+      parameter SWIDTH = 13)
 	(
 
 	input clk,
@@ -25,12 +26,14 @@ module cpu_top
 	input [31:2] start_adr,
 	output cpu_run_state,
 
-	input [DWIDTH+1:2] d_ram_radr,
-	input [DWIDTH+1:2] d_ram_wadr,
-	output [31:0] d_ram_rdata,
-	input [31:0] d_ram_wdata,
-	input d_ram_wen,
-	input d_read_sel,
+	input [SWIDTH+1:2] scr_ram_radr,
+	input [SWIDTH+1:2] scr_ram_wadr,
+	output [31:0] scr_ram_rdata,
+	input [31:0] scr_ram_wdata,
+	input scr_ram_wen,
+	input scr_read_sel,
+	//input d_ram_wen,
+	//input d_read_sel,
 
 	input [IWIDTH+1:2] i_ram_radr,
 	input [IWIDTH+1:2] i_ram_wadr,
@@ -47,12 +50,24 @@ module cpu_top
 	output dma_io_radr_en,
 	input [31:0] dma_io_rdata_in,
 
-    output ibus_ren,
-    output [19:2] ibus_radr,
-    input [15:0] ibus32_rdata,
-    output ibus_wen,
-    output [19:2] ibus_wadr,
-    output [15:0] ibus32_wdata,
+	input dma_io_we_u,
+	input [15:2] dma_io_wadr_u,
+	input [31:0] dma_io_wdata_u,
+	input [15:2] dma_io_radr_u,
+	input dma_io_radr_en_u,
+	output [31:0] dma_io_rdata_in_u_fin,
+
+	output dma_wstart_rq,
+	output [31:0] dma_win_addr,
+	output [127:0] dma_in_wdata,
+	output [15:0] dma_in_mask,
+	input dma_finish_wresp,
+	output dma_rstart_rq,
+	output [31:0] dma_rin_addr,
+	input [127:0] dma_rdat_m_data,
+	input [15:0] dma_rdat_m_mask,
+	input dma_rdat_m_valid,
+	input dma_finish_mrd,
 
 	output icr_start_rq,
 	output [31:0] ic_rin_addr,
@@ -194,6 +209,7 @@ wire interrupt_condition_ex;
 wire timer_condition_ex;
 wire jump_between_stall;
 wire jmp_purge_ex;
+wire fencei_wb_purge; // FPGA FIX (2026-07-19): fence.i shadow purge from ex_stage
 wire jmp_purge_ma;
 wire nohit_rs1_ex;
 wire nohit_rs2_ex;
@@ -232,13 +248,38 @@ wire [1:0] g_current_priv = `M_MODE; // temp
 wire post_jump_cmd_cond;
 //wire csr_meie;
 //wire csr_msie;
-wire dma_we_ma;
-wire [15:2] dataram_wadr_ma;
-wire [15:0] dataram_wdata_ma;
-wire dma_re_ma;
-wire [15:2] dataram_radr_ma;
-wire [15:0] dataram_rdata_wb;
+
+
+// io bus for cpu
+wire dma_io_we_c; // output
+wire [15:2] dma_io_wadr_c; // output
+wire [31:0] dma_io_wdata_c; // output
+wire [15:2] dma_io_radr_c; // output
+wire dma_io_radr_en_c; // output
+
+// io bus logics
+assign dma_io_we = dma_io_we_c | dma_io_we_u;
+assign dma_io_wadr = dma_io_we_u ? dma_io_wadr_u : dma_io_wadr_c;
+assign dma_io_wdata = dma_io_we_u ? dma_io_wdata_u : dma_io_wdata_c;
+assign dma_io_radr_en = dma_io_radr_en_c | dma_io_radr_en_u;
+assign dma_io_radr = dma_io_radr_en_u ? dma_io_radr_u : dma_io_radr_c;
+
 wire [31:0] dma_io_rdata;
+assign dma_io_rdata_in_u_fin = dma_io_rdata;
+
+// temp fixed
+//wire dma_we_ma;
+//wire [15:2] dataram_wadr_ma;
+//wire [15:0] dataram_wdata_ma;
+//wire dma_re_ma;
+//wire [15:2] dataram_radr_ma;
+//wire [15:0] dataram_rdata_wb = 128'd0;
+wire [SWIDTH-3:0] scr_ram_radr_all; // output
+wire [127:0] scr_ram_rdata_all; // input
+wire scr_ram_ren_all; // output
+wire [SWIDTH-3:0] scr_ram_wadr_all; // output
+wire [127:0] scr_ram_wdata_all; // output
+wire scr_ram_wen_all; // output
 
 // for M arch support
 `ifdef SUPPORT_M
@@ -260,6 +301,7 @@ wire m_cmd_finished; // output
 //wire divide_by_zero; // output // not used in risc-v
 wire div_result_valid;
 wire [4:0] div_rd_adr_ex;
+wire div_stall_start; // output
 wire div_stall; // output
 wire div_stall_fin; // output
 wire div_stall_fin2; // output
@@ -615,6 +657,8 @@ ex_stage ex_stage (
 	.m_cmd_finished(m_cmd_finished),
 	.div_result_valid(div_result_valid),
 	.div_rd_adr_ex(div_rd_adr_ex),
+	.div_stall_start(div_stall_start),
+	.div_stall_dly(div_stall_dly),
 `endif // SUPPORT_M
 `ifdef SUPPORT_A
 	.cmd_lrw_ex(cmd_lrw_ex),
@@ -637,6 +681,7 @@ ex_stage ex_stage (
 `endif // SUPPORT_A
 	.jmp_purge_ma(jmp_purge_ma),
 	.jmp_purge_ex(jmp_purge_ex),
+	.fencei_wb_purge(fencei_wb_purge),
 	.ic_stall(ic_stall),
 	.stall(stall),
 	.stall_1shot(stall_1shot),
@@ -668,15 +713,23 @@ mex_stage mex_stage (
 	//.divide_by_zero(divide_by_zero), // not used in risc-v
 	.div_result_valid(div_result_valid),
 	.div_rd_adr_ex(div_rd_adr_ex),
+	.div_stall_start(div_stall_start),
 	.div_stall(div_stall),
 	.div_stall_fin(div_stall_fin),
 	.div_stall_fin2(div_stall_fin2),
 	.div_stall_dly(div_stall_dly),
-	.stall(stall)
+	.stall(stall),
+	// FPGA FIX (2026-07-19): cancel an in-flight mul/div when an
+	// interrupt is taken mid-op (mepc re-executes it after mret;
+	// without this the deferred writeback also lands = double
+	// execution, corrupting rd-in-rs forms like `mul a5,a5,a4`).
+	// Also cancel one started by the instruction in a fence.i
+	// shadow (fencei_wb_purge) - the retry jump re-executes it.
+	.intexp_cancel_mex(interrupt_condition_ex | timer_condition_ex | fencei_wb_purge)
 	);
 `endif // SUPPORT_M
 
-ma_stage #(.DWIDTH(DWIDTH)) ma_stage (
+ma_stage #(.DWIDTH(DWIDTH), .SWIDTH(SWIDTH)) ma_stage (
 	.clk(clk),
 	.rst_n(rst_n),
 	.cmd_ld_ma(cmd_ld_ma),
@@ -704,24 +757,33 @@ ma_stage #(.DWIDTH(DWIDTH)) ma_stage (
 	.dc_tag_hit_ma(dc_tag_hit_ma),
 	.dc_st_wt_ma(dc_st_wt_ma),
 	.dc_cache_wr_ma(dc_cache_wr_ma),
-	.d_ram_radr(d_ram_radr),
-	.d_ram_rdata(d_ram_rdata),
-	.d_ram_wadr(d_ram_wadr),
-	.d_ram_wdata(d_ram_wdata),
-	.d_ram_wen(d_ram_wen),
-	.d_read_sel(d_read_sel),
-	.dma_io_we(dma_io_we),
-	.dma_io_wadr(dma_io_wadr),
-	.dma_io_wdata(dma_io_wdata),
-	.dma_io_radr(dma_io_radr),
-	.dma_io_radr_en(dma_io_radr_en),
+	.scr_ram_radr(scr_ram_radr),
+	.scr_ram_rdata(scr_ram_rdata),
+	.scr_ram_wadr(scr_ram_wadr),
+	.scr_ram_wdata(scr_ram_wdata),
+	.scr_ram_wen(scr_ram_wen),
+	.scr_read_sel(scr_read_sel),
+	//.d_ram_wen(d_ram_wen),
+	//.d_read_sel(d_read_sel),
+	.dma_io_we(dma_io_we_c),
+	.dma_io_wadr(dma_io_wadr_c),
+	.dma_io_wdata(dma_io_wdata_c),
+	.dma_io_radr(dma_io_radr_c),
+	.dma_io_radr_en(dma_io_radr_en_c),
 	.dma_io_rdata(dma_io_rdata),
-	.dma_we_ma(dma_we_ma),
-	.dataram_wadr_ma(dataram_wadr_ma),
-	.dataram_wdata_ma(dataram_wdata_ma),
-	.dma_re_ma(dma_re_ma),
-	.dataram_radr_ma(dataram_radr_ma),
-	.dataram_rdata_wb(dataram_rdata_wb),
+	.scr_ram_radr_all(scr_ram_radr_all),
+	.scr_ram_rdata_all(scr_ram_rdata_all),
+	.scr_ram_ren_all(scr_ram_ren_all),
+	.scr_ram_wadr_all(scr_ram_wadr_all),
+	.scr_ram_wdata_all(scr_ram_wdata_all),
+	.scr_ram_wen_all(scr_ram_wen_all),
+
+	//.dma_we_ma(dma_we_ma),
+	//.dataram_wadr_ma(dataram_wadr_ma),
+	//.dataram_wdata_ma(dataram_wdata_ma),
+	//.dma_re_ma(dma_re_ma),
+	//.dataram_radr_ma(dataram_radr_ma),
+	//.dataram_rdata_wb(dataram_rdata_wb),
 `ifdef SUPPORT_A
 	.success_scw_ma(success_scw_ma),
 	.cmd_scw_purge_ma(cmd_scw_purge_ma),
@@ -880,28 +942,33 @@ ilu_stage #(.IWIDTH(IWIDTH)) ilu_stage (
 	.rst_pipe(rst_pipe)
 	);
 
-dma #(.DWIDTH(DWIDTH)) dma (
+dma #(.SWIDTH(SWIDTH)) dma (
 	.clk(clk),
 	.rst_n(rst_n),
 	.dma_io_we(dma_io_we),
 	.dma_io_wadr(dma_io_wadr),
 	.dma_io_wdata(dma_io_wdata),
 	.dma_io_radr(dma_io_radr),
+	.dma_io_radr_en(dma_io_radr_en),
 	.dma_io_rdata_in(dma_io_rdata_in),
 	.dma_io_rdata(dma_io_rdata),
-	.dma_we_ma(dma_we_ma),
-	.dataram_wadr_ma(dataram_wadr_ma),
-	.dataram_wdata_ma(dataram_wdata_ma),
-	.dma_re_ma(dma_re_ma),
-	.dataram_radr_ma(dataram_radr_ma),
-	.dataram_rdata_wb(dataram_rdata_wb),
-	.ibus_ren(ibus_ren),
-	.ibus_radr(ibus_radr),
-	.ibus32_rdata(ibus32_rdata),
-	.ibus_wen(ibus_wen),
-	.ibus_wadr(ibus_wadr),
-	.ibus32_wdata(ibus32_wdata),
-	.rst_pipe(rst_pipe)
+	.scr_ram_radr_all(scr_ram_radr_all),
+	.scr_ram_rdata_all(scr_ram_rdata_all),
+	.scr_ram_ren_all(scr_ram_ren_all),
+	.scr_ram_wadr_all(scr_ram_wadr_all),
+	.scr_ram_wdata_all(scr_ram_wdata_all),
+	.scr_ram_wen_all(scr_ram_wen_all),
+	.dma_wstart_rq(dma_wstart_rq),
+	.dma_win_addr(dma_win_addr),
+	.dma_in_wdata(dma_in_wdata),
+	.dma_in_mask(dma_in_mask),
+	.dma_finish_wresp(dma_finish_wresp),
+	.dma_rstart_rq(dma_rstart_rq),
+	.dma_rin_addr(dma_rin_addr),
+	.dma_rdat_m_data(dma_rdat_m_data),
+	.dma_rdat_m_mask(dma_rdat_m_mask),
+	.dma_rdat_m_valid(dma_rdat_m_valid),
+	.dma_finish_mrd(dma_finish_mrd)
 	);
 
 endmodule

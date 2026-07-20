@@ -8,7 +8,11 @@
  * @version		0.1
  */
 
-module uart_logics (
+// Current bug : read from SDRAM when read from scrach pad  2026/06/20 Y.kurokawa
+
+module uart_logics 
+	#(parameter SWIDTH = 13)
+	(
 	input clk,
 	input rst_n,
 
@@ -36,6 +40,13 @@ module uart_logics (
     output [15:0] d_ram_mask,
     output d_ram_wen,
     input uart_finish_wresp,
+	// for scrach pad
+	output [SWIDTH+1:2] scr_ram_radr,
+	output [SWIDTH+1:2] scr_ram_wadr,
+    input [31:0] scr_ram_rdata,
+    output [31:0] scr_ram_wdata,
+    output scr_ram_wen,
+    output scr_read_sel,
     //output d_read_sel,
 
 	// form/to io bus
@@ -109,10 +120,12 @@ always @ (posedge clk or negedge rst_n) begin
 end
 
 wire cmd_wadr_for_ioreg = (cmd_wadr_cntr[31:30] == 2'b11);
-wire cmd_wadr_for_csr   = (cmd_wadr_cntr[31:30] == 2'b10);
+wire cmd_wadr_for_csr_scr = (cmd_wadr_cntr[31:30] == 2'b10);
 wire cmd_wadr_for_rf    = (cmd_wadr_cntr[31:30] == 2'b00);
 
 reg write_stat;
+wire cmd_read_adr_for_csr_scr;
+wire all_read_running;
 
 //assign u_write_adr = trush_running ? { { 8{ 1'b0}}, trush_adr, 2'd0} : { cmd_wadr_cntr[31:2], 2'd0};
 //assign u_write_data = trush_running ? 32'd0 : uart_data;
@@ -123,7 +136,12 @@ assign d_ram_mask = trush_running ? 16'h0000 :
                     (cmd_wadr_cntr[3:2] == 2'd3) ? 16'h0fff :
                     (cmd_wadr_cntr[3:2] == 2'd2) ? 16'hf0ff :
                     (cmd_wadr_cntr[3:2] == 2'd1) ? 16'hff0f : 16'hfff0;
-assign d_ram_wen = (write_data_en | trush_req) & ~write_stat;
+assign d_ram_wen = (write_data_en | trush_req) & ~write_stat & ~cmd_wadr_for_csr_scr;
+
+assign scr_ram_wadr = trush_running ? trush_adr[SWIDTH+1:2] : cmd_wadr_cntr[SWIDTH+1:2];
+assign scr_ram_wdata = d_ram_wdata[31:0];
+assign scr_ram_wen = (write_data_en | trush_req) & cmd_wadr_for_csr_scr;
+assign scr_read_sel = all_read_running & cmd_read_adr_for_csr_scr;
 //assign d_read_sel = dump_running;
 
 //assign u_write_w = 1'b1;
@@ -156,7 +174,7 @@ always @ (posedge clk or negedge rst_n) begin
 end
 
 wire cmd_read_adr_for_ioreg = (cmd_read_adr[31:30] == 2'b11);
-wire cmd_read_adr_for_csr   = (cmd_read_adr[31:30] == 2'b10);
+assign cmd_read_adr_for_csr_scr = (cmd_read_adr[31:30] == 2'b10);
 wire cmd_read_adr_for_rf    = (cmd_read_adr[31:30] == 2'b00);
 
 reg [1:0] dread_dsel;
@@ -181,6 +199,8 @@ assign dump_end =(cmd_read_adr >= {1'b0, cmd_read_end});
 //assign u_read_adr = { cmd_read_adr[31:2], 2'b00 };
 assign d_ram_radr = {cmd_read_adr[31:4], 4'd0};
 
+assign scr_ram_radr = cmd_read_adr[SWIDTH+1:2];
+
 
 `define D_IDLE 3'd0
 `define D_RED1 3'd1
@@ -188,8 +208,12 @@ assign d_ram_radr = {cmd_read_adr[31:4], 4'd0};
 `define D_DRWT 3'd3
 `define D_DRDF 3'd4
 `define D_WAIT 3'd5
+`define D_SCR1 3'd6
+`define D_SCR2 3'd7
 reg [2:0] status_dump;
 wire [2:0] next_status_dump;
+reg scr_rddata_en;
+wire scr_sel = uart_data[31];
 
 function [2:0] dump_status;
 input [2:0] st0tus_dump;
@@ -202,17 +226,32 @@ input dump_end;
 input pc_print;
 input pc_print_sel;
 input read_valid;
+input scr_rddata_en;
+input scr_sel;
 begin
 	case(status_dump)
 		`D_IDLE :
             if (pgm_end_set)
                 dump_status = `D_RED1;
-			else if (read_end_set)
+			else if (read_end_set & ~scr_sel)
 				dump_status = `D_DRWT;
+			else if (read_end_set & scr_sel)
+				dump_status = `D_DRWT;
+				//dump_status = `D_SCR1;
 			else if (pc_print)
 				dump_status = `D_WAIT;
 			else
 				dump_status = `D_IDLE;
+        `D_SCR1 :
+			if (read_stop)
+                dump_status = `D_IDLE;
+            else
+                dump_status = `D_SCR2;
+        `D_SCR2 :
+			if (read_stop)
+                dump_status = `D_IDLE;
+            else
+                dump_status = `D_DRWT;
         `D_RED1 :
             if (pgm_stop)
                 dump_status = `D_IDLE;
@@ -226,6 +265,7 @@ begin
 		`D_DRWT :
 			if (read_stop)
 				dump_status = `D_IDLE;
+			//else if (read_valid|scr_rddata_en)
 			else if (read_valid)
 				dump_status = `D_DRDF;
 			else
@@ -265,7 +305,9 @@ assign next_status_dump = dump_status(
 							dump_end,
 							pc_print,
 							pc_print_sel,
-						    read_valid
+						    read_valid,
+						    scr_rddata_en,
+						    scr_sel
 							);
 
 always @ (posedge clk or negedge rst_n) begin
@@ -283,13 +325,18 @@ assign radr_cntup = (status_dump == `D_RED2);
 assign dradr_cntup = (status_dump == `D_DRWT)&(next_status_dump == `D_DRDF);
 wire dread_start = ((status_dump == `D_IDLE)|(status_dump == `D_DRDF))&(next_status_dump == `D_DRWT);
 assign dump_running = (status_dump != `D_IDLE);
+assign all_read_running = (status_dump != `D_IDLE)|(next_status_dump != `D_IDLE);
 //wire read_running1 = (status_dump != `D_RED1)|(next_status_dump == `D_RED1);
 //wire read_running2 = (status_dump == `D_RED1)|(next_status_dump == `D_RED2);
-wire rdata_snd_wait = (status_dump == `D_WAIT)|(status_dump == `D_DRDF)|(status_dump == `D_WAIT);
+//wire rdata_snd_wait = (status_dump == `D_WAIT)|(status_dump == `D_DRDF)|(status_dump == `D_WAIT);
+wire rdata_snd_wait = (status_dump == `D_DRDF)|(status_dump == `D_WAIT);
+assign scr_1st_radr = (status_dump == `D_SCR1);
 
+//assign u_read_req = (dradr_cntup | dread_start) & ~cmd_read_adr_for_csr_scr;
 assign u_read_req = dradr_cntup | dread_start;
 
 // io bus
+/*
 reg io_ram_sel;
 wire io_read_sel;
 
@@ -301,12 +348,14 @@ always @ (posedge clk or negedge rst_n) begin
 	else if ( pgm_end_set )
 		io_ram_sel <= 1'b1;
 end
+*/
 
 //assign dma_io_radr_en = radr_cntup & io_ram_sel;
 assign dma_io_radr_en = radr_enable & cmd_read_adr_for_ioreg;
-assign csr_radr_en_mon = radr_enable & cmd_read_adr_for_csr;
+assign csr_radr_en_mon = radr_enable & cmd_read_adr_for_csr_scr;
 assign rf_radr_en_mon = radr_enable & cmd_read_adr_for_rf;
-
+//wire scr_radr_en = (dradr_cntup | dread_start) & cmd_read_adr_for_csr_scr;
+wire scr_radr_en = (dread_start) & cmd_read_adr_for_csr_scr;
 
 reg dma_io_data_en;
 //reg dma_io_data_en_dly;
@@ -314,10 +363,12 @@ reg dma_io_data_en;
 always @ (posedge clk or negedge rst_n) begin
 	if (~rst_n) begin
 		dma_io_data_en <= 1'b0;
+		scr_rddata_en <= 1'b0;
 		//dma_io_data_en_dly <= 1'b0;
 	end
 	else begin
 		dma_io_data_en <= radr_enable;
+		scr_rddata_en <= scr_radr_en;
 		//dma_io_data_en_dly <= dma_io_data_en;
 	end
 end
@@ -332,7 +383,7 @@ assign dma_io_wdata = uart_data;
 
 assign csr_radr_mon = cmd_read_adr[13:2];
 assign csr_wadr_mon = cmd_wadr_cntr[13:2];
-assign csr_we_mon = inst_data_en & cmd_wadr_for_csr;
+assign csr_we_mon = inst_data_en & cmd_wadr_for_csr_scr;
 assign csr_wdata_mon = uart_data;
 
 assign rf_radr_mon = cmd_read_adr[6:2];
@@ -349,14 +400,16 @@ reg [31:0] data_0;
 always @ (posedge clk or negedge rst_n) begin
 	if (~rst_n)
 		data_0 <= 32'd0;
-	else if (read_valid)
+	else if (scr_rddata_en & cmd_read_adr_for_csr_scr)
+		data_0 <= scr_ram_rdata;
+	else if (read_valid & ~cmd_read_adr_for_csr_scr)
 		data_0 <= read_data;
 	//else if (dma_io_data_en & ~dma_io_data_en_dly)
 	else if (dma_io_data_en & cmd_read_adr_for_ioreg)
 		data_0 <= dma_io_rdata_in;
 	else if (dma_io_data_en & cmd_read_adr_for_rf)
 		data_0 <= rf_rdata_mon;
-	else if (radr_enable & cmd_read_adr_for_csr)
+	else if (radr_enable & cmd_read_adr_for_csr_scr)
 		data_0 <= csr_rdata_mon;
 end
 
