@@ -396,26 +396,47 @@ assign csr_mepc_ex = csr_mepc[31:2];
 
 // mcause
 // conditions
+//
+// FIX (2026-07-16): mcause/mtval must be selected by the condition that
+// actually FIRED this trap, not by the raw pending LEVELS of the
+// interrupt sources.  The old code used g_interrupt/frc_cntr_val_leq
+// (level signals that stay asserted from compare-match until the ISR
+// clears the FRC status bit) as both the code selector and the
+// interrupt bit.  Consequence: while mstatus.MIE=0 (inside the timer
+// ISR itself, or any irq-off region) with a timer compare already
+// pending, an illegal-instruction trap (e.g. a wild jump into garbage)
+// or an ecall was reported as mcause=0x8000_0007 - i.e. disguised as a
+// normal timer interrupt.  The kernel then serviced a "timer
+// interrupt", mret'ed straight back to the faulting PC and trapped
+// again forever, and mtval was 0 instead of the faulting instruction.
+// This masked real crashes as spurious timer interrupts and destroyed
+// the diagnostics.
+//
+// interrupt_condition_ex / timer_condition_ex are the actual 1-shot
+// "this trap is being taken now" strobes from ex_stage (already gated
+// by ~stall & csr_rmie), so they are the correct selectors and are
+// timing-consistent with mcause_write below.  illegal_ops_ex is
+// checked before ecall_condition_ex because ex_stage's
+// ecall_condition_ex includes illegal_ops_ex in its OR (in practice
+// g_exception suppresses ecall_condition_ex for illegal ops, but the
+// explicit priority keeps this correct even if that coupling changes).
 //wire interrupt_bit = interrupt_condition_ex;
-wire interrupt_bit = g_interrupt | frc_cntr_val_leq;
-// just impliment Machine mode Ecall and inteeupt
-//wire [30:0] mcause_code = g_interrupt ? 31'd11 :
-						  //illegal_ops_ex ? 31'd2 :
-                          //ecall_condition_ex ?  31'd3 : 31'd0;
+wire interrupt_bit = interrupt_condition_ex | timer_condition_ex;
 
-assign mcause_code = g_interrupt ? 6'd11 :
-                     frc_cntr_val_leq ? 6'd7 :
-                     ecall_condition_ex ?  6'd11 :
+assign mcause_code = interrupt_condition_ex ? 6'd11 :
+                     timer_condition_ex ? 6'd7 :
                      illegal_ops_ex ? 6'd2 :
+                     ecall_condition_ex ?  6'd11 :
                      //cmd_ebreak_ex ?  6'd3 :
                      6'h3f;
 
-//wire [31:0] sel_tval = (g_interrupt) ? 32'd0 :
-wire [31:0] sel_tval = (g_interrupt | frc_cntr_val_leq) ? 32'd0 :
+// FIX (2026-07-16): same level-vs-condition fix as mcause_code above -
+// an illegal-instruction trap taken while a timer compare was pending
+// used to lose its mtval (reported 0 instead of the faulting
+// instruction bits).
+wire [31:0] sel_tval = (interrupt_condition_ex | timer_condition_ex) ? 32'd0 :
                        illegal_ops_ex ? illegal_ops_inst : 32'd0;
                        //illegal_ops_ex ? { pc_ex, 2'd0 } : 32'd0; // debug
-//wire [31:0] sel_tval = (g_interrupt | frc_cntr_val_leq) ? 32'd0 :
-                       //cmd_ebreak_ex ? { pc_ebreak, 2'd0 } :
 
 
 //wire mcause_write = ecall_condition_ex | g_interrupt | g_exception;

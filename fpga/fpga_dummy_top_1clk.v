@@ -12,12 +12,14 @@
 `define ARTY_A7
 
 module fpga_top
-    #(parameter IWIDTH = 12,
-      parameter DWIDTH = 12,
+    #(parameter IWIDTH = 3,
+      parameter DWIDTH = 3,
       parameter SWIDTH = 13)
     (
 	input clkin,
 	input rst_n,
+	input mclk,
+	input mrst_n,
 	input rx,
 	output tx,
 	input interrupt_0,
@@ -230,7 +232,7 @@ wire start_dcflush;
 wire dcflush_running;
 
 wire clk;
-wire mclk = clk;
+//wire mclk = clk;
 //wire mclk_not_used;
 // for debug
 wire tx_fifo_full;
@@ -275,7 +277,7 @@ wire clk_200mhz;
 //wire clk_ref_i = clk_200mhz; // input
 //wire ui_clk;
 //wire ui_clk_sync_rst;
-wire mrst_n = rst_n;
+//wire mrst_n = rst_n;
 //wire mclk = ui_clk;
 //wire mrst_n = ~ui_clk_sync_rst;
 //wire mrst_n = rst_n;
@@ -390,7 +392,7 @@ cpu_top #(.DWIDTH(DWIDTH), .IWIDTH(IWIDTH), .SWIDTH(SWIDTH)) cpu_top (
 	.ic_rdat_m_mask(ic_rdat_m_mask),
 	.ic_rdat_m_valid(ic_rdat_m_valid),
 	.ic_finish_mrd(ic_finish_mrd),
-	.start_icflush(1'b0),
+	.start_icflush(start_dcflush),
 
     .csr_radr_en_mon(csr_radr_en_mon),
     .csr_radr_mon(csr_radr_mon),

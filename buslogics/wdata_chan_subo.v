@@ -116,11 +116,27 @@ always @ (posedge clk or negedge rst_n) begin
         burst_cntr <= burst_cntr + 2'd1;
 end
 
+// FPGA (2026-07-17): ROOT-CAUSE FIX for the long-standing DRAM write-loss.
+// wdat_s_valid is the write-data-queue (afifo) enqueue enable. It was
+// registered from RAW wlast, unlike the write-DATA-beat captures below
+// (wdata_ofs*_wen) and unlike the ADDRESS-side enqueue (req_chan_subo.v:
+// reqc_s_valid = (a_valid & a_ready) delayed 1 cycle), both of which are
+// gated by accept (valid & ready). Because afifo.v advances its write
+// pointer on wen WITHOUT checking wqfull, this asymmetry is catastrophic:
+// when the write-data FIFO is full the FSM drops wready (SBUSY) but an
+// AXI master holds wvalid & wlast asserted, so `wdat_s_valid <= wlast`
+// pulses EVERY cycle -> repeated enqueues into a full afifo -> pointer
+// overrun AND more data entries than address entries -> the separate
+// write_addr_queue / write_data_queue afifos DESYNC -> every subsequent
+// write lands with the wrong data at the wrong address (~99.6% loss under
+// dense bursts, none for isolated/gentle writes). Gate it exactly like the
+// data-beat captures so it enqueues once, only when the last beat is
+// actually accepted (which the FSM only allows when the FIFO has room).
 always @ (posedge clk or negedge rst_n) begin
     if (~rst_n)
         wdat_s_valid <= 1'b0;
     else
-        wdat_s_valid <= wlast;
+        wdat_s_valid <= wlast & wvalid & wready;
 end
 
 assign finish_swd = wdat_s_valid;

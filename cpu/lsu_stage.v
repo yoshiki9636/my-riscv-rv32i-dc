@@ -64,7 +64,33 @@ module lsu_stage
 //
 // flush function
 
-wire dcflush_start = fencei_condition_ex | start_dcflush;
+wire dcflush_start_raw = fencei_condition_ex | start_dcflush;
+
+// FPGA FIX (2026-07-19): the dc_miss FSM only samples dcflush_start in
+// DCMS_IDLE, but a fence.i can execute exactly on a DCMS_LDRD cycle
+// (dc_stall is low there, and a fence.i frozen in EX behind a missing
+// load/store - e.g. patch_text's store followed by fence.i - resumes on
+// that very cycle).  The start pulse was silently dropped: no flush, no
+// fencei_dcflush_end, no fencei_cond - and with ex_stage's new
+// fencei_wb_purge that also means the purge latch never clears and the
+// CPU wedges with every writeback masked.  Latch the request and replay
+// it when the FSM reaches IDLE (MEMW/MEMR states are unreachable here
+// because dc_stall blocks fence.i from executing during them).
+reg dcflush_pend;
+wire [3:0] dc_miss_current_w;
+
+// 4'b0000 = DCMS_IDLE (macro is defined further down in this file)
+always @ (posedge clk or negedge rst_n) begin
+    if (~rst_n)
+        dcflush_pend <= 1'b0;
+    else if (dc_miss_current_w == 4'b0000)
+        dcflush_pend <= 1'b0;
+    else if (dcflush_start_raw)
+        dcflush_pend <= 1'b1;
+end
+
+wire dcflush_start = dcflush_start_raw |
+                     (dcflush_pend & (dc_miss_current_w == 4'b0000));
 
 reg [DWIDTH+2:4] dcflush_cntr;
 reg dc_stall_dly;
@@ -243,6 +269,9 @@ always @ (posedge clk or negedge rst_n) begin
     else
         dc_miss_current <= dc_miss_next;
 end
+
+// mirror for the dcflush_pend block above (declared before the macros)
+assign dc_miss_current_w = dc_miss_current;
 
 // current read address keeper
 

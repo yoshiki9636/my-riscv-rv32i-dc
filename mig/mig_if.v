@@ -44,29 +44,61 @@ module mig_if (
 	);
 
 // MIG interface
-reg req_rd_bwt_lat;
-always @ (posedge mclk or negedge mrst_n) begin
-    if (~mrst_n)
-        req_rd_bwt_lat  <= 1'd0;
-    else if (req_rnext)
-        req_rd_bwt_lat  <= req_rd_bwt;
-end
+//reg req_rd_bwt_lat;
+//always @ (posedge mclk or negedge mrst_n) begin
+    //if (~mrst_n)
+        //req_rd_bwt_lat  <= 1'd0;
+    //else if (req_rnext)
+        //req_rd_bwt_lat  <= req_rd_bwt;
+//end
 
 // request
 //assign app_addr = req_qraddr [27:0] ;
-assign app_addr = {1'b0, req_qraddr[27:4], 3'b000} ;
-assign app_cmd = { 2'b00, req_rd_bwt };
-assign app_en = ~req_rqempty;
+wire [27:0] r_app_addr = {1'b0, req_qraddr[27:4], 3'b000} ;
+wire [2:0] r_app_cmd = { 2'b00, req_rd_bwt };
+wire r_app_en = ~req_rqempty & req_rd_bwt;
 
-assign req_rnext = app_en & app_rdy;
+reg app_wreq_stock;
+always @ (posedge mclk or negedge mrst_n) begin
+    if (~mrst_n)
+        app_wreq_stock  <= 1'd0;
+    else if (req_rnext)
+        app_wreq_stock  <= 1'd0;
+    else if (~req_rqempty & ~req_rd_bwt & ~app_wdf_wren) // write req coming before app_wdf_wren
+        app_wreq_stock  <= 1'b1;
+end
+
+reg [27:4] waddr_lat;
+always @ (posedge mclk or negedge mrst_n) begin
+    if (~mrst_n)
+        waddr_lat  <= 24'd0;
+    else if (~req_rqempty & ~req_rd_bwt & ~app_wdf_wren) // write req coming before app_wdf_wren
+        waddr_lat  <= req_qraddr[27:4];
+end
+
+//wire w_app_addr = app_wreq_stock ? {1'b0, waddr_lat, 3'b000} : {1'b0, req_qraddr[27:4], 3'b000} ;
+wire [27:0] w_app_addr = {1'b0, req_qraddr[27:4], 3'b000} ;
+//wire [27:0] w_app_addr = {waddr_lat, 3'b000};
+wire [2:0] w_app_cmd = 3'b000; // app_wreq_stock ? 3'b000 : { 2'b00, req_rd_bwt };
+//wire w_app_en_pre = ((~req_rqempty & ~req_rd_bwt) | app_wreq_stock);
+wire w_app_en_pre = ~req_rqempty & ~req_rd_bwt;
+wire w_app_en = w_app_en_pre & ~wdq_rqempty & app_wdf_rdy;
+
+//assign app_addr = app_wreq_stock ? w_app_addr : r_app_addr;
+assign app_addr = r_app_addr;
+//assign app_cmd = app_wreq_stock ? w_app_cmd : r_app_cmd;
+assign app_cmd = r_app_cmd;
+assign app_en = w_app_en | r_app_en;
+
+assign req_rnext = (r_app_en | (w_app_en & app_wdf_wren & app_wdf_rdy)) & app_rdy;
 
 // write data
 assign app_wdf_data = wdq_mask_rdata[127:0];
 assign app_wdf_mask = wdq_mask_rdata[143:128];
-assign app_wdf_wren = ~wdq_rqempty & ~req_rd_bwt_lat;
+assign app_wdf_wren = ~wdq_rqempty & w_app_en_pre & app_rdy; 
 assign app_wdf_end = app_wdf_wren; // data 128bit only
 
-assign wdq_rnext = app_wdf_wren & app_wdf_rdy;
+assign wdq_rnext = app_wdf_wren & app_wdf_rdy & w_app_en & app_rdy;
 
 // read data
 assign rdq_wen = app_rd_data_valid;

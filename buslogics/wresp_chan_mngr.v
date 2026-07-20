@@ -49,7 +49,14 @@ begin
 		`RESP_MBINP: begin
     		casex({bvalid, check_ok, finish_wd})
 				3'b0xx: resp_m_decode = `RESP_MBINP;
-				3'b10x: resp_m_decode = `RESP_MDEFO;
+				// FPGA (2026-07-17): bvalid=1 & check_ok=0 = a write response
+				// for ANOTHER write manager. bvalid/bid/bcomp are broadcast
+				// raw to every write manager (axi_bus_top.v: dc_bvalid=
+				// uart_bvalid=..=bvalid), so this beat's bid != our latched id.
+				// Not ours: stay and keep waiting instead of RESP_MDEFO, which
+				// pinned dc_stall forever on a store (same silent hang class
+				// as the read side). check_ok already gates finish_wresp.
+				3'b10x: resp_m_decode = `RESP_MBINP;
 				3'b110: resp_m_decode = `RESP_MIDLE;
 				3'b111: resp_m_decode = `RESP_MBINP;
 				default: resp_m_decode = `RESP_MDEFO;

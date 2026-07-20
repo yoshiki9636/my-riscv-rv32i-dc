@@ -142,19 +142,34 @@ wire num_char = | decode_bits[15:0];
 //assign test = decode_bits[18:16];
 //assign test = pdata[2:0];
 
-wire cmd_g = decode_bits[16] & data_en;
+// FPGA FIX (2026-07-19): console RX support - while the CPU is running,
+// every received byte is LINUX CONSOLE input (latched by io_uart_out's
+// SYS_UART_RXCH register for the kernel's myuart driver to poll), so
+// the monitor's LETTER commands must NOT be interpreted then: typing
+// 'q' in the shell used to assert quit_cmd and silently STOP THE CPU.
+// Gate the letter commands with ~cpu_run_state.  cmd_q (Ctrl-c, 0x03)
+// is intentionally left UNGATED: it's a control code, never present in
+// normal typed shell text, and the author's own original design intent
+// is "quit from any command/state" (see the format comment below) - it
+// is the normal, muscle-memory way back to the monitor while Linux is
+// running and must keep working (2026-07-19: an earlier version of
+// this fix gated cmd_q too and added a separate Ctrl-] escape, which
+// broke that workflow; reverted - Ctrl-c alone is correct and simpler).
+wire mon_en = ~cpu_run_state;
+
+wire cmd_g = decode_bits[16] & data_en & mon_en;
 wire cmd_q = decode_bits[17] & data_en;
-wire cmd_w = decode_bits[18] & data_en;
-wire cmd_r = decode_bits[19] & data_en;
-wire cmd_t = decode_bits[20] & data_en;
-wire cmd_s = decode_bits[21] & data_en;
-wire cmd_p = decode_bits[22] & data_en;
-wire cmd_i = decode_bits[23] & data_en;
-wire cmd_j = decode_bits[24] & data_en;
-wire cmd_z = decode_bits[25] & data_en;
-wire cmd_l = decode_bits[26] & data_en;
-wire cmd_m = decode_bits[27] & data_en;
-wire cmd_crlf = decode_bits[28] & data_en;
+wire cmd_w = decode_bits[18] & data_en & mon_en;
+wire cmd_r = decode_bits[19] & data_en & mon_en;
+wire cmd_t = decode_bits[20] & data_en & mon_en;
+wire cmd_s = decode_bits[21] & data_en & mon_en;
+wire cmd_p = decode_bits[22] & data_en & mon_en;
+wire cmd_i = decode_bits[23] & data_en & mon_en;
+wire cmd_j = decode_bits[24] & data_en & mon_en;
+wire cmd_z = decode_bits[25] & data_en & mon_en;
+wire cmd_l = decode_bits[26] & data_en & mon_en;
+wire cmd_m = decode_bits[27] & data_en & mon_en;
+wire cmd_crlf = decode_bits[28] & data_en & mon_en;
 
 // command format
 // g : goto PC address ( run program until quit ) : format:  g <start addess>

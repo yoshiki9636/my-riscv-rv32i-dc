@@ -388,7 +388,12 @@ cpu_top #(.DWIDTH(DWIDTH), .IWIDTH(IWIDTH), .SWIDTH(SWIDTH)) cpu_top (
 	.ic_rdat_m_mask(ic_rdat_m_mask),
 	.ic_rdat_m_valid(ic_rdat_m_valid),
 	.ic_finish_mrd(ic_finish_mrd),
-	.start_icflush(1'b0),
+	// FPGA FIX (2026-07-19): was 1'b0 - the monitor had NO way to
+	// invalidate the I$, so a reflash/restart without an FPGA
+	// reconfigure executed stale old-kernel lines out of the 16KB I$.
+	// The existing D$-flush monitor command (zcmd_setdfl) now flushes
+	// BOTH caches; issue it after quit and before loading a new image.
+	.start_icflush(start_dcflush),
 
     .csr_radr_en_mon(csr_radr_en_mon),
     .csr_radr_mon(csr_radr_mon),

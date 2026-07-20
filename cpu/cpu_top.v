@@ -209,6 +209,7 @@ wire interrupt_condition_ex;
 wire timer_condition_ex;
 wire jump_between_stall;
 wire jmp_purge_ex;
+wire fencei_wb_purge; // FPGA FIX (2026-07-19): fence.i shadow purge from ex_stage
 wire jmp_purge_ma;
 wire nohit_rs1_ex;
 wire nohit_rs2_ex;
@@ -680,6 +681,7 @@ ex_stage ex_stage (
 `endif // SUPPORT_A
 	.jmp_purge_ma(jmp_purge_ma),
 	.jmp_purge_ex(jmp_purge_ex),
+	.fencei_wb_purge(fencei_wb_purge),
 	.ic_stall(ic_stall),
 	.stall(stall),
 	.stall_1shot(stall_1shot),
@@ -716,7 +718,14 @@ mex_stage mex_stage (
 	.div_stall_fin(div_stall_fin),
 	.div_stall_fin2(div_stall_fin2),
 	.div_stall_dly(div_stall_dly),
-	.stall(stall)
+	.stall(stall),
+	// FPGA FIX (2026-07-19): cancel an in-flight mul/div when an
+	// interrupt is taken mid-op (mepc re-executes it after mret;
+	// without this the deferred writeback also lands = double
+	// execution, corrupting rd-in-rs forms like `mul a5,a5,a4`).
+	// Also cancel one started by the instruction in a fence.i
+	// shadow (fencei_wb_purge) - the retry jump re-executes it.
+	.intexp_cancel_mex(interrupt_condition_ex | timer_condition_ex | fencei_wb_purge)
 	);
 `endif // SUPPORT_M
 

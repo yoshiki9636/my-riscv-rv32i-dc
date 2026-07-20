@@ -43,7 +43,12 @@ module mex_stage(
 	output div_stall_fin,
 	output div_stall_fin2,
 	output reg div_stall_dly,
-	input stall
+	input stall,
+
+	// FPGA FIX (2026-07-19): interrupt-taken strobe from ex_stage
+	// (interrupt_condition_ex | timer_condition_ex).  See the
+	// muldiv_cancel block below.
+	input intexp_cancel_mex
 
 	);
 
@@ -332,6 +337,27 @@ wire [31:0] final_div_result = divide_by_zero_lat ? 32'hffff_ffff :
 
 // reminder
 
+// FPGA FIX (2026-07-19): capture the ORIGINAL dividend at the cycle the
+// div/rem is in EX.  The early-exit REM result muxes below used the LIVE
+// rs1_sel (or rs1_sel_lat, its 1-cycle mirror) at the RESULT cycle - by
+// then EX holds a NOP, so `x % y` with divisor>dividend (any x%N with
+// x<N - extremely common), x%0, or 0%y returned the NOP's rs1 (usually
+// 0) instead of x.  Proven on hardware by kernel#783: major_to_index's
+// `254 % 255` returned 0, sending every chrdev registration into hash
+// slot 0 while find_dynamic_major probed slot 254 -> all dynamic char
+// majors -EBUSY -> myuart tty never registered -> no console (-EIO).
+// (The author's own "need to check detail spec" comment marked the spot.)
+// All three early-exit cases' correct REM result IS the dividend itself:
+// x<y -> x;  x%0 -> x;  0%y -> 0 == x.
+reg [31:0] rem_dividend_ers;
+
+always @ ( posedge clk or negedge rst_n) begin
+	if (~rst_n)
+		rem_dividend_ers <= 32'd0;
+	else if ((cmd_div_decode_ex | cmd_rem_decode_ex) & ~stall)
+		rem_dividend_ers <= rs1_sel;
+end
+
 wire sing_ptn_xor = sign_rem1_mx1 ^ sign_rem2_mx1;
 
 wire [31:0] onemore_dividend_mex1 = dividend_mex1 - preserved_divisor;
@@ -341,9 +367,11 @@ wire [31:0] inv_rem_tmp = ( ~rem_tmp ) + 32'd1;
 wire [31:0] rem_tmp2 = sign_rem1_mx1 ? inv_rem_tmp : rem_tmp;
 wire signed [31:0] rem_result = $signed( rem_tmp2 ) >>> $signed( lbits_rs1_mex1 );
 
+// FPGA FIX (2026-07-19): every early-exit path returns the captured
+// dividend (see rem_dividend_ers above for the hardware-proven bug the
+// old rs1_sel/rs1_sel_lat selections caused).
 wire [31:0] final_rem_result = div_result_valid_pre ? rem_result :
-                               (divide_by_zero_lat|divide_other_status) ? rs1_sel : // need to check detail spec
-                               divisor_bigger_dividend ? rs1_sel_lat : 32'd0;
+                               rem_dividend_ers;
 
 // for critical path
 
@@ -362,10 +390,51 @@ end
 //wire div_stat_valid =  (zero_dividend | divide_by_zero | divisor_bigger_dividend) & (cmd_div_decode_ex | cmd_rem_decode_ex) | div_result_valid;
 wire div_stat_valid =  div_ers_stat_lat | div_result_valid_pre;
 
+// FPGA FIX (2026-07-19): a timer/external interrupt is allowed to be
+// taken in the middle of a MUL (cycles 0-1 of its 3-cycle sequence)
+// or DIV (any cycle before the result cycle) because the interrupt
+// gate is only ~stall (= ~dc_stall).  csr_array then sets
+// mepc = the mul/div's own PC (post_pc_ex latched at div_stall_start,
+// selected by div_stall_dly), i.e. the instruction RE-EXECUTES after
+// mret.  But this unit has no cancel: the deferred writeback
+// (div_result_valid / m_cmd_finished, landing in a NOP slot cycles
+// later, after the interrupt's one-cycle intexp/jmp_purge window has
+// passed or while jmp_purge_ma is frozen by the concurrent ic_stall)
+// STILL WRITES rd.  Result: the op executes TWICE, so any
+// rd-in-{rs1,rs2} form (`mul a5,a5,a4`, `divu a0,a0,a1` - gcc emits
+// these constantly, e.g. the divide-by-10 loops in printk number
+// formatting) silently corrupts rd: wild pointers/indices,
+// stores to wrong (mul-doubled) addresses that look like "lost
+// initialization writes".  ISR-correlated and layout-sensitive -
+// matching the long-standing corruption signature.
+//
+// Fix: latch a cancel when an interrupt fires while the unit is busy,
+// and suppress ONLY the writeback strobes (div_result_valid /
+// m_cmd_finished).  div_stall/fin/fin2 are left untouched so the
+// stall choreography seen by ilu/if_stage is cycle-identical; the
+// mepc re-execution after mret becomes the one and only execution.
+// If the interrupt lands exactly on the result cycle, ex_stage's own
+// ~intexp_purge_ex gate on wbk_rd_reg_tmp already suppresses that
+// cycle's writeback (and the clear branch below wins, so no stale
+// cancel is left armed).
+wire muldiv_busy = div_stall | (div_state != 2'b00);
+wire muldiv_done_raw = div_result_valid_pre | mul_cmds_lat | div_ers_stat_lat;
+
+reg muldiv_cancel;
+
+always @ ( posedge clk or negedge rst_n) begin
+	if (~rst_n)
+		muldiv_cancel <= 1'b0;
+	else if (muldiv_done_raw)
+		muldiv_cancel <= 1'b0;
+	else if (intexp_cancel_mex & muldiv_busy)
+		muldiv_cancel <= 1'b1;
+end
+
 assign m_result_ex = mul_cmds_lat ? mult_sel_lat :
                      mode_rem_mx1 ? final_rem_result : final_div_result;
 
-assign m_cmd_finished = mul_cmds_lat | div_stat_valid;
+assign m_cmd_finished = (mul_cmds_lat | div_stat_valid) & ~muldiv_cancel;
 
 //assign div_stall = div_start | div_ers_stat | (cntr[5] == 1'b0);
 assign div_stall_start = mul_cmds | cmd_div_decode_ex | cmd_rem_decode_ex;
@@ -383,6 +452,6 @@ always @ ( posedge clk or negedge rst_n) begin
 		div_stall_dly <= div_stall;
 end
 
-assign div_result_valid = div_result_valid_pre | mul_cmds_lat | div_ers_stat_lat;
+assign div_result_valid = muldiv_done_raw & ~muldiv_cancel;
 
 endmodule

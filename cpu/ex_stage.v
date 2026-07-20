@@ -158,6 +158,11 @@ module ex_stage(
 	// to ID
 	output reg jmp_purge_ma,
 	output jmp_purge_ex,
+	// FPGA FIX (2026-07-19): fence.i window purge - see fencei_wb_purge
+	// block below.  Exported so cpu_top can also cancel an in-flight
+	// mul/div started by the shadowed instruction (mex_stage
+	// intexp_cancel_mex).
+	output reg fencei_wb_purge,
 	// stall
 	//input dc_stall_1shot_re,
 	input ic_stall,
@@ -183,6 +188,36 @@ wire [31:0] rs2_sel;
 //assign jmp_purge_ex = jmp_condition_ex | ecall_condition_ex | mret_condition_ex | interrupt_condition_ex | timer_condition_ex | fencei_cond;
 
 wire intexp_purge_ex = interrupt_condition_ex | timer_condition_ex | g_exception;
+
+// FPGA FIX (2026-07-19): fence.i executes as: EX(fence.i) -> full D$ flush
+// (dc_stall for its whole duration) -> fencei_dcflush_end -> 2 cycles ->
+// fencei_cond = "retry jump" to pc_id-1 (the instruction AFTER fence.i),
+// whose whole point is that the shadowed next instruction re-executes with
+// the freshly synced caches.  BUT: that next instruction entered EX one
+// cycle after the fence.i and sat there FROZEN through the flush; on the
+// FIRST ~stall cycle after the flush (one or two cycles BEFORE fencei_cond
+// fires) it committed via the roll path - stores/writebacks/CSR ops/jumps
+// all landed - and then the retry jump executed it AGAIN.  Idempotent
+// instructions hide this; `addi sp,sp,N` / csr RMW / `mul a,a,b` forms get
+// silently double-applied (this is almost certainly why the 2026-07-05-era
+// kernel saw wild jumps / stack-protector panics around jump_label
+// patching whenever fence.i was executed, which led to fence.i being
+// removed from the kernel on 2026-07-07 - trading the bug for a total loss
+// of I$/D$ coherence).  Fix: latch a purge from the fence.i's own EX cycle
+// (fencei_condition_ex) until the retry jump (fencei_cond) and mask every
+// commit path with it, so the shadowed instruction's ONLY execution is the
+// post-retry one.  An interrupt taken in the commit window is fine: the
+// existing post_intr_ecall_exception guard swallows the retry jump and
+// mepc (= pc_ex = the shadowed instruction, never executed) re-runs it
+// after mret.
+always @ ( posedge clk or negedge rst_n) begin
+	if (~rst_n)
+		fencei_wb_purge <= 1'b0;
+	else if (fencei_cond)
+		fencei_wb_purge <= 1'b0;
+	else if (fencei_condition_ex)
+		fencei_wb_purge <= 1'b1;
+end
 
 reg jmp_purge_ma2;
 
@@ -446,7 +481,7 @@ wire cmd_st_pur = cmd_st_ex & ~intexp_purge_ex & ~jmp_purge_ma & ~jmp_purge_ma2;
 `endif // SUPPORT_A
 
 // csr cmd need to purge
-wire cmd_csr_pur = cmd_csr_ex & ~intexp_purge_ex & ~jmp_purge_ma & ~jmp_purge_ma2;
+wire cmd_csr_pur = cmd_csr_ex & ~intexp_purge_ex & ~jmp_purge_ma & ~jmp_purge_ma2 & ~fencei_wb_purge;
 
 // forwarding selector
 
@@ -800,7 +835,7 @@ wire jmp_purge_ex_post =  (stall_ldst_0) ? jmp_purge_roll : jmp_purge_ex;
 // (1) purge I$
 // (2) jump to next instruction for reload new instructions
 
-wire fencei_condition_ex_pre = ~intexp_purge_ex & ~jmp_purge_ma & ~jmp_purge_ma2 & cmd_fencei_ex;
+wire fencei_condition_ex_pre = ~intexp_purge_ex & ~jmp_purge_ma & ~jmp_purge_ma2 & ~fencei_wb_purge & cmd_fencei_ex;
 assign fencei_condition_ex = ~stall & fencei_condition_ex_pre;
 
 // jamp/br
@@ -809,7 +844,7 @@ assign jmp_adr_ex = jump_adr[31:2];
 
 //wire jmp_condition_ex_pre = ~jmp_purge_ma & (
 //wire jmp_condition_ex_pre = ~jmp_purge_ma & ~jmp_purge_ma2 & (
-wire jmp_condition_ex_pre = ~intexp_purge_ex & ~jmp_purge_ma & ~jmp_purge_ma2 & ~fencei_cond & (
+wire jmp_condition_ex_pre = ~intexp_purge_ex & ~jmp_purge_ma & ~jmp_purge_ma2 & ~fencei_cond & ~fencei_wb_purge & (
                         cmd_jal_ex | cmd_jalr_ex | cmd_br_ex &
 						( seq  & (alu_code_ex == 3'b000) |
 					      sne  & (alu_code_ex == 3'b001) |
@@ -822,10 +857,10 @@ assign jmp_condition_ex = ~stall & jmp_condition_ex_pre;
 
 // ecall
 //wire ecall_condition_ex_pre = ~jmp_purge_ma & ((cmd_ecall_ex & csr_rmie) | illegal_ops_ex);
-wire ecall_condition_ex_pre = ~intexp_purge_ex & ~jmp_purge_ma & ~jmp_purge_ma2 & (cmd_ecall_ex | illegal_ops_ex);
+wire ecall_condition_ex_pre = ~intexp_purge_ex & ~jmp_purge_ma & ~jmp_purge_ma2 & ~fencei_wb_purge & (cmd_ecall_ex | illegal_ops_ex);
 assign ecall_condition_ex = ~stall & ecall_condition_ex_pre;
 // mret
-wire mret_condition_ex_pre = ~intexp_purge_ex & ~jmp_purge_ma & ~jmp_purge_ma2 & cmd_mret_ex;
+wire mret_condition_ex_pre = ~intexp_purge_ex & ~jmp_purge_ma & ~jmp_purge_ma2 & ~fencei_wb_purge & cmd_mret_ex;
 assign mret_condition_ex = ~stall & mret_condition_ex_pre;
 // interrupt
 assign interrupt_condition_ex = ~stall & g_interrupt_1shot & csr_rmie;
@@ -841,7 +876,7 @@ assign wbk_rd_reg_tmp = wbk_rd_reg_ex & ~no_wbk_cmds & ~intexp_purge_ex & ~jmp_p
 //assign wbk_rd_reg_tmp = wbk_rd_reg_ex & ~jmp_purge_ma & ~illegal_ops_ex;
 //assign cmd_st_tmp = cmd_st_ex & ~jmp_purge_ma;
 
-wire wb_mask_with_exception_interrupt = interrupt_condition_ex | timer_condition_ex | g_exception;
+wire wb_mask_with_exception_interrupt = interrupt_condition_ex | timer_condition_ex | g_exception | fencei_wb_purge;
 
 // workaround for jump between stall and stall
 reg dc_stall_fin2;
