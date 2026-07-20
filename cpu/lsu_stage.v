@@ -364,7 +364,8 @@ always @ (posedge clk or negedge rst_n) begin
         dcflush_cntr <= { (DWIDTH-1){ 1'b1 }};
 	else if ( dcflush_start )
         dcflush_cntr <= { 1'b0, { (DWIDTH-2){ 1'b1 }}};
-	else if ((dcflush_cntr !=  {(DWIDTH-1){ 1'b1 }}) & (dcw_finish_wresp | dcflush_nohit_ent))
+	//else if ((dcflush_cntr !=  {(DWIDTH-1){ 1'b1 }}) & (dcw_finish_wresp | dcflush_nohit_ent))
+	else if (~dcflush_cntr[DWIDTH+2] & (dcw_finish_wresp | dcflush_nohit_ent))
         dcflush_cntr <= dcflush_cntr -  {{ (DWIDTH-2){ 1'b0 }}, 1'b1};
 end
 
@@ -373,10 +374,11 @@ always @ (posedge clk or negedge rst_n) begin
     if (~rst_n)
         dcflush_cntr_dly <= { (DWIDTH-2){ 1'b0 }};
 	else
-        dcflush_cntr_dly <= dcflush_cntr;
+        dcflush_cntr_dly <= dcflush_cntr[DWIDTH+1:4];
 end
 
-assign dcflush_cntr_ok = (dcflush_cntr != { (DWIDTH-1){ 1'b1 }});
+//assign dcflush_cntr_ok = (dcflush_cntr != { (DWIDTH-1){ 1'b1 }});
+assign dcflush_cntr_ok = ~dcflush_cntr[DWIDTH+2];
 
 reg dcflush_cntr_ok_dly;
 
