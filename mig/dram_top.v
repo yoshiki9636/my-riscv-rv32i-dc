@@ -58,7 +58,17 @@ module dram_top (
     input  rready,
     output [3:0] rid,
     output [31:0] rdata,
-    output rlast
+    output rlast,
+
+	// DRAM write/read hazard watchdog - CPU-side MMIO bus (clk domain,
+	// same convention as io_led.v/io_frc.v)
+	input dma_io_we,
+	input [15:2] dma_io_wadr,
+	input [31:0] dma_io_wdata,
+	input [15:2] dma_io_radr,
+	input dma_io_radr_en,
+	input [31:0] dma_io_rdata_in,
+	output [31:0] dma_io_rdata
 
 	);
 
@@ -281,5 +291,27 @@ mig_if mig_if (
 	.rdq_wdata(rdq_wdata)
 	);
 
+// DRAM write/read hazard watchdog (2026-07-21) - taps req_queue's own
+// accept/commit signals directly, no changes to req_queue.v/mig_if.v
+// themselves. See dram_write_hazard_watchdog.v for the full rationale.
+dram_write_hazard_watchdog dram_write_hazard_watchdog (
+	.mclk(mclk),
+	.mrst_n(mrst_n),
+	.wcmd_ack(wcmd_ack),
+	.waddr(waddr),
+	.rcmd_ack(rcmd_ack),
+	.raddr(raddr),
+	.wdq_rnext(wdq_rnext),
+	.req_qraddr(req_qraddr),
+	.clk(clk),
+	.rst_n(rst_n),
+	.dma_io_we(dma_io_we),
+	.dma_io_wadr(dma_io_wadr),
+	.dma_io_wdata(dma_io_wdata),
+	.dma_io_radr(dma_io_radr),
+	.dma_io_radr_en(dma_io_radr_en),
+	.dma_io_rdata_in(dma_io_rdata_in),
+	.dma_io_rdata(dma_io_rdata)
+	);
 
 endmodule
