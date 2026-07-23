@@ -365,11 +365,7 @@ always @ (posedge clk or negedge rst_n) begin
 	else if ( dcflush_start )
         dcflush_cntr <= { 1'b0, { (DWIDTH-2){ 1'b1 }}};
 	//else if ((dcflush_cntr !=  {(DWIDTH-1){ 1'b1 }}) & (dcw_finish_wresp | dcflush_nohit_ent))
-<<<<<<< HEAD
-	else if (~dcflush_cntr[DWIDTH-2] & (dcw_finish_wresp | dcflush_nohit_ent))
-=======
 	else if (~dcflush_cntr[DWIDTH+2] & (dcw_finish_wresp | dcflush_nohit_ent))
->>>>>>> dev-systolic
         dcflush_cntr <= dcflush_cntr -  {{ (DWIDTH-2){ 1'b0 }}, 1'b1};
 end
 
@@ -382,11 +378,7 @@ always @ (posedge clk or negedge rst_n) begin
 end
 
 //assign dcflush_cntr_ok = (dcflush_cntr != { (DWIDTH-1){ 1'b1 }});
-<<<<<<< HEAD
-assign dcflush_cntr_ok = ~dcflush_cntr[DWIDTH-2];
-=======
 assign dcflush_cntr_ok = ~dcflush_cntr[DWIDTH+2];
->>>>>>> dev-systolic
 
 reg dcflush_cntr_ok_dly;
 
