@@ -27,11 +27,11 @@ module forwarding(
 	
 	output hit_rs1_idex_ex,
 	output hit_rs1_idma_ex,
-	output reg hit_rs1_idwb_ex,
+	output hit_rs1_idwb_ex,
 	output nohit_rs1_ex,
 	output hit_rs2_idex_ex,
 	output hit_rs2_idma_ex,
-	output reg hit_rs2_idwb_ex,
+	output hit_rs2_idwb_ex,
 	output nohit_rs2_ex,
 	output stall_ld_ex,
 	output reg stall_ld_ma,
@@ -107,6 +107,8 @@ reg hit_rs1_idex_ex_pre;
 reg hit_rs2_idex_ex_pre;
 reg hit_rs1_idma_ex_pre;
 reg hit_rs2_idma_ex_pre;
+reg hit_rs1_idwb_ex_pre;
+reg hit_rs2_idwb_ex_pre;
 reg hit_rs1_ldidex_dly_pre;
 reg hit_rs2_ldidex_dly_pre;
 reg stall_ld_ex_pre;
@@ -132,8 +134,8 @@ assign stall_ld_ex = stall_ld_ex_pre;// & ~stall;
 // pipeline FF
 always @ (posedge clk or negedge rst_n) begin
 	if (~rst_n) begin
-		hit_rs1_idwb_ex <= 1'b0;
-		hit_rs2_idwb_ex <= 1'b0;
+		hit_rs1_idwb_ex_pre <= 1'b0;
+		hit_rs2_idwb_ex_pre <= 1'b0;
 
 		hit_rs1_idex_ex_pre <= 1'b0;
 		hit_rs2_idex_ex_pre <= 1'b0;
@@ -144,8 +146,8 @@ always @ (posedge clk or negedge rst_n) begin
 		stall_ld_ex_pre <= 1'b0;
 	end
 	else begin
-		hit_rs1_idwb_ex <= hit_rs1_idwb;
-		hit_rs2_idwb_ex <= hit_rs2_idwb;
+		hit_rs1_idwb_ex_pre <= hit_rs1_idwb;
+		hit_rs2_idwb_ex_pre <= hit_rs2_idwb;
 
 		hit_rs1_idex_ex_pre <= hit_rs1_idex;
 		hit_rs2_idex_ex_pre <= hit_rs2_idex;
@@ -161,6 +163,43 @@ reg hit_rs1_idex_ex_post;
 reg hit_rs2_idex_ex_post;
 reg hit_rs1_idma_ex_post;
 reg hit_rs2_idma_ex_post;
+// FPGA FIX (2026-07-23, reapplying the 2026-07-20 attempt): hit_rs1_idwb_ex/
+// hit_rs2_idwb_ex used to be plain unconditional registers (hit_rs1_idwb_ex
+// <= hit_rs1_idwb every cycle, no stall gating at all) - the only one of the
+// three forward-hit sources (idex/idma/idwb) missing the _pre/_post +
+// stall_dly protection the other two already have. During a multi-cycle
+// D$-miss stall, if_stage.v freezes inst_id (and therefore inst_rs1_id/
+// inst_rs2_id, this module's compare operands) via inst_roll starting the
+// stall's 2nd cycle, but rd_adr_wb keeps advancing every cycle until
+// stall_wb = stall_dly3 & stall_dly (not until the stall's 4th cycle) - so a
+// frozen inst_rs1_id/inst_rs2_id could coincidentally equal an unrelated,
+// still-advancing rd_adr_wb and produce a false-positive WB forward. This
+// was the leading suspect for the recurring execve wild-jump crash class
+// (epc/ra corrupted to small values like 0/1, do_mmap/vm_mmap_pgoff
+// epilogue) - see project memory project_rtl_lab3_dram_review.md.
+//
+// A real-hardware forensic monitor (forwarding_hazard_monitor.v, added
+// 2026-07-23) confirmed the unprotected window is reached constantly during
+// normal boot (~0.2-0.3% of all WB forwards, ~109k-174k events per boot) and
+// that essentially all of them do involve a genuinely frozen inst_rs1_id/
+// inst_rs2_id at the time - i.e. the precondition this fix targets is real
+// and common, not a rare corner case. hit_rs1_idwb_ex_post/hit_rs2_idwb_ex_post
+// below now freeze (stop updating) for the same stall duration idex/idma's
+// _post already do, and stall_dly selects _post over the freshly-computed
+// _pre once the stall is old enough that idex/idma already trust _post.
+//
+// This exact fix was tried once before (2026-07-20): the wild jump did not
+// recur, but a new, unrelated-looking silent hang appeared at ~5s (right
+// after "tty_register_ldisc(27)"), and it was reverted without being able
+// to tell whether the fix exposed a second, independent bug or was itself
+// wrong. init/main.c's do_one_initcall() already prints an unconditional
+// synchronous `#IC:<fn_addr_hex>:` marker right before calling every single
+// initcall (added 2026-07-07, still present, no new diagnostic needed) - if
+// this hang recurs, the LAST `#IC:` value printed before the log goes silent
+// names the exact initcall function in flight, resolvable against
+// System.map, which the 2026-07-20 session apparently never cross-checked.
+reg hit_rs1_idwb_ex_post;
+reg hit_rs2_idwb_ex_post;
 
 always @ (posedge clk or negedge rst_n) begin
 	if (~rst_n) begin
@@ -168,12 +207,16 @@ always @ (posedge clk or negedge rst_n) begin
 		hit_rs2_idex_ex_post <= 1'b0;
 		hit_rs1_idma_ex_post <= 1'b0;
 		hit_rs2_idma_ex_post <= 1'b0;
+		hit_rs1_idwb_ex_post <= 1'b0;
+		hit_rs2_idwb_ex_post <= 1'b0;
 	end
 	else if (~stall) begin
 		hit_rs1_idex_ex_post <= hit_rs1_idex;
 		hit_rs2_idex_ex_post <= hit_rs2_idex;
 		hit_rs1_idma_ex_post <= hit_rs1_idma;
 		hit_rs2_idma_ex_post <= hit_rs2_idma;
+		hit_rs1_idwb_ex_post <= hit_rs1_idwb;
+		hit_rs2_idwb_ex_post <= hit_rs2_idwb;
 	end
 end
 
@@ -181,6 +224,8 @@ assign hit_rs1_idex_ex = (stall_dly) ? hit_rs1_idex_ex_post : hit_rs1_idex_ex_pr
 assign hit_rs2_idex_ex = (stall_dly) ? hit_rs2_idex_ex_post : hit_rs2_idex_ex_pre;
 assign hit_rs1_idma_ex = (stall_dly) ? hit_rs1_idma_ex_post : hit_rs1_idma_ex_pre;
 assign hit_rs2_idma_ex = (stall_dly) ? hit_rs2_idma_ex_post : hit_rs2_idma_ex_pre;
+assign hit_rs1_idwb_ex = (stall_dly) ? hit_rs1_idwb_ex_post : hit_rs1_idwb_ex_pre;
+assign hit_rs2_idwb_ex = (stall_dly) ? hit_rs2_idwb_ex_post : hit_rs2_idwb_ex_pre;
 
 assign nohit_rs1_ex = ~( hit_rs1_idex_ex | hit_rs1_idma_ex | hit_rs1_idwb_ex);
 assign nohit_rs2_ex = ~( hit_rs2_idex_ex | hit_rs2_idma_ex | hit_rs2_idwb_ex);
