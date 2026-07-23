@@ -185,6 +185,18 @@ wire [31:0] dma_io_rdata_in_2; // input
 wire [31:0] dma_io_rdata_in_3; // input
 wire [31:0] dma_io_rdata_in_4; // input
 wire [31:0] dma_io_rdata_in_5; // input
+wire [31:0] dma_io_rdata_in_6; // input
+wire [31:0] dma_io_rdata_in_7; // input - dram_top output, feeds forwarding_hazard_monitor
+
+// forwarding_hazard_monitor taps (2026-07-23), see forwarding_hazard_monitor.v
+wire [31:2] fwdmon_pc_ex;
+wire fwdmon_stall_wb;
+wire [4:0] fwdmon_rd_adr_wb;
+wire fwdmon_hit_rs1_idwb_ex;
+wire fwdmon_hit_rs2_idwb_ex;
+wire [4:0] fwdmon_inst_rs1_id;
+wire [4:0] fwdmon_inst_rs2_id;
+
 wire ibus_ren;
 wire [19:2] ibus_radr;
 wire [15:0] ibus32_rdata = 16'd0;
@@ -434,7 +446,15 @@ cpu_top #(.DWIDTH(DWIDTH), .IWIDTH(IWIDTH), .SWIDTH(SWIDTH)) cpu_top (
     .g_interrupt_1shot(g_interrupt_1shot),
     .g_interrupt(g_interrupt),
     //.ic_stall(ic_stall),
-    .stall(stall)
+    .stall(stall),
+
+    .fwdmon_pc_ex(fwdmon_pc_ex),
+    .fwdmon_stall_wb(fwdmon_stall_wb),
+    .fwdmon_rd_adr_wb(fwdmon_rd_adr_wb),
+    .fwdmon_hit_rs1_idwb_ex(fwdmon_hit_rs1_idwb_ex),
+    .fwdmon_hit_rs2_idwb_ex(fwdmon_hit_rs2_idwb_ex),
+    .fwdmon_inst_rs1_id(fwdmon_inst_rs1_id),
+    .fwdmon_inst_rs2_id(fwdmon_inst_rs2_id)
 	);
 
 axi_bus_top axi_bus_top (
@@ -523,6 +543,13 @@ dram_top dram_top (
 	.app_rd_data_valid(app_rd_data_valid),
 	.clk(clk),
 	.rst_n(rst_n),
+	.dma_io_we(dma_io_we),
+	.dma_io_wadr(dma_io_wadr),
+	.dma_io_wdata(dma_io_wdata),
+	.dma_io_radr(dma_io_radr),
+	.dma_io_radr_en(dma_io_radr_en),
+	.dma_io_rdata_in(dma_io_rdata_in_6),
+	.dma_io_rdata(dma_io_rdata_in_7),
 	.awvalid(awvalid),
 	.awready(awready),
 	.awid(awid),
@@ -546,6 +573,28 @@ dram_top dram_top (
 	.rid(rid),
 	.rdata(rdata),
 	.rlast(rlast)
+	);
+
+// WB-stage forwarding hazard statistics monitor (2026-07-23), tail of the
+// dma_io_* daisy chain right after dram_top - see forwarding_hazard_monitor.v
+forwarding_hazard_monitor forwarding_hazard_monitor (
+	.clk(clk),
+	.rst_n(rst_n),
+	.stall(stall),
+	.stall_wb(fwdmon_stall_wb),
+	.hit_rs1_idwb_ex(fwdmon_hit_rs1_idwb_ex),
+	.hit_rs2_idwb_ex(fwdmon_hit_rs2_idwb_ex),
+	.rd_adr_wb(fwdmon_rd_adr_wb),
+	.pc_ex(fwdmon_pc_ex),
+	.inst_rs1_id(fwdmon_inst_rs1_id),
+	.inst_rs2_id(fwdmon_inst_rs2_id),
+	.dma_io_we(dma_io_we),
+	.dma_io_wadr(dma_io_wadr),
+	.dma_io_wdata(dma_io_wdata),
+	.dma_io_radr(dma_io_radr),
+	.dma_io_radr_en(dma_io_radr_en),
+	.dma_io_rdata_in(dma_io_rdata_in_7),
+	.dma_io_rdata(dma_io_rdata)
 	);
 
 mig_7series_0 mig_7series_0 (
@@ -776,7 +825,7 @@ io_spi_lite io_spi_lite(
     .dma_io_radr(dma_io_radr),
     .dma_io_radr_en(dma_io_radr_en),
     .dma_io_rdata_in(dma_io_rdata_in_5),
-    .dma_io_rdata(dma_io_rdata),
+    .dma_io_rdata(dma_io_rdata_in_6),
     .spi_select_io(spi_select_io),
     .spi_sck(spi_sck),
     .spi_csn(spi_csn),
