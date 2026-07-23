@@ -120,9 +120,27 @@ module cpu_top
 	input g_interrupt_1shot,
 	input g_interrupt,
 	//output ic_stall,
-	output stall
+	output stall,
+
+	// forwarding_hazard_monitor taps (2026-07-23) - new output ports only,
+	// no functional signal touched; see forwarding_hazard_monitor.v
+	output [31:2] fwdmon_pc_ex,
+	output fwdmon_stall_wb,
+	output [4:0] fwdmon_rd_adr_wb,
+	output fwdmon_hit_rs1_idwb_ex,
+	output fwdmon_hit_rs2_idwb_ex,
+	output [4:0] fwdmon_inst_rs1_id,
+	output [4:0] fwdmon_inst_rs2_id
 
 	);
+
+assign fwdmon_pc_ex = pc_ex;
+assign fwdmon_stall_wb = stall_wb;
+assign fwdmon_rd_adr_wb = rd_adr_wb;
+assign fwdmon_hit_rs1_idwb_ex = hit_rs1_idwb_ex;
+assign fwdmon_hit_rs2_idwb_ex = hit_rs2_idwb_ex;
+assign fwdmon_inst_rs1_id = inst_rs1_id;
+assign fwdmon_inst_rs2_id = inst_rs2_id;
 
 `define M_MODE 2'b11
 `define S_MODE 2'b01
