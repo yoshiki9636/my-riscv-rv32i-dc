@@ -42,7 +42,7 @@ module csr_array(
 	output csr_mtie,
 	output csr_msie,
     input ecall_condition_ex,
-	//input cmd_ebreak_ex,
+	input cmd_ebreak_ex,
 	input [31:2] pc_id,
 	input [31:2] pc_ex,
 	input [31:2] jmp_adr_if,
@@ -423,20 +423,29 @@ assign csr_mepc_ex = csr_mepc[31:2];
 //wire interrupt_bit = interrupt_condition_ex;
 wire interrupt_bit = interrupt_condition_ex | timer_condition_ex;
 
+// EBREAK (2026-07-23): cmd_ebreak_ex is decoded/purge-tracked in id_stage
+// exactly like illegal_ops_ex (same reset/purge conditions) and folded into
+// ex_stage's ecall_condition_ex OR, so by the time this trap fires it is
+// checked ahead of the generic ecall_condition_ex fallback below - giving
+// ebreak its own mcause=3 (breakpoint) instead of being reported as an
+// ecall (mcause=11).
 assign mcause_code = interrupt_condition_ex ? 6'd11 :
                      timer_condition_ex ? 6'd7 :
                      illegal_ops_ex ? 6'd2 :
+                     cmd_ebreak_ex ? 6'd3 :
                      ecall_condition_ex ?  6'd11 :
-                     //cmd_ebreak_ex ?  6'd3 :
                      6'h3f;
 
 // FIX (2026-07-16): same level-vs-condition fix as mcause_code above -
 // an illegal-instruction trap taken while a timer compare was pending
 // used to lose its mtval (reported 0 instead of the faulting
 // instruction bits).
+// EBREAK (2026-07-23): mtval for a breakpoint trap carries the ebreak
+// instruction's own PC (spec-permitted; either 0 or the faulting address
+// is valid, and Linux's do_trap_break() doesn't inspect it either way).
 wire [31:0] sel_tval = (interrupt_condition_ex | timer_condition_ex) ? 32'd0 :
-                       illegal_ops_ex ? illegal_ops_inst : 32'd0;
-                       //illegal_ops_ex ? { pc_ex, 2'd0 } : 32'd0; // debug
+                       illegal_ops_ex ? illegal_ops_inst :
+                       cmd_ebreak_ex ? { pc_ex, 2'd0 } : 32'd0;
 
 
 //wire mcause_write = ecall_condition_ex | g_interrupt | g_exception;

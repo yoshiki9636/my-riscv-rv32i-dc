@@ -523,8 +523,8 @@ wire [31:0] adr_s2 = cmd_auipc_ex ? auipc_data :
 
 
 // currently not implemented
-// fence, sfence
-// ebreak, eret
+// fence, sfence, eret
+// ebreak: implemented 2026-07-23 via ecall_condition_ex_pre (mcause=3, see csr_array.v)
 
 // ALU
 
@@ -610,6 +610,7 @@ csr_array csr_array(
 	.csr_msie(csr_msie),
 	//.cmd_ecall_ex(cmd_ecall_ex),
 	.ecall_condition_ex(ecall_condition_ex),
+	.cmd_ebreak_ex(cmd_ebreak_ex),
 	.pc_id(pc_id),
 	.pc_ex(pc_ex),
 	.jmp_adr_if(jmp_adr_if),
@@ -857,7 +858,13 @@ assign jmp_condition_ex = ~stall & jmp_condition_ex_pre;
 
 // ecall
 //wire ecall_condition_ex_pre = ~jmp_purge_ma & ((cmd_ecall_ex & csr_rmie) | illegal_ops_ex);
-wire ecall_condition_ex_pre = ~intexp_purge_ex & ~jmp_purge_ma & ~jmp_purge_ma2 & ~fencei_wb_purge & (cmd_ecall_ex | illegal_ops_ex);
+// EBREAK (2026-07-23): cmd_ebreak_ex folded in here so ebreak drives the
+// same trap-taking machinery (jmp_purge_ex redirect to mtvec, mepc/mstatus
+// capture in csr_array's m_interrupt) as ecall/illegal already did. It was
+// decoded all the way to this input (id_stage.v, purge-tracked identically
+// to illegal_ops_ex) but never consumed anywhere, so ebreak was a silent
+// NOP before this change - see RTL_REVIEW_2026-07-16.md item 10.
+wire ecall_condition_ex_pre = ~intexp_purge_ex & ~jmp_purge_ma & ~jmp_purge_ma2 & ~fencei_wb_purge & (cmd_ecall_ex | illegal_ops_ex | cmd_ebreak_ex);
 assign ecall_condition_ex = ~stall & ecall_condition_ex_pre;
 // mret
 wire mret_condition_ex_pre = ~intexp_purge_ex & ~jmp_purge_ma & ~jmp_purge_ma2 & ~fencei_wb_purge & cmd_mret_ex;
