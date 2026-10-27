@@ -225,6 +225,11 @@ wire [31:0] rs2_lsh = ( us_rs2_sel << lbits_rs2[4:0] );
 //wire div_start = (cmd_div_decode_ex | cmd_rem_decode_ex) & ~( zero_dividend | divide_by_zero | divisor_bigger_dividend );
 wire div_start = cmd_div_rem_decode_lat & ~( zero_dividend | divide_by_zero | divisor_bigger_dividend );
 
+// early-exit ("error status") sibling of div_start: same gate, the
+// complementary condition. Declared here (moved up 2026-09-06) so the
+// mex1 register block below can use it for the mode_rem_mx1 fix.
+wire div_ers_stat = cmd_div_rem_decode_lat & ( zero_dividend | divide_by_zero | divisor_bigger_dividend );
+
 reg divide_by_zero_lat;
 reg divide_other_status;
 
@@ -309,6 +314,28 @@ always @ ( posedge clk or negedge rst_n) begin
 		lbits_rs1_mex1 <= lbits_rs1;
 		lbits_diff_mex1 <= lbits_diff;
 	end
+	// FPGA FIX (2026-09-06): mode_rem_mx1 was ONLY updated on div_start
+	// (the iterative path). For the early-exit cases (div_ers_stat:
+	// divide_by_zero, zero_dividend, divisor_bigger_dividend) div_start
+	// is 0, so the m_result_ex mux selected final_div_result / final_rem_result
+	// using a STALE mode_rem_mx1 left over from the previous iterative
+	// divide. Result: `remu x,0` / `rem x,0` (and x%N with x<N, 0%y) could
+	// return final_div_result (0xffffffff for x%0) instead of the dividend.
+	// divzero_irq_test.S caught this deterministically on iteration 0
+	// (remu 0x12345678,0 -> 0xffffffff, spec says 0x12345678). Latch the
+	// rem/div flag for the early-exit path too, on the same clock edge
+	// div_ers_stat_lat latches, so the mux is correct the cycle
+	// div_stat_valid (= div_ers_stat_lat | div_result_valid_pre) drives it.
+	// div_ers_stat and div_start are mutually exclusive (both gated by
+	// cmd_div_rem_decode_lat, split by the early-exit condition), so this
+	// branch never fires in the same cycle as the one above, and it only
+	// assigns mode_rem_mx1 - every other mex1 reg holds, which is correct
+	// because the early-exit path uses none of them (final_rem_result ->
+	// rem_dividend_ers, final_div_result -> divide_by_zero_lat /
+	// divide_other_status, all latched elsewhere).
+	else if (div_ers_stat & ~stall) begin
+		mode_rem_mx1 <= cmd_rem_decode_lat;
+	end
 	else if((cntr[5] == 1'b0)&~stall) begin
 		dividend_mex1 <= dividend_next;
 		divisor_mex1 <= divisor_next;
@@ -376,7 +403,7 @@ wire [31:0] final_rem_result = div_result_valid_pre ? rem_result :
 // for critical path
 
 //wire div_ers_stat =  (zero_dividend | divide_by_zero | divisor_bigger_dividend) & (cmd_div_decode_ex | cmd_rem_decode_ex);
-wire div_ers_stat = cmd_div_rem_decode_lat & (zero_dividend | divide_by_zero | divisor_bigger_dividend);
+// (div_ers_stat moved up to just after div_start, 2026-09-06)
 reg div_ers_stat_lat;
 
 always @ ( posedge clk or negedge rst_n) begin   
