@@ -41,8 +41,26 @@ module arbitor4 (
 //`define ARB4_SELDEF  4'b1111
 
 // make finish signal
+//
+// FPGA (2026-08-27): root-cause fix for the grant-race bug documented in
+// project memory (project_arbiter4_finish_broadcast_bug). The blind OR below
+// let ANY master's finish (fully async, decoupled from address-phase grant
+// status) revoke a currently-granted-but-still-waiting master's grant before
+// its own a_ready/w_ready ever arrived. The 2026-08-09 fix gated the
+// downstream a_ready/ar_ready broadcast by sel_wt/sel_rd in axi_bus_top.v,
+// which stops the revoked master from silently mistaking someone else's
+// ready pulse for its own (the data-corruption symptom) - but did not stop
+// the revocation itself, so a master can still be starved indefinitely if
+// another master's finish keeps firing before it ever gets serviced (a
+// hang, not corruption). Qualifying finish by which master arbit4_current
+// actually holds closes this at the root: an unrelated master's finish can
+// no longer interrupt a live grant at all.
+wire cur_sel0 = (arbit4_current == `ARB4_SEL0123);
+wire cur_sel1 = (arbit4_current == `ARB4_SEL1230);
+wire cur_sel2 = (arbit4_current == `ARB4_SEL2301);
+wire cur_sel3 = (arbit4_current == `ARB4_SEL3012);
 
-wire finish = finish0 | finish1 | finish2 | finish3;
+wire finish = (finish0 & cur_sel0) | (finish1 & cur_sel1) | (finish2 & cur_sel2) | (finish3 & cur_sel3);
 
 // round robin state machine
 reg [3:0] arbit4_current;
