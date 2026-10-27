@@ -231,6 +231,10 @@ reg jmp_purge_ma2;
 wire cmd_lrw_purge = cmd_lrw_ex  & ~intexp_purge_ex & ~jmp_purge_ma & ~jmp_purge_ma2; 
 
 // lr.w / sc.w
+// FIX (2026-10-28): drop the reservation on every trap entry and on mret,
+// so an sc.w can never succeed on a reservation taken in another context
+// (e.g. an lr.w left behind by an ISR or another task).
+wire resv_clr_trap = interrupt_condition_ex | timer_condition_ex | ecall_condition_ex | g_exception | mret_condition_ex;
 reg resv_flg;
 reg [31:0] resv_adr;
 wire reset_flg_cond;
@@ -239,6 +243,8 @@ wire cmd_st_pur;
 
 always @ ( posedge clk or negedge rst_n) begin   
 	if (~rst_n)
+		resv_flg <= 1'b0;
+	else if (resv_clr_trap)
 		resv_flg <= 1'b0;
 	else if (reset_flg_cond & ~stall)
 		resv_flg <= 1'b0;
@@ -837,7 +843,12 @@ wire stall_ldst_0 = 1'b0;
 wire [4:0] rd_adr_ex_post = (stall_ldst_0) ? rd_adr_roll : rd_adr_ex_with_div;
 
 `ifdef SUPPORT_A
-assign rd_data_ex = amo_cmds? rs1_data_ex :
+// FIX (2026-10-28): the AMO load address must be the forwarded rs1_sel, the
+// same value amo_rs1_addr latches for the store.  rs1_data_ex is the raw
+// register-file read, which is stale when rs1 is produced by one of the
+// previous instructions (mv a0,..; amoadd.w t0,t1,(a0)): the load then read
+// the wrong address while the store wrote the right one.
+assign rd_data_ex = amo_cmds? rs1_sel :
                     amo_ex_term ? amo_rs1_addr :
                     (stall_ldst) ? rd_data_roll : rd_data_ex_pre;
 //wire [31:0] st_data_ex = amo_st_term ? amo_sel_data :
@@ -895,10 +906,42 @@ assign ecall_condition_ex = ~stall & ecall_condition_ex_pre;
 // mret
 wire mret_condition_ex_pre = ~intexp_purge_ex & ~jmp_purge_ma & ~jmp_purge_ma2 & ~fencei_wb_purge & cmd_mret_ex;
 assign mret_condition_ex = ~stall & mret_condition_ex_pre;
+// FIX (2026-10-28): do not take an interrupt while the AMO state machine
+// is running (AMO_LOAD..AMO_STWT).  The AMO has already left EX, so an
+// interrupt there set mepc to the wrong PC and the FSM still finished the
+// store - the AMO could run twice after mret.  The interrupt is held in
+// *_amo_pend (the io-side keepers only hold it across `stall`) and taken
+// on the first cycle after the AMO completes.  An interrupt in the cycle
+// the AMO itself is in EX (FSM still IDLE) already purges it cleanly.
+`ifdef SUPPORT_A
+wire amo_busy = amo_term;
+`else // SUPPORT_A
+wire amo_busy = 1'b0;
+`endif // SUPPORT_A
+reg g_int_amo_pend;
+reg frc_amo_pend;
+
+always @ ( posedge clk or negedge rst_n) begin
+	if (~rst_n) begin
+		g_int_amo_pend <= 1'b0;
+		frc_amo_pend <= 1'b0;
+	end
+	else begin
+		if (interrupt_condition_ex)
+			g_int_amo_pend <= 1'b0;
+		else if (~stall & amo_busy & g_interrupt_1shot & csr_rmie)
+			g_int_amo_pend <= 1'b1;
+		if (timer_condition_ex)
+			frc_amo_pend <= 1'b0;
+		else if (~stall & amo_busy & frc_cntr_val_leq_1shot & csr_rmie)
+			frc_amo_pend <= 1'b1;
+	end
+end
+
 // interrupt
-assign interrupt_condition_ex = ~stall & g_interrupt_1shot & csr_rmie;
+assign interrupt_condition_ex = ~stall & ~amo_busy & (g_interrupt_1shot | g_int_amo_pend) & csr_rmie;
 // timer interrupt
-assign timer_condition_ex = ~stall & frc_cntr_val_leq_1shot & csr_rmie;
+assign timer_condition_ex = ~stall & ~amo_busy & (frc_cntr_val_leq_1shot | frc_amo_pend) & csr_rmie;
 
 // purge signal
 // FIX (2026-10-27): illegal-instruction exceptions (g_exception) must purge

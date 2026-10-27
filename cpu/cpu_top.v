@@ -839,6 +839,17 @@ wb_stage wb_stage (
 	.rst_pipe(rst_pipe_wb)
 	);
 
+// FIX (2026-10-28): lr.w and AMOs return rd from memory like a load, so the
+// load-use hazard check must see them too.  With cmd_ld_ex alone the next
+// instruction got rd forwarded from EX/MA, i.e. the address, not the data.
+`ifdef SUPPORT_A
+wire cmd_ld_ex_fwd = cmd_ld_ex | cmd_lrw_ex | cmd_amoswapw_ex | cmd_amoaddw_ex | cmd_amoxorw_ex
+                   | cmd_amoandw_ex | cmd_amoorw_ex | cmd_amominw_ex | cmd_amomaxw_ex
+                   | cmd_amominuw_ex | cmd_amomaxuw_ex;
+`else // SUPPORT_A
+wire cmd_ld_ex_fwd = cmd_ld_ex;
+`endif // SUPPORT_A
+
 forwarding forwarding (
 	.clk(clk),
 	.rst_n(rst_n),
@@ -849,7 +860,7 @@ forwarding forwarding (
 	.inst_rs2_valid(inst_rs2_valid),
 	.rd_adr_ex(rd_adr_ex),
 	.wbk_rd_reg_ex(wbk_rd_reg_ex),
-	.cmd_ld_ex(cmd_ld_ex),
+	.cmd_ld_ex(cmd_ld_ex_fwd),
 	.rd_adr_ma(rd_adr_ma),
 	.wbk_rd_reg_ma(wbk_rd_reg_ma),
 	.rd_adr_wb(rd_adr_wb),

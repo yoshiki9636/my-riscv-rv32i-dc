@@ -344,7 +344,12 @@ wire dc_uimm_00000 = (inst_uimm == 5'b00000);
 // (1)-(3), set a_ext_disable back to 1'b0 - everything downstream
 // (cmd_*_id wires, cmd_all_except_nop terms, the ex_stage AMO FSM) is
 // left intact and simply sees zeros while disabled.
-wire a_ext_disable = 1'b1;
+// RE-ENABLED (2026-10-28): (1)-(3) fixed in ex_stage.v, plus a 4th bug
+// found while testing - lr.w/AMO were missing from the load-use hazard
+// check (cpu_top.v cmd_ld_ex_fwd).  Verified by
+// rtl_atomic_test/amo_hw_irq_test.S + amo_hw_irq_tb.v.  Set back to
+// 1'b1 to return to the kernel emulator (rv32a_emulate).
+wire a_ext_disable = 1'b0;
 
 wire a_cmds_decode = dc_op1_01011 & dc_op2_010 & ~a_ext_disable;
 
