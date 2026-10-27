@@ -120,112 +120,9 @@ module cpu_top
 	input g_interrupt_1shot,
 	input g_interrupt,
 	//output ic_stall,
-	output stall,
-
-	// pc_ex tap - new output port only, no functional signal touched.
-	// (Added 2026-07-23 for forwarding_hazard_monitor which was removed
-	// 2026-09-06; pc_ex is still consumed by ic_dc_overlap_monitor.)
-	output [31:2] fwdmon_pc_ex,
-
-	// pc_jump_trace_logger taps removed 2026-09-06 (module removed for
-	// timing - its scratch-RAM burst write-back kept the dcflush_cntr ->
-	// scr_ram address mux alive, making dcflush_cntr_reg the repeated
-	// Vivado WNS startpoint).
-
-	// ic_dc_overlap_monitor taps (2026-08-09) - new output ports only, no
-	// functional signal touched. cache_miss_current comes from if_stage.v's
-	// own new icdcmon_cache_miss_current tap; ic_stall is this module's
-	// already-existing internal wire (dc_stall doesn't need a new port -
-	// the existing `stall` output above already carries it). See
-	// ic_dc_overlap_monitor.v.
-	output [3:0] icdcmon_cache_miss_current,
-	output icdcmon_ic_stall,
-
-	// pc_hang_probe load-use stall-chain taps (2026-09-06) - registered at
-	// source, see the assign block below and pc_hang_probe.v.
-	output dbg_stall_ld,
-	output dbg_stall_ld_add,
-	output dbg_dc_stall,
-	output dbg_rst_pipe,
-	output dbg_use_collision,
-	output dbg_jump_under_ic_stall,
-	output dbg_ucp,
-
-	// icr_start_rq_probe taps (2026-08-27) - new output ports only, no
-	// functional signal touched. See ilu_stage.v / project_slub_debug_u_axi_hang.
-	output [2:0] ic_miss_current_mon,
-	output ic_tag_miss_id_mon,
-	output ic_tag_empty_id_mon,
-	output [15:0] icr_start_rq_count_mon,
-	output [15:0] dcflush_cntr_mon,
-	output [15:0] ic_retry_repeat_cntr_mon,
-	output [31:0] ic_curric_ent_radr_keeper_mon,
-
-	// D$-side mirror of the above (2026-08-27, same session): the actual
-	// hang has the CPU parked on a D$ load, so these track lsu_stage.v's
-	// own DCMS_* miss FSM and retry-livelock counter.
-	output [3:0] dc_miss_current_mon,
-	output dc_tag_miss_ma_mon,
-	output dc_tag_empty_ma_mon,
-	output [15:0] dc_retry_repeat_cntr_mon,
-	output [31:0] current_radr_keeper_mon
+	output stall
 
 	);
-
-assign icdcmon_ic_stall = ic_stall;
-
-// FPGA (2026-09-06): pc_hang_probe taps for the load-use stall chain -
-// registered ONE stage at the source before leaving this module
-// (feedback_register_debug_mon_taps). pc_hang_probe's frozen snapshot
-// confirmed the hang has every I$/D$ miss FSM idle and ic_stall=0 with PC
-// frozen, so by elimination stall_ld (= stall_ld_pre | stall_ld_add) is
-// stuck; these two taps pin down which latch. stall_ld_add is already an
-// if_stage.v `output reg`; stall_ld is forwarding.v's combinational OR.
-// Both are low-fanout load-use interlock nets (not the dcflush_cntr /
-// pc_id / stall paths that caused earlier WNS violations, and the
-// pc_jump_trace_logger scratch-RAM mux that resurrected the dcflush_cntr
-// timed path is gone). See pc_hang_probe.v.
-wire dbg_use_collision_w;
-wire dbg_jump_under_ic_stall_w;
-wire dbg_ucp_w;
-reg dbg_stall_ld_r;
-reg dbg_stall_ld_add_r;
-reg dbg_dc_stall_r;
-reg dbg_rst_pipe_r;
-reg dbg_use_collision_r;
-reg dbg_jump_under_ic_stall_r;
-reg dbg_ucp_r;
-always @ (posedge clk or negedge rst_n) begin
-	if (~rst_n) begin
-		dbg_stall_ld_r            <= 1'b0;
-		dbg_stall_ld_add_r        <= 1'b0;
-		dbg_dc_stall_r            <= 1'b0;
-		dbg_rst_pipe_r            <= 1'b0;
-		dbg_use_collision_r       <= 1'b0;
-		dbg_jump_under_ic_stall_r <= 1'b0;
-		dbg_ucp_r                 <= 1'b0;
-	end else begin
-		dbg_stall_ld_r            <= stall_ld;
-		dbg_stall_ld_add_r        <= stall_ld_add;
-		dbg_dc_stall_r            <= dc_stall;
-		dbg_rst_pipe_r            <= rst_pipe;
-		dbg_use_collision_r       <= dbg_use_collision_w;
-		dbg_jump_under_ic_stall_r <= dbg_jump_under_ic_stall_w;
-		dbg_ucp_r                 <= dbg_ucp_w;
-	end
-end
-assign dbg_stall_ld            = dbg_stall_ld_r;
-assign dbg_stall_ld_add        = dbg_stall_ld_add_r;
-assign dbg_dc_stall            = dbg_dc_stall_r;
-assign dbg_rst_pipe            = dbg_rst_pipe_r;
-assign dbg_use_collision       = dbg_use_collision_r;
-assign dbg_jump_under_ic_stall = dbg_jump_under_ic_stall_r;
-assign dbg_ucp                 = dbg_ucp_r;
-
-assign fwdmon_pc_ex = pc_ex;
-
-// pc_jump_trace_logger taps (the trc_* replica logic + WB-commit taps that
-// used to live here) removed 2026-09-06 along with the module.
 
 `define M_MODE 2'b11
 `define S_MODE 2'b01
@@ -575,11 +472,7 @@ if_stage #(.IWIDTH(IWIDTH)) if_stage (
 	.ic_stall_fin(ic_stall_fin),
 	.ic_stall_fin2(ic_stall_fin2),
 	.stall_ld_add(stall_ld_add),
-	.pc_data(pc_data_dmy),
-	.icdcmon_cache_miss_current(icdcmon_cache_miss_current),
-	.dbg_use_collision(dbg_use_collision_w),
-	.dbg_jump_under_ic_stall(dbg_jump_under_ic_stall_w),
-	.dbg_use_collision_clear_pending(dbg_ucp_w)
+	.pc_data(pc_data_dmy)
 	);
 
 id_stage id_stage (
@@ -1028,13 +921,7 @@ lsu_stage #(.DWIDTH(DWIDTH)) lsu_stage (
 	.start_dcflush(start_dcflush),
 	.dcflush_running(dcflush_running),
 	.dc_wbback_state(dc_wbback_state),
-	.rst_pipe(rst_pipe),
-	.dcflush_cntr_mon(dcflush_cntr_mon),
-	.dc_miss_current_mon(dc_miss_current_mon),
-	.dc_tag_miss_ma_mon(dc_tag_miss_ma_mon),
-	.dc_tag_empty_ma_mon(dc_tag_empty_ma_mon),
-	.dc_retry_repeat_cntr_mon(dc_retry_repeat_cntr_mon),
-	.current_radr_keeper_mon(current_radr_keeper_mon)
+	.rst_pipe(rst_pipe)
 	);
 
 ilu_stage #(.IWIDTH(IWIDTH)) ilu_stage (
@@ -1075,13 +962,7 @@ ilu_stage #(.IWIDTH(IWIDTH)) ilu_stage (
 	.ic_rdat_m_valid(ic_rdat_m_valid),
 	.ic_finish_mrd(ic_finish_mrd),
 	.start_icflush(start_icflush),
-	.rst_pipe(rst_pipe),
-	.ic_miss_current_mon(ic_miss_current_mon),
-	.ic_tag_miss_id_mon(ic_tag_miss_id_mon),
-	.ic_tag_empty_id_mon(ic_tag_empty_id_mon),
-	.icr_start_rq_count_mon(icr_start_rq_count_mon),
-	.ic_retry_repeat_cntr_mon(ic_retry_repeat_cntr_mon),
-	.ic_curric_ent_radr_keeper_mon(ic_curric_ent_radr_keeper_mon)
+	.rst_pipe(rst_pipe)
 	);
 
 dma #(.SWIDTH(SWIDTH)) dma (

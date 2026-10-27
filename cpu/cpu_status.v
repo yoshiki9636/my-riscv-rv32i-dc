@@ -138,35 +138,6 @@ reg stall_dly3;
 assign stall = ~cpu_run_state | dc_stall;
 //assign stall = ~cpu_run_state | ic_stall | dc_stall;
 
-// FPGA (2026-09-15, ILA diagnostic, see project memory
-// project_slub_debug_u_axi_hang): dc_stall_stuck_cntr (lsu_stage.v) read
-// back as 0 during a confirmed real-hardware hang (PC frozen, pc_hang_probe
-// confirmed) - i.e. dc_stall itself is NOT what's holding the pipeline at
-// that sample point. `stall = ~cpu_run_state | dc_stall`, so if dc_stall
-// is 0 while the CPU is still frozen, cpu_run_state must be 0 - meaning
-// something dropped either quit_cmd (the external monitor's manual halt -
-// should never assert on its own during an unattended boot) or
-// init_calib_complete (the vendor MIG's DDR-calibration-done signal - not
-// expected to ever fall after initial power-up calibration, but is
-// completely opaque vendor-IP-internal state, same blind spot as the
-// DRAM-bank-conflict hypothesis this investigation has been circling).
-// Catch whichever one it is directly: trigger on cpu_run_state's falling
-// edge after having been running.
-reg dbg_cpu_run_state_dly;
-always @ (posedge clk or negedge rst_n) begin
-	if (~rst_n)
-		dbg_cpu_run_state_dly <= 1'b0;
-	else
-		dbg_cpu_run_state_dly <= cpu_run_state;
-end
-(* mark_debug = "true" *) wire dbg_cpu_run_state_fell = dbg_cpu_run_state_dly & ~cpu_run_state;
-(* mark_debug = "true" *) wire dbg_cpu_run_state_ila = cpu_run_state;
-(* mark_debug = "true" *) wire dbg_init_calib_complete_ila = init_calib_complete;
-(* mark_debug = "true" *) wire dbg_quit_cmd_ila = quit_cmd;
-(* mark_debug = "true" *) wire dbg_stall_ila = stall;
-(* mark_debug = "true" *) wire dbg_dc_stall_top_ila = dc_stall;
-(* mark_debug = "true" *) wire dbg_ic_stall_top_ila = ic_stall;
-
 always @ (posedge clk or negedge rst_n) begin
     if (~rst_n) begin
         stall_dly <= 1'b1 ;

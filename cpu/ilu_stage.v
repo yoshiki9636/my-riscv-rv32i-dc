@@ -62,22 +62,7 @@ module ilu_stage
 	input start_icflush,
 	//output icflush_running,
 	// reset pipeline
-	input rst_pipe,
-
-	// FPGA (2026-08-27): debug-only monitor taps for icr_start_rq_probe.v -
-	// see project memory project_slub_debug_u_axi_hang. The whole
-	// read-channel/arbiter/req_queue/mig_if chain downstream of this module
-	// tested completely idle on real hardware while ic_stall stayed stuck,
-	// so the remaining suspects are entirely local to this FSM: is
-	// ic_miss_current genuinely parked in ICMS_MEMR, and did icr_start_rq
-	// (the pulse that's supposed to kick off the read for it) ever actually
-	// fire? Pure observation, no logic change.
-	output [2:0] ic_miss_current_mon,
-	output ic_tag_miss_id_mon,
-	output ic_tag_empty_id_mon,
-	output [15:0] icr_start_rq_count_mon,
-	output [15:0] ic_retry_repeat_cntr_mon,
-	output [31:0] ic_curric_ent_radr_keeper_mon
+	input rst_pipe
 
 	);
 
@@ -280,37 +265,6 @@ always @ (posedge clk or negedge rst_n) begin
 		ic_curric_ent_radr_keeper <= {pc_if_dly, 2'd0};
 end
 
-// FPGA (2026-08-27): livelock detector for icr_start_rq_probe.v - see
-// project memory project_slub_debug_u_axi_hang. A sustained-ic_stall-
-// duration freeze trigger turned out to never fire on real hardware
-// because ic_stall itself was confirmed toggling (not held), consistent
-// with a fast PC-never-advances retry livelock rather than a static
-// deadlock. This instead counts how many times in a row a NEW miss entry
-// (the same trigger condition as the address-keeper update above) latches
-// the SAME address as the previous entry - a single legitimate miss can
-// only ever repeat the exact same address once it's genuinely re-missed
-// (extremely rare in normal operation), so hundreds/thousands of
-// consecutive repeats of one exact address is a clean livelock signature.
-reg [31:0] ic_prev_miss_addr;
-reg [15:0] ic_retry_repeat_cntr;
-wire ic_new_miss_entry = (ic_miss_current == `ICMS_IDLE) & (ic_tag_miss_id | ic_tag_empty_id);
-wire [31:0] ic_new_miss_addr = { pc_if_dly, 2'd0 };
-always @ (posedge clk or negedge rst_n) begin
-	if (~rst_n) begin
-		ic_prev_miss_addr    <= 32'd0;
-		ic_retry_repeat_cntr <= 16'd0;
-	end else if (rst_pipe) begin
-		ic_prev_miss_addr    <= 32'd0;
-		ic_retry_repeat_cntr <= 16'd0;
-	end else if (ic_new_miss_entry) begin
-		ic_prev_miss_addr    <= ic_new_miss_addr;
-		if ((ic_new_miss_addr == ic_prev_miss_addr) & (ic_retry_repeat_cntr != 16'hffff))
-			ic_retry_repeat_cntr <= ic_retry_repeat_cntr + 16'd1;
-		else if (ic_new_miss_addr != ic_prev_miss_addr)
-			ic_retry_repeat_cntr <= 16'd1;
-	end
-end
-
 // core stall singal
 
 `ifdef SUPPORT_A
@@ -405,62 +359,6 @@ assign icr_start_rq = ic_memr_stat_dly2 & ~ic_memr_stat_dly3;
 //assign ic_rin_addr = { pc_if, 2'd0 } ;
 assign ic_rin_addr = ic_curric_ent_radr_keeper;
 
-// FPGA (2026-08-27): wire up the debug monitor ports declared above. A
-// free-running (never-clearing, saturating) counter of icr_start_rq pulses
-// so a single live read tells us whether it has EVER fired at all since
-// boot - a one-cycle pulse would otherwise almost certainly be missed by a
-// snapshot read taken an arbitrary, much-later time after the hang.
-//
-// FPGA (2026-08-27, timing fix): all of these used to be pure combinational
-// passthroughs, which added fanout directly on signals that already feed
-// tight paths (Vivado reported a violation from dcflush_cntr_reg[5]/C to
-// tag_1r1w/ram_reg/ADDRBWRADDR[4] in lsu_stage.v after a similarly-shaped
-// mon port was added there - see the matching fix/comment in lsu_stage.v).
-// ic_curric_ent_radr_keeper in particular directly feeds this module's own
-// I$ tag/index RAM address generation (ic_tag_wadr/ic_index_wadr below), so
-// it's exactly the same risk class. Registering every mon output here
-// uniformly (rather than guessing which ones are "safe") decouples all of
-// them from their source registers' fanout - one cycle of extra latency on
-// a human-operated MMIO debug read has no functional impact.
-reg [2:0] ic_miss_current_mon_r;
-reg ic_tag_miss_id_mon_r;
-reg ic_tag_empty_id_mon_r;
-reg [15:0] icr_start_rq_count_mon_r;
-reg [15:0] ic_retry_repeat_cntr_mon_r;
-reg [31:0] ic_curric_ent_radr_keeper_mon_r;
-
-reg [15:0] icr_start_rq_count;
-always @ (posedge clk or negedge rst_n) begin
-	if (~rst_n)
-		icr_start_rq_count <= 16'd0;
-	else if (icr_start_rq & (icr_start_rq_count != 16'hffff))
-		icr_start_rq_count <= icr_start_rq_count + 16'd1;
-end
-
-always @ (posedge clk or negedge rst_n) begin
-	if (~rst_n) begin
-		ic_miss_current_mon_r           <= 3'd0;
-		ic_tag_miss_id_mon_r             <= 1'b0;
-		ic_tag_empty_id_mon_r            <= 1'b0;
-		icr_start_rq_count_mon_r         <= 16'd0;
-		ic_retry_repeat_cntr_mon_r       <= 16'd0;
-		ic_curric_ent_radr_keeper_mon_r  <= 32'd0;
-	end else begin
-		ic_miss_current_mon_r           <= ic_miss_current;
-		ic_tag_miss_id_mon_r             <= ic_tag_miss_id;
-		ic_tag_empty_id_mon_r            <= ic_tag_empty_id;
-		icr_start_rq_count_mon_r         <= icr_start_rq_count;
-		ic_retry_repeat_cntr_mon_r       <= ic_retry_repeat_cntr;
-		ic_curric_ent_radr_keeper_mon_r  <= ic_curric_ent_radr_keeper;
-	end
-end
-
-assign ic_miss_current_mon = ic_miss_current_mon_r;
-assign ic_tag_miss_id_mon = ic_tag_miss_id_mon_r;
-assign ic_tag_empty_id_mon = ic_tag_empty_id_mon_r;
-assign icr_start_rq_count_mon = icr_start_rq_count_mon_r;
-assign ic_retry_repeat_cntr_mon = ic_retry_repeat_cntr_mon_r;
-assign ic_curric_ent_radr_keeper_mon = ic_curric_ent_radr_keeper_mon_r;
 
 // to MA
 //assign ic_ram_wdata_all = rdat_m_data;

@@ -399,9 +399,18 @@ read_channels_mngr #(.REQC_M_ID(3'b111)) dma_read_channels_mngr (
 // bus logics
 // write request
 assign awvalid = sel_wt[0] ? dc_awvalid : sel_wt[1] ? uart_awvalid : sel_wt[2] ? 1'b0 : sel_wt[3] ? dma_awvalid : 1'b0;
-assign dc_awready = awready;
-assign uart_awready = awready;
-assign dma_awready = awready;
+// gated by sel_wt (2026-08-09): write_arb's `finish` (arbiter4.v) is a blind
+// OR across all masters' write-RESPONSE completions, decoupled from which
+// master currently holds the address-phase grant. An unrelated master's
+// finish can revoke a granted-but-still-waiting master's grant before its
+// own awready ever arrives; broadcasting the eventual (different master's)
+// awready unqualified let the revoked master's req_chan_mngr mistake it for
+// its own and silently drop its pending address. Verified in simulation
+// (arbiter4_gnt_race_tb.v) that qualifying with sel_wt closes this without
+// affecting the normal single-master path.
+assign dc_awready = awready & sel_wt[0];
+assign uart_awready = awready & sel_wt[1];
+assign dma_awready = awready & sel_wt[3];
 assign awid = sel_wt[0] ? dc_awid : sel_wt[1] ? uart_awid : sel_wt[2] ? 4'd0 : sel_wt[3] ? dma_awid : 4'd0;
 assign awaddr = sel_wt[0] ? dc_awaddr : sel_wt[1] ? uart_awaddr : sel_wt[2] ? 32'd0 :  sel_wt[3] ? dma_awaddr : 32'd0;
 assign awatop =  sel_wt[0] ? dc_awatop : sel_wt[1] ? uart_awatop : sel_wt[2] ? 6'd0 : sel_wt[3] ? dma_awatop :  6'd0;
@@ -426,10 +435,12 @@ assign uart_bcomp = bcomp;
 assign dma_bcomp = bcomp;
 // read request
 assign arvalid =  sel_rd[0] ? dc_arvalid : sel_rd[1] ? uart_arvalid :  sel_rd[2] ? ic_arvalid : sel_rd[3] ? dma_arvalid : 1'b0;
-assign ic_arready = arready;
-assign dc_arready = arready;
-assign uart_arready = arready;
-assign dma_arready = arready;
+// gated by sel_rd (2026-08-09): same grant-race fix as the awready side
+// above, mirrored for the read address phase. See arbiter4_gnt_race_tb.v.
+assign ic_arready = arready & sel_rd[2];
+assign dc_arready = arready & sel_rd[0];
+assign uart_arready = arready & sel_rd[1];
+assign dma_arready = arready & sel_rd[3];
 assign arid = sel_rd[0] ? dc_arid : sel_rd[1] ? uart_arid : sel_rd[2] ? ic_arid : sel_rd[3] ? dma_arid : 4'd0;
 assign araddr = sel_rd[0] ? dc_araddr : sel_rd[1] ? uart_araddr : sel_rd[2] ? ic_araddr : sel_rd[3] ? dma_araddr : 32'd0;
     // read data

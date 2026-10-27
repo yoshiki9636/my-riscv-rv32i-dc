@@ -58,17 +58,7 @@ module lsu_stage
 	// to IF
 	output dc_wbback_state,
 	// reset pipeline
-	input rst_pipe,
-
-	// FPGA (2026-08-27): registered mon taps -> cpu_top -> icr_start_rq_probe.
-	// (Restored 2026-09-06 - a git checkout during an unrelated revert had
-	// dropped these uncommitted ports; cpu_top.v connects all six.)
-	output [15:0] dcflush_cntr_mon,
-	output [3:0]  dc_miss_current_mon,
-	output        dc_tag_miss_ma_mon,
-	output        dc_tag_empty_ma_mon,
-	output [15:0] dc_retry_repeat_cntr_mon,
-	output [31:0] current_radr_keeper_mon
+	input rst_pipe
 
 	);
 //
@@ -294,64 +284,9 @@ always @ (posedge clk or negedge rst_n) begin
 		current_radr_keeper <= rd_data_ma;
 end
 
-// FPGA (2026-08-27, restored 2026-09-06 after a git checkout dropped it):
-// D$-side livelock-retry detection, mirrors ilu_stage.v's
-// ic_retry_repeat_cntr - a genuine single re-miss on the same address is
-// vanishingly rare, so hundreds of consecutive repeats is a clean
-// corrupted-tag/livelock signature. Feeds icr_start_rq_probe.v's freeze
-// trigger alongside the I$ counter (whichever fires first freezes both
-// sides' snapshots atomically, for direct cross-comparison).
-reg [31:0] dc_prev_miss_addr;
-reg [15:0] dc_retry_repeat_cntr;
-wire dc_new_miss_entry = (dc_miss_current == `DCMS_IDLE) & (dc_tag_miss_ma | dc_tag_empty_ma);
-always @ (posedge clk or negedge rst_n) begin
-	if (~rst_n) begin
-		dc_prev_miss_addr    <= 32'd0;
-		dc_retry_repeat_cntr <= 16'd0;
-	end else if (rst_pipe) begin
-		dc_prev_miss_addr    <= 32'd0;
-		dc_retry_repeat_cntr <= 16'd0;
-	end else if (dc_new_miss_entry) begin
-		dc_prev_miss_addr <= rd_data_ma;
-		if ((rd_data_ma == dc_prev_miss_addr) & (dc_retry_repeat_cntr != 16'hffff))
-			dc_retry_repeat_cntr <= dc_retry_repeat_cntr + 16'd1;
-		else if (rd_data_ma != dc_prev_miss_addr)
-			dc_retry_repeat_cntr <= 16'd1;
-	end
-end
-
 // core stall singal
 assign dc_stall = ((dc_miss_current != `DCMS_LDRD)&(dc_miss_current != `DCMS_IDLE)) | ((dc_tag_miss_ma | dc_tag_empty_ma)&(dc_miss_current != `DCMS_LDRD));
 
-// FPGA (2026-09-15, ILA diagnostic v3): dbg_repeat_miss_trigger (v2) fired
-// immediately/constantly on real hardware - a 4-line D$ makes a single
-// coincidental same-address re-miss common in ordinary code, not just the
-// bug. Raising the bar to dbg_retry_repeat_cntr_ila>=8 then never fired at
-// all across a full boot-to-hang cycle - combined with the earlier
-// SYS_RQP_STATUS/RDCNT finding that the fully-hung state has req_rqempty=1
-// and zero further dispatches forever, this says the real mechanism is
-// NOT a sustained same-address retry loop: at most a handful of repeats
-// happen, then something else gets stuck with no further activity at all
-// (no new_miss_entry, no tag_wen, ever again). This new counter targets
-// exactly that - consecutive cycles of dc_stall=1 with no tag_wen (i.e.
-// no refill ever completing to relieve the stall), which a genuine
-// multi-cycle refill (even a dirty-writeback one, ~50 cycles worst case
-// per project history) will never come close to, but a true permanent
-// stall reaches trivially. Pure observational counter (view/trigger only,
-// drives no functional logic) - unlike the 2026-09-06 dc_stall_wd attempt
-// that caused real timing violations by feeding a similar counter BACK
-// into ent_valid_bit_ma, this one fans out only to ILA probe muxes added
-// post-synthesis, so it carries none of that risk.
-reg [15:0] dc_stall_stuck_cntr;
-always @ (posedge clk or negedge rst_n) begin
-	if (~rst_n)
-		dc_stall_stuck_cntr <= 16'd0;
-	else if (~dc_stall | tag_wen | rst_pipe)
-		dc_stall_stuck_cntr <= 16'd0;
-	else if (dc_stall_stuck_cntr != 16'hffff)
-		dc_stall_stuck_cntr <= dc_stall_stuck_cntr + 16'd1;
-end
-(* mark_debug = "true" *) wire [15:0] dbg_dc_stall_stuck_cntr_ila = dc_stall_stuck_cntr;
 assign dc_sel_tag = ((dc_miss_current != `DCMS_LDRD)&(dc_miss_current != `DCMS_IDLE)) ;
 assign dc_st_ok = ((dc_miss_current != `DCMS_MEMW)&(dc_miss_current != `DCMS_MEMR));
 
@@ -424,51 +359,6 @@ assign dc_tag_wadr = current_radr_keeper[27:DWIDTH+2];
 assign dc_index_wadr = current_radr_keeper[DWIDTH+1:4];
 assign tag_wen =  rdat_m_valid;
 
-// FPGA (2026-09-15, ILA diagnostic v2, see project memory
-// project_slub_debug_u_axi_hang): v1 of this block hypothesized a specific
-// mechanism (dc_index_wadr vs dc_index_adr_dly disagreeing on the exact
-// tag_wen cycle) and triggered on that one narrow condition - disproven
-// both in simulation (lsu_stage_local_tb.v Test 9, 20525+ checks, never
-// fired) and on real hardware (ILA armed across a full cold-boot-to-hang
-// cycle, never fired). Rather than keep guessing narrow single-bit
-// hypotheses one at a time, v2 triggers on the actual literal symptom
-// definition - dc_new_miss_entry (a fresh miss detected from IDLE) whose
-// address is the SAME as the immediately preceding miss's address
-// (dc_prev_miss_addr, already computed a few lines above for
-// dc_retry_repeat_cntr) - i.e. the exact moment a genuine same-address
-// re-miss happens, the literal "valid line, tag never matches" event,
-// with no assumption about WHY. Captures a much wider signal set around
-// it (FSM state, both tag/index copies, the raw tag compare, the full
-// valid-bit vector, the refill-data-valid pulse) so the actual mechanism
-// can be read directly off the waveform instead of guessed in advance.
-(* mark_debug = "true" *) wire dbg_repeat_miss_trigger = dc_new_miss_entry & (rd_data_ma == dc_prev_miss_addr);
-// FPGA (2026-09-15): dbg_repeat_miss_trigger alone fires on ANY single
-// same-address re-miss, including the harmless, occasional coincidental
-// ones a 4-line D$ makes fairly common in ordinary code (e.g. a
-// store-then-reload of the same word evicted and refilled twice in a
-// row) - confirmed on real hardware as firing immediately/constantly.
-// The actual bug is a SUSTAINED run of these (dc_retry_repeat_cntr
-// climbing many times in a row, not just reaching 1) - expose the
-// counter itself so the ILA trigger can be set to e.g.
-// dbg_retry_repeat_cntr_ila >= 8 (Trigger Setup lets you pick a compare
-// operator, not just equality, for multi-bit probes) instead of the
-// single-event wire above.
-(* mark_debug = "true" *) wire [15:0] dbg_retry_repeat_cntr_ila = dc_retry_repeat_cntr;
-(* mark_debug = "true" *) wire dbg_valid_tag_index_mismatch = tag_wen & (dc_index_adr_dly != dc_index_wadr);
-(* mark_debug = "true" *) wire [DWIDTH+1:4] dbg_index_wadr_ila = dc_index_wadr;
-(* mark_debug = "true" *) wire [DWIDTH+1:4] dbg_index_adr_dly_ila = dc_index_adr_dly;
-(* mark_debug = "true" *) wire [DWIDTH+1:4] dbg_index_adr_ila = dc_index_adr;
-(* mark_debug = "true" *) wire dbg_tag_wen_ila = tag_wen;
-(* mark_debug = "true" *) wire dbg_rdat_m_valid_ila = rdat_m_valid;
-(* mark_debug = "true" *) wire [3:0] dbg_dc_miss_current_ila = dc_miss_current;
-(* mark_debug = "true" *) wire [27:DWIDTH+2] dbg_dc_tag_adr_ma_ila = dc_tag_adr_ma;
-(* mark_debug = "true" *) wire [27:DWIDTH+2] dbg_dc_tag_radr_ila = dc_tag_radr;
-(* mark_debug = "true" *) wire [(2**(DWIDTH-2))-1:0] dbg_ent_valid_bit_ma_ila = ent_valid_bit_ma;
-(* mark_debug = "true" *) wire [31:0] dbg_dc_prev_miss_addr_ila = dc_prev_miss_addr;
-(* mark_debug = "true" *) wire dbg_dc_stall_ila = dc_stall;
-(* mark_debug = "true" *) wire dbg_dc_tag_hit_ila = dc_tag_hit_ma;
-(* mark_debug = "true" *) wire dbg_dc_tag_miss_ila = dc_tag_miss_ma;
-(* mark_debug = "true" *) wire [31:0] dbg_rd_data_ma_ila = rd_data_ma;
 
 // DC flush
 always @ (posedge clk or negedge rst_n) begin
@@ -542,42 +432,5 @@ assign dcw_in_addr_dcflush = { 4'd0, dc_tag_radr[27:DWIDTH+2],  dcflush_cntr_dly
 
 assign dc_wbback_state = (dc_miss_current == `DCMS_MEMW) ; // will remove
 
-// FPGA (2026-08-27, restored 2026-09-06): registered mon taps. current_radr_
-// keeper / dcflush_cntr feed D$ tag/index RAM address generation (a tight
-// timing path per feedback_register_debug_mon_taps), so every mon output
-// gets its own 1-stage buffer here rather than being exposed combinationally.
-reg [15:0] dcflush_cntr_mon_r;
-reg [3:0]  dc_miss_current_mon_r;
-reg        dc_tag_miss_ma_mon_r;
-reg        dc_tag_empty_ma_mon_r;
-reg [15:0] dc_retry_repeat_cntr_mon_r;
-reg [31:0] current_radr_keeper_mon_r;
-always @ (posedge clk or negedge rst_n) begin
-	if (~rst_n) begin
-		dcflush_cntr_mon_r         <= 16'd0;
-		dc_miss_current_mon_r      <= 4'd0;
-		dc_tag_miss_ma_mon_r       <= 1'b0;
-		dc_tag_empty_ma_mon_r      <= 1'b0;
-		dc_retry_repeat_cntr_mon_r <= 16'd0;
-		current_radr_keeper_mon_r  <= 32'd0;
-	end else begin
-		// source from the ALREADY-registered dcflush_cntr_dly, not raw
-		// dcflush_cntr - raw dcflush_cntr[7] -> D$ tag RAM addr -> ... ->
-		// if_stage/pc_if_roll is a known-marginal path and a fresh FF load
-		// on it reopens the WNS violation (feedback_register_debug_mon_taps).
-		dcflush_cntr_mon_r         <= {{(16-(DWIDTH-2)){1'b0}}, dcflush_cntr_dly};
-		dc_miss_current_mon_r      <= dc_miss_current;
-		dc_tag_miss_ma_mon_r       <= dc_tag_miss_ma;
-		dc_tag_empty_ma_mon_r      <= dc_tag_empty_ma;
-		dc_retry_repeat_cntr_mon_r <= dc_retry_repeat_cntr;
-		current_radr_keeper_mon_r  <= current_radr_keeper;
-	end
-end
-assign dcflush_cntr_mon         = dcflush_cntr_mon_r;
-assign dc_miss_current_mon      = dc_miss_current_mon_r;
-assign dc_tag_miss_ma_mon       = dc_tag_miss_ma_mon_r;
-assign dc_tag_empty_ma_mon      = dc_tag_empty_ma_mon_r;
-assign dc_retry_repeat_cntr_mon = dc_retry_repeat_cntr_mon_r;
-assign current_radr_keeper_mon  = current_radr_keeper_mon_r;
 
 endmodule

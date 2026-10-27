@@ -11,63 +11,9 @@
 //`define TANG_PRIMER
 `define ARTY_A7
 
-// 2026-08-09: IWIDTH/DWIDTH shrunk 12->10 (16KB->4KB each) as a deliberate
-// bug-hunting lever, not a permanent sizing choice. Hypothesis (user,
-// 2026-08-09): the long-running wild-write/wild-jump corruption saga
-// (see project_rtl_lab3_dram_review.md / project_pc_jump_trace_logger_rtl.md
-// memory) correlates with if_stage.v's cache_miss_current FSM entering its
-// "true I$+D$ overlap" states (IDST_ISWD/IDST_DSWI/IDST_SYWB) - notably the
-// still-unpatched IDST_ISWD 2'b10 self-loop ("not occured" case that DOES
-// occur, see the 2026-07-31 investigation). Shrinking both caches raises
-// the per-cycle miss rate and therefore the overlap-state entry rate,
-// making this condition (and, if the hypothesis holds, the resulting
-// corruption) more frequent/reproducible without changing any functional
-// logic. Paired with ic_dc_overlap_monitor.v's hardware counters so the
-// effect can be measured quantitatively (entries/dwell cycles), not judged
-// only by "crashed sooner". Revert to 12 (16KB) once the experiment is
-// done or inconclusive - this is not believed to be the right permanent
-// cache size.
-//
-// 2026-09-07: DWIDTH shrunk further, 12->4 (16KB->64B, 4 lines), IWIDTH
-// left at 12 (I$ untouched this time - see below for why). This is
-// specifically to run rtl_atomic_test/dcache_random_torture_test.S on
-// real hardware: two separate simulation testbenches (lsu_stage_local_tb.v,
-// dcache_axi_integration_tb.v - see project_slub_debug_u_axi_hang memory)
-// both failed to reproduce a real, confirmed D$ coherence bug (a valid
-// line whose tag never matches again after a normal refill) despite heavy
-// aliasing/fuzzing/CDC-phase-sweep coverage, so the next attempt is a
-// dedicated real-hardware stress program instead of more simulation
-// guessing. Unlike the 2026-08-09 IWIDTH+DWIDTH shrink above (done during
-// a FULL LINUX BOOT, where a too-small cache was found to trip a
-// completely different, earlier bug before ever reaching the one under
-// investigation - see project_ic_dc_overlap_monitor memory, "8KB was the
-// sweet spot, 4KB was too aggressive"), this test program is D$-only,
-// kernel-free, self-checking bare-metal code with no other subsystem to
-// fail into - so there is no equivalent risk in going this small, and
-// IWIDTH doesn't need to shrink at all since this test's own code/loop
-// footprint is tiny and stays cache-hot regardless of I$ size. Revert
-// DWIDTH to 12 (or whatever the 2026-08-09 experiment's current value is)
-// before resynthesizing anything other than this specific test program.
-//
-// 2026-09-15: this leftover-4 config got resynthesized into a real
-// Linux-boot bitstream by accident, and it hung far earlier than ever seen
-// before - inside setup_arch's DRAM self-test loop (0x00457314, a straight
-// 1MB write-then-read-back sweep), nowhere near place_entity/kernfs.
-// pc_hang_probe's SYS_PHP_EVER (0x00049977) showed dc_stall/dc_tag_miss_ma/
-// ic_stall/jump_under_ic_stall all firing together - the same "valid line,
-// tag never matches" D$ coherence bug from project_slub_debug_u_axi_hang.
-// Initial instinct was to revert this to 12 and move on, but the actual
-// goal is finding the RTL bug, not getting further in boot - and this is
-// by far the fastest, simplest, most deterministic real-hardware repro of
-// that bug found yet (a plain linear 1MB sweep, no OS, no scheduler, no
-// interrupts yet, hangs within ~335ms every time) vs. the place_entity
-// route which needs a full boot to even get there. Deliberately KEPT at 4
-// for now to drive the RTL investigation - do not revert to 12 without
-// re-reading this note and project_slub_debug_u_axi_hang's 2026-09-15
-// entries first.
 module fpga_top
     #(parameter IWIDTH = 12,
-      parameter DWIDTH = 4,
+      parameter DWIDTH = 12,
       parameter SWIDTH = 13)
     (
 	input clkin,
@@ -148,36 +94,6 @@ wire ic_rdat_m_valid; // input
 wire ic_finish_mrd; // input
 //wire start_icflush; // input
 
-// FPGA (2026-08-27): axi_bus_top debug monitor taps, see
-// project_slub_debug_u_axi_hang / icr_start_rq_probe.v
-wire ic_req_rd_mon;
-wire ic_gnt_rd_mon;
-wire ic_arvalid_mon;
-wire [3:0] sel_rd_mon;
-wire [2:0] ic_rdat_m_current_mon;
-wire [3:0] ic_next_rid_lat_mon;
-wire rvalid_mon;
-wire [3:0] rid_mon;
-wire [2:0] ic_miss_current_mon;
-wire ic_tag_miss_id_mon;
-wire ic_tag_empty_id_mon;
-wire [15:0] icr_start_rq_count_mon;
-wire [15:0] dcflush_cntr_mon;
-wire [15:0] ic_retry_repeat_cntr_mon;
-wire [31:0] ic_curric_ent_radr_keeper_mon;
-
-// FPGA (2026-08-27, same session): D$-side mirror of the taps above, see
-// lsu_stage.v / axi_bus_top.v / project_slub_debug_u_axi_hang.
-wire dc_req_rd_mon;
-wire dc_gnt_rd_mon;
-wire dc_arvalid_mon;
-wire [2:0] dc_rdat_m_current_mon;
-wire [3:0] dc_next_rid_lat_mon;
-wire [3:0] dc_miss_current_mon;
-wire dc_tag_miss_ma_mon;
-wire dc_tag_empty_ma_mon;
-wire [15:0] dc_retry_repeat_cntr_mon;
-wire [31:0] current_radr_keeper_mon;
 
 // axi bus to DRAM
 wire awvalid; // output
@@ -270,33 +186,6 @@ wire [31:0] dma_io_rdata_in_2; // input
 wire [31:0] dma_io_rdata_in_3; // input
 wire [31:0] dma_io_rdata_in_4; // input
 wire [31:0] dma_io_rdata_in_5; // input
-wire [31:0] dma_io_rdata_in_6; // input
-wire [31:0] dma_io_rdata_in_7; // input - dram_top output, feeds ic_dc_overlap_monitor
-
-// pc_ex tap (was for forwarding_hazard_monitor, removed 2026-09-06 for
-// timing; pc_ex still feeds ic_dc_overlap_monitor)
-wire [31:2] fwdmon_pc_ex;
-
-// ic_dc_overlap_monitor taps (2026-08-09), see ic_dc_overlap_monitor.v.
-// Reuses fwdmon_pc_ex above (pc_ex is already tapped out of cpu_top.v) and
-// the existing top-level `stall` wire (already fed to io_frc/interrupter)
-// for dc_stall - only cache_miss_current/ic_stall need new wires.
-wire [3:0] icdcmon_cache_miss_current;
-wire icdcmon_ic_stall;
-
-// pc_hang_probe load-use stall-chain taps (2026-09-06), registered in cpu_top.v
-wire dbg_stall_ld;
-wire dbg_stall_ld_add;
-wire dbg_dc_stall;
-wire dbg_rst_pipe;
-wire dbg_use_collision;
-wire dbg_jump_under_ic_stall;
-wire dbg_ucp;
-
-// pc_jump_trace_logger cross-wiring removed 2026-09-06 (module removed for
-// timing - its scratch-RAM burst write-back kept the dcflush_cntr ->
-// scr_ram address mux alive, making dcflush_cntr_reg the repeated Vivado
-// WNS startpoint; see cpu_top.v's scratch-RAM port comment).
 
 wire ibus_ren;
 wire [19:2] ibus_radr;
@@ -549,33 +438,7 @@ cpu_top #(.DWIDTH(DWIDTH), .IWIDTH(IWIDTH), .SWIDTH(SWIDTH)) cpu_top (
     .g_interrupt_1shot(g_interrupt_1shot),
     .g_interrupt(g_interrupt),
     //.ic_stall(ic_stall),
-    .stall(stall),
-
-    .fwdmon_pc_ex(fwdmon_pc_ex),
-
-    .icdcmon_cache_miss_current(icdcmon_cache_miss_current),
-    .icdcmon_ic_stall(icdcmon_ic_stall),
-    .dbg_stall_ld(dbg_stall_ld),
-    .dbg_stall_ld_add(dbg_stall_ld_add),
-    .dbg_dc_stall(dbg_dc_stall),
-    .dbg_rst_pipe(dbg_rst_pipe),
-    .dbg_use_collision(dbg_use_collision),
-    .dbg_jump_under_ic_stall(dbg_jump_under_ic_stall),
-    .dbg_ucp(dbg_ucp),
-
-    .ic_miss_current_mon(ic_miss_current_mon),
-    .ic_tag_miss_id_mon(ic_tag_miss_id_mon),
-    .ic_tag_empty_id_mon(ic_tag_empty_id_mon),
-    .icr_start_rq_count_mon(icr_start_rq_count_mon),
-    .dcflush_cntr_mon(dcflush_cntr_mon),
-    .ic_retry_repeat_cntr_mon(ic_retry_repeat_cntr_mon),
-    .ic_curric_ent_radr_keeper_mon(ic_curric_ent_radr_keeper_mon),
-
-    .dc_miss_current_mon(dc_miss_current_mon),
-    .dc_tag_miss_ma_mon(dc_tag_miss_ma_mon),
-    .dc_tag_empty_ma_mon(dc_tag_empty_ma_mon),
-    .dc_retry_repeat_cntr_mon(dc_retry_repeat_cntr_mon),
-    .current_radr_keeper_mon(current_radr_keeper_mon)
+    .stall(stall)
 	);
 
 axi_bus_top axi_bus_top (
@@ -644,25 +507,10 @@ axi_bus_top axi_bus_top (
 	.rready(rready),
 	.rid(rid),
 	.rdata(rdata),
-	.rlast(rlast),
-
-	.ic_req_rd_mon(ic_req_rd_mon),
-	.ic_gnt_rd_mon(ic_gnt_rd_mon),
-	.ic_arvalid_mon(ic_arvalid_mon),
-	.sel_rd_mon(sel_rd_mon),
-	.ic_rdat_m_current_mon(ic_rdat_m_current_mon),
-	.ic_next_rid_lat_mon(ic_next_rid_lat_mon),
-	.rvalid_mon(rvalid_mon),
-	.rid_mon(rid_mon),
-
-	.dc_req_rd_mon(dc_req_rd_mon),
-	.dc_gnt_rd_mon(dc_gnt_rd_mon),
-	.dc_arvalid_mon(dc_arvalid_mon),
-	.dc_rdat_m_current_mon(dc_rdat_m_current_mon),
-	.dc_next_rid_lat_mon(dc_next_rid_lat_mon)
+	.rlast(rlast)
 	);
 
-dram_top #(.SWIDTH(SWIDTH)) dram_top (
+dram_top dram_top (
 	.mclk(mclk),
 	.mrst_n(mrst_n),
 	.app_addr(app_addr),
@@ -679,13 +527,6 @@ dram_top #(.SWIDTH(SWIDTH)) dram_top (
 	.app_rd_data_valid(app_rd_data_valid),
 	.clk(clk),
 	.rst_n(rst_n),
-	.dma_io_we(dma_io_we),
-	.dma_io_wadr(dma_io_wadr),
-	.dma_io_wdata(dma_io_wdata),
-	.dma_io_radr(dma_io_radr),
-	.dma_io_radr_en(dma_io_radr_en),
-	.dma_io_rdata_in(dma_io_rdata_in_6),
-	.dma_io_rdata(dma_io_rdata_in_7),
 	.awvalid(awvalid),
 	.awready(awready),
 	.awid(awid),
@@ -709,135 +550,6 @@ dram_top #(.SWIDTH(SWIDTH)) dram_top (
 	.rid(rid),
 	.rdata(rdata),
 	.rlast(rlast)
-	);
-
-// forwarding_hazard_monitor removed 2026-09-06 (timing recovery; its
-// investigation concluded no real harm - forwarding.v asymmetry is
-// neutralised by wbk_rd_reg_wb forced-clear). The dma_io_* daisy chain
-// now goes dram_top -> ic_dc_overlap_monitor directly.
-
-// ---- ILA debug taps (registered mirror, clk domain) added 2026-09-17 to
-// identify which of axi_bus_top's 4 request channels (ic/dc/uart/dma) is
-// generating req_queue traffic while cpu_start has never been asserted
-// since reset (mig_if.v's dbg_accept_mismatch_ila chase led here - see
-// project memory project_dram_write_loss_async_queue_theory). Registered
-// here, not tapped raw, to keep ILA fanout off axi_bus_top's own arbitration
-// path, per feedback_register_debug_mon_taps. ----
-(* mark_debug = "true" *) reg dbg_ic_rstart_rq_ila, dbg_dc_rstart_rq_ila, dbg_uart_rstart_rq_ila;
-(* mark_debug = "true" *) reg dbg_dma_rstart_rq_ila, dbg_dma_wstart_rq_ila;
-(* mark_debug = "true" *) reg dbg_awvalid_ila, dbg_arvalid_ila;
-
-always @ (posedge clk or negedge rst_n) begin
-    if (~rst_n) begin
-        dbg_ic_rstart_rq_ila   <= 1'b0;
-        dbg_dc_rstart_rq_ila   <= 1'b0;
-        dbg_uart_rstart_rq_ila <= 1'b0;
-        dbg_dma_rstart_rq_ila  <= 1'b0;
-        dbg_dma_wstart_rq_ila  <= 1'b0;
-        dbg_awvalid_ila        <= 1'b0;
-        dbg_arvalid_ila        <= 1'b0;
-    end else begin
-        dbg_ic_rstart_rq_ila   <= ic_rstart_rq;
-        dbg_dc_rstart_rq_ila   <= dc_rstart_rq;
-        dbg_uart_rstart_rq_ila <= uart_rstart_rq;
-        dbg_dma_rstart_rq_ila  <= dma_rstart_rq;
-        dbg_dma_wstart_rq_ila  <= dma_wstart_rq;
-        dbg_awvalid_ila        <= awvalid;
-        dbg_arvalid_ila        <= arvalid;
-    end
-end
-
-// I$/D$ overlap FSM statistics monitor (2026-08-09), tail of the
-// dma_io_* daisy chain right after dram_top - see ic_dc_overlap_monitor.v.
-wire [31:0] dma_io_rdata_in_9;
-wire [31:0] dma_io_rdata_in_10;
-
-ic_dc_overlap_monitor ic_dc_overlap_monitor (
-	.clk(clk),
-	.rst_n(rst_n),
-	.cache_miss_current(icdcmon_cache_miss_current),
-	.ic_stall(icdcmon_ic_stall),
-	.dc_stall(stall),
-	.pc_ex(fwdmon_pc_ex),
-	.dma_io_we(dma_io_we),
-	.dma_io_wadr(dma_io_wadr),
-	.dma_io_wdata(dma_io_wdata),
-	.dma_io_radr(dma_io_radr),
-	.dma_io_radr_en(dma_io_radr_en),
-	.dma_io_rdata_in(dma_io_rdata_in_7),
-	.dma_io_rdata(dma_io_rdata_in_9)
-	);
-
-// I$ read-request-channel stall probe (2026-08-27), new tail of the
-// dma_io_* daisy chain right after ic_dc_overlap_monitor - see
-// icr_start_rq_probe.v / project_slub_debug_u_axi_hang.
-icr_start_rq_probe icr_start_rq_probe (
-	.clk(clk),
-	.rst_n(rst_n),
-	.ic_req_rd(ic_req_rd_mon),
-	.ic_gnt_rd(ic_gnt_rd_mon),
-	.ic_arvalid(ic_arvalid_mon),
-	.sel_rd(sel_rd_mon),
-	.ic_rdat_m_current(ic_rdat_m_current_mon),
-	.ic_next_rid_lat(ic_next_rid_lat_mon),
-	.rvalid(rvalid_mon),
-	.rid(rid_mon),
-	.ic_miss_current(ic_miss_current_mon),
-	.ic_tag_miss_id(ic_tag_miss_id_mon),
-	.ic_tag_empty_id(ic_tag_empty_id_mon),
-	.icr_start_rq_count(icr_start_rq_count_mon),
-	.dcflush_cntr(dcflush_cntr_mon),
-	.dcflush_running(dcflush_running),
-	.ic_stall(icdcmon_ic_stall),
-	.ic_retry_repeat_cntr(ic_retry_repeat_cntr_mon),
-	.ic_curric_ent_radr_keeper(ic_curric_ent_radr_keeper_mon),
-	.dc_req_rd(dc_req_rd_mon),
-	.dc_gnt_rd(dc_gnt_rd_mon),
-	.dc_arvalid(dc_arvalid_mon),
-	.dc_rdat_m_current(dc_rdat_m_current_mon),
-	.dc_next_rid_lat(dc_next_rid_lat_mon),
-	.dc_miss_current(dc_miss_current_mon),
-	.dc_tag_miss_ma(dc_tag_miss_ma_mon),
-	.dc_tag_empty_ma(dc_tag_empty_ma_mon),
-	.dc_retry_repeat_cntr(dc_retry_repeat_cntr_mon),
-	.current_radr_keeper(current_radr_keeper_mon),
-	.dma_io_we(dma_io_we),
-	.dma_io_wadr(dma_io_wadr),
-	.dma_io_wdata(dma_io_wdata),
-	.dma_io_radr(dma_io_radr),
-	.dma_io_radr_en(dma_io_radr_en),
-	.dma_io_rdata_in(dma_io_rdata_in_9),
-	.dma_io_rdata(dma_io_rdata_in_10)
-	);
-
-// PC-unchanged hang probe (2026-09-06), tail of the dma_io_* daisy chain
-// right after icr_start_rq_probe. Timing-safe by construction: reuses only
-// nets already tapped for ic_dc_overlap_monitor (fwdmon_pc_ex,
-// icdcmon_cache_miss_current, icdcmon_ic_stall), registers them at entry,
-// and drives nothing back into the CPU. See pc_hang_probe.v.
-pc_hang_probe pc_hang_probe (
-	.clk(clk),
-	.rst_n(rst_n),
-	.pc_ex(fwdmon_pc_ex),
-	.cache_miss_current(icdcmon_cache_miss_current),
-	.ic_stall(icdcmon_ic_stall),
-	.dc_miss_current(dc_miss_current_mon),
-	.stall_ld(dbg_stall_ld),
-	.stall_ld_add(dbg_stall_ld_add),
-	.dc_stall(dbg_dc_stall),
-	.rst_pipe(dbg_rst_pipe),
-	.dc_tag_miss_ma(dc_tag_miss_ma_mon),
-	.dc_tag_empty_ma(dc_tag_empty_ma_mon),
-	.use_collision(dbg_use_collision),
-	.jump_under_ic_stall(dbg_jump_under_ic_stall),
-	.ucp(dbg_ucp),
-	.dma_io_we(dma_io_we),
-	.dma_io_wadr(dma_io_wadr),
-	.dma_io_wdata(dma_io_wdata),
-	.dma_io_radr(dma_io_radr),
-	.dma_io_radr_en(dma_io_radr_en),
-	.dma_io_rdata_in(dma_io_rdata_in_10),
-	.dma_io_rdata(dma_io_rdata)
 	);
 
 mig_7series_0 mig_7series_0 (
@@ -1068,7 +780,7 @@ io_spi_lite io_spi_lite(
     .dma_io_radr(dma_io_radr),
     .dma_io_radr_en(dma_io_radr_en),
     .dma_io_rdata_in(dma_io_rdata_in_5),
-    .dma_io_rdata(dma_io_rdata_in_6),
+    .dma_io_rdata(dma_io_rdata),
     .spi_select_io(spi_select_io),
     .spi_sck(spi_sck),
     .spi_csn(spi_csn),
