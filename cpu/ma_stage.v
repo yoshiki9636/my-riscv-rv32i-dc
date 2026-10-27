@@ -25,6 +25,9 @@ module ma_stage
 	input wbk_rd_reg_ma,
 	input [31:0] st_data_ma,
 	input [2:0] ldst_code_ma,
+	// pc_jump_trace_logger WB-commit tap (2026-07-29): see ex_stage.v's
+	// pc_ma for the rationale; just carried one more stage here.
+	input [31:2] pc_ma,
 	// to WB
     output reg cmd_ld_wb,
 	output reg [2:0] ld_code_wb,
@@ -32,6 +35,7 @@ module ma_stage
 	output reg [31:0] rd_data_wb,
 	output reg wbk_rd_reg_wb,
 	output [31:0] ld_data_wb,
+	output reg [31:2] pc_wb,
 	// to LSU
 	input [DWIDTH-3:0] ram_radr_all,
 	output [127:0] ram_rdata_all,
@@ -316,12 +320,14 @@ always @ ( posedge clk or negedge rst_n) begin
 		ld_code_wb <= 3'd0;
 		rd_adr_wb <= 5'd0;
 		wbk_rd_reg_wb <= 1'b0;
+		pc_wb <= 30'd0;
 	end
 	else begin
 	//else if (~stall) begin
         cmd_ld_wb <= cmd_ld_ma;
 		ld_code_wb <= ldst_code_ma;
 		rd_adr_wb <= rd_adr_ma;
+		pc_wb <= pc_ma;
 `ifdef SUPPORT_A
 		wbk_rd_reg_wb <= ~(stall & ~cpu_stopping) & wbk_rd_reg_with_scw & ~dc_wb_mask;
 `else // SUPPORT_A

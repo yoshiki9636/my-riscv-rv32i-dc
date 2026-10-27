@@ -89,6 +89,11 @@ module ex_stage(
 	output reg wbk_rd_reg_ma,
 	output reg [31:0] st_data_ma,
 	output reg [2:0] ldst_code_ma,
+	// pc_jump_trace_logger WB-commit tap (2026-07-29): PC of the
+	// instruction now entering MA, latched in lockstep with rd_adr_ma so
+	// it stays paired with the same instruction all the way to WB - see
+	// ma_stage.v's pc_wb and cpu_top.v's trc_pc_wb.
+	output reg [31:2] pc_ma,
     // to IF
 	output [31:2] jmp_adr_ex,
 	input [31:2] jmp_adr_if,
@@ -490,18 +495,39 @@ reg cmd_scw_hit_ma;
 wire [31:0] rd_data_ma_scw = cmd_scw_purge_ma ? { 31'd0, ~cmd_scw_hit_ma } : rd_data_ma;
 //wire [31:0] rd_data_ma_scw = rd_data_ma;
 
-wire [31:0] rs1_fwd = hit_rs1_idex_ex ? rd_data_ma_scw :
-                      hit_rs1_idma_ex ? wbk_data_wb : wbk_data_wb2;
+wire [31:0] rs1_fwd_raw = hit_rs1_idex_ex ? rd_data_ma_scw :
+                          hit_rs1_idma_ex ? wbk_data_wb : wbk_data_wb2;
 
-assign rs2_fwd = hit_rs2_idex_ex ? rd_data_ma_scw :
-                 hit_rs2_idma_ex ? wbk_data_wb : wbk_data_wb2;
+wire [31:0] rs2_fwd_raw = hit_rs2_idex_ex ? rd_data_ma_scw :
+                          hit_rs2_idma_ex ? wbk_data_wb : wbk_data_wb2;
 `else // SUPPORT_A
-wire [31:0] rs1_fwd = hit_rs1_idex_ex ? rd_data_ma :
-                      hit_rs1_idma_ex ? wbk_data_wb : wbk_data_wb2;
+wire [31:0] rs1_fwd_raw = hit_rs1_idex_ex ? rd_data_ma :
+                          hit_rs1_idma_ex ? wbk_data_wb : wbk_data_wb2;
 
-wire [31:0] rs2_fwd = hit_rs2_idex_ex ? rd_data_ma :
-                      hit_rs2_idma_ex ? wbk_data_wb : wbk_data_wb2;
+wire [31:0] rs2_fwd_raw = hit_rs2_idex_ex ? rd_data_ma :
+                          hit_rs2_idma_ex ? wbk_data_wb : wbk_data_wb2;
 `endif // SUPPORT_A
+
+// keep forwarded operands during stall:
+// the forwarding sources (wbk_data_wb2, wbk_data_wb) keep moving while EX
+// is frozen by a stall, so capture the values at the 1st stall cycle and
+// use them until the stall is released.
+reg [31:0] rs1_fwd_keep;
+reg [31:0] rs2_fwd_keep;
+
+always @ ( posedge clk or negedge rst_n) begin
+	if (~rst_n) begin
+		rs1_fwd_keep <= 32'd0;
+		rs2_fwd_keep <= 32'd0;
+	end
+	else if (stall & ~stall_dly) begin
+		rs1_fwd_keep <= rs1_fwd_raw;
+		rs2_fwd_keep <= rs2_fwd_raw;
+	end
+end
+
+wire [31:0] rs1_fwd = stall_dly ? rs1_fwd_keep : rs1_fwd_raw;
+assign rs2_fwd = stall_dly ? rs2_fwd_keep : rs2_fwd_raw;
 
 // ALU selector
 assign rs1_sel = ~nohit_rs1_ex ? rs1_fwd : rs1_data_ex;
@@ -875,7 +901,12 @@ assign interrupt_condition_ex = ~stall & g_interrupt_1shot & csr_rmie;
 assign timer_condition_ex = ~stall & frc_cntr_val_leq_1shot & csr_rmie;
 
 // purge signal
-assign jmp_purge_ex = jmp_condition_ex | ecall_condition_ex | mret_condition_ex | interrupt_condition_ex | timer_condition_ex | fencei_cond;
+// FIX (2026-10-27): illegal-instruction exceptions (g_exception) must purge
+// the younger instructions in ID/IF too. Without it the 2 following
+// instructions kept executing after the trap, and a second illegal op among
+// them (e.g. glibc's lr.w.aq; bnez; sc.w) trapped again and overwrote mepc.
+// Reproduced in rtl_atomic_test/lrw_illegal_tb.v.
+assign jmp_purge_ex = jmp_condition_ex | ecall_condition_ex | mret_condition_ex | interrupt_condition_ex | timer_condition_ex | fencei_cond | (~stall & g_exception);
 
 wire no_wbk_cmds = cmd_st_ex | cmd_br_ex | ecall_condition_ex | mret_condition_ex | cmd_fencei_ex;
 
@@ -964,6 +995,7 @@ always @ ( posedge clk or negedge rst_n) begin
 		rd_data_ma <= 32'd0;
 		st_data_ma <= 32'd0;
 		ldst_code_ma <= 3'd0;
+		pc_ma <= 30'd0;
         cmd_ld_ma <= 1'b0;
 `ifdef SUPPORT_A
         cmd_st_ma_pre <= 1'b0;
@@ -972,7 +1004,17 @@ always @ ( posedge clk or negedge rst_n) begin
 `endif // SUPPORT_A
 		wbk_rd_reg_ma <= 1'b0;
 `ifdef SUPPORT_A
-		cmd_scw_hit_ma <= 1'b1;
+		// FPGA (2026-09-17): was 1'b1. With A-extension disabled at decode
+		// (id_stage.v:347 a_ext_disable=1'b1), cmd_scw_hit is permanently 0,
+		// so this register's ~stall-gated update (line ~1003 below) never
+		// runs and the reset default sat here forever - and since
+		// cmd_st_ma = cmd_st_ma_pre | cmd_scw_hit_ma (line ~946), a 1'b1
+		// default made cmd_st_ma (and therefore cmd_ldst_ma, dc_tag_empty_ma,
+		// dcr_start_rq) stuck permanently asserted from reset, independent
+		// of cpu_start. Real hardware: confirmed dcr_start_rq stuck high via
+		// ILA with cpu_start never asserted, traced to this exact register -
+		// see project memory project_dram_write_loss_async_queue_theory.
+		cmd_scw_hit_ma <= 1'b0;
 		success_scw_ma_pre <= 1'b0;
 		cmd_scw_purge_ma <= 1'b0;
 `endif // SUPPORT_A
@@ -985,6 +1027,7 @@ always @ ( posedge clk or negedge rst_n) begin
 		////rd_data_ma <= rd_data_ex_pre; // for debug test
 		////st_data_ma <= st_data_ex_pre; // for debug test
 		ldst_code_ma <= ldst_code_ex;
+		pc_ma <= pc_ex;
 	    cmd_ld_ma <= cmd_ld_ex_post & ~wb_mask_with_exception_interrupt;
 `ifdef SUPPORT_A
         cmd_st_ma_pre <= cmd_st_ex_post & ~wb_mask_with_exception_interrupt;

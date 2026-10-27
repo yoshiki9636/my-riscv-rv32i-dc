@@ -75,7 +75,24 @@ module if_stage
 	input ic_stall_fin2,
 	output reg stall_ld_add,
 	//output dc_stall_patch,
-	output [31:0] pc_data
+	output [31:0] pc_data,
+
+	// ic_dc_overlap_monitor tap (2026-08-09) - new output port only, no
+	// functional signal touched; exposes the existing internal
+	// cache_miss_current FSM register (see IDST_* defines below) so
+	// ic_dc_overlap_monitor.v can count entries/dwell time in the true
+	// I$+D$ overlap states without adding any logic inside if_stage.v
+	// itself. Same "pure tap" precedent as fwdmon_*/trc_* ports.
+	output [3:0] icdcmon_cache_miss_current,
+
+	// pc_hang_probe taps (2026-09-06) - pure taps of the collision-replay
+	// latches (all already `reg` here), no functional signal touched. The
+	// hang has every stall/miss FSM idle with pc_ex frozen, so by
+	// elimination pc_id is pinned by use_collision stuck at 1 (its
+	// dc_stall_fin2 clear pulse lost). See pc_hang_probe.v.
+	output dbg_use_collision,
+	output dbg_jump_under_ic_stall,
+	output dbg_use_collision_clear_pending
 	);
 
 // valid signal
@@ -300,15 +317,46 @@ always @ (posedge clk or negedge rst_n) begin
         inst_collision <= inst_roll;
 end
 
-always @ (posedge clk or negedge rst_n) begin   
+// FPGA (2026-07-31): use_collision's clear (dc_stall_fin2) used to be
+// unconditional, independent of jump_under_ic_stall. If dc_stall_fin2
+// pulsed on a cycle where jump_under_ic_stall was masking inst_id to
+// NOP (see the 2026-07-17 fix above), use_collision cleared itself out
+// from under the mask before the armed replay (inst_collision) ever
+// got a chance to be delivered - a silent loss of a load/store replay,
+// confirmed in simulation (if_stage_collision_race_tb.v Scenario A).
+// Unlike the stale-I$-fetch case the 2026-07-17 fix covers, this is NOT
+// safe to just drop: pc_collision is captured from pc_id (an ID-stage
+// PC, generally an earlier/unrelated instruction to whatever mepc ends
+// up pointing at), so mret/mepc re-execution does not recover it.
+// Fix: defer the clear while masked (use_collision_clear_pending latch
+// below remembers it), and apply it the cycle the mask lifts - by then
+// (use_collision & ~jump_under_ic_stall) has already delivered
+// inst_collision for that same cycle (nonblocking assignment: this
+// clear takes effect for the FOLLOWING cycle), so exactly one correct
+// post-mask delivery is guaranteed before use_collision finally clears.
+always @ (posedge clk or negedge rst_n) begin
 	if (~rst_n)
         use_collision <= 1'b0;
 	else if (rst_pipe)
         use_collision <= 1'b0;
-	else if (dc_stall_fin2)
+	else if (dc_stall_fin2 & ~jump_under_ic_stall)
+        use_collision <= 1'b0;
+	else if (use_collision_clear_pending & ~jump_under_ic_stall)
         use_collision <= 1'b0;
 	else if ((stall_1shot & stall_ld_ex)|inst_collision_smpl1)
         use_collision <= 1'b1;
+end
+
+reg use_collision_clear_pending;
+always @ (posedge clk or negedge rst_n) begin
+	if (~rst_n)
+        use_collision_clear_pending <= 1'b0;
+	else if (rst_pipe)
+        use_collision_clear_pending <= 1'b0;
+	else if (use_collision_clear_pending & ~jump_under_ic_stall)
+        use_collision_clear_pending <= 1'b0; // consumed this cycle, see use_collision above
+	else if (dc_stall_fin2 & jump_under_ic_stall)
+        use_collision_clear_pending <= 1'b1; // remember to clear once the mask lifts
 end
 
 always @ (posedge clk or negedge rst_n) begin   
@@ -582,6 +630,8 @@ always @ (posedge clk or negedge rst_n) begin
         cache_miss_current <= cache_miss_next;
 end
 
+assign icdcmon_cache_miss_current = cache_miss_current;
+
 assign dc_fin_after_ic = (cache_miss_current == `IDST_DSAF) & ic_stall_fin2;
 assign ic_fin_after_dc = (cache_miss_current == `IDST_ISAF) & ic_stall_fin2;
 assign syn_fin         = (cache_miss_current == `IDST_SYAI) & ic_stall_fin2;
@@ -593,6 +643,82 @@ assign inst_roll_smpl_tim3 = (cache_miss_next == `IDST_SYAD)&(cache_miss_current
 assign inst_collision_smpl1 = (cache_miss_next == `IDST_ISWD)&(cache_miss_current == `IDST_ISAF);
 
 assign inst_masked_in_icdc_sync_start = (cache_miss_current == `IDST_SYWB);
+
+// FPGA (2026-09-15, ILA diagnostic, see project memory
+// project_slub_debug_u_axi_hang): a live real-hardware read during the
+// current hang showed dc_stall=0 and cpu_run_state=1 - i.e. neither the
+// D$ (lsu_stage.v) nor the top-level run/quit gate (cpu_status.v) is what
+// is actually holding the pipeline. pc_hang_probe's own PC-window freeze
+// detection had already located this same hang inside a 5-instruction
+// D$-test compare loop (0x457314-0x45733c) - if PC is genuinely replaying
+// only a couple of those instructions forever without ever reaching the
+// loop-increment/branch further down, that points at this module's own
+// cache_miss_current (IDST_*) FSM - specifically the ISWD self-loop
+// previously investigated and judged "a safety mechanism, not a bug" in
+// 2026-08-09 (project_ic_dc_overlap_monitor) for a DIFFERENT scenario;
+// this extreme-thrashing DWIDTH=4 condition may be exactly the case that
+// judgment did not cover. dbg_pc_stuck_cntr watches pc_id directly (the
+// most upstream, hardest-to-fake indicator of real forward progress) and
+// counts consecutive cycles it hasn't changed, independent of dc_stall/
+// cpu_run_state/ic_stall entirely - if the CPU is genuinely wedged this
+// will climb without bound; if it's just legitimately slow (still making
+// occasional real progress) it will keep resetting to 0. Pure
+// observational tap, no functional feedback.
+//
+// FIXED 2026-09-15: this board's reset sequence is reset -> DRAM
+// calibration (which scrambles DRAM contents) -> monitor loads the
+// kernel image -> monitor issues cpu_start - a necessarily manual,
+// human-paced gap exists between reset and cpu_start during which pc_id
+// is legitimately static (nothing has started running yet). The counter
+// as originally written couldn't tell that apart from a real hang, so it
+// always saturated/triggered during this harmless wait, before the real
+// test (post cpu_start) ever began. Gated on pc_start (cpu_status.v's
+// one-cycle pulse marking the actual start of execution, already wired
+// into this module) via a sticky "seen_pc_start" latch - the counter now
+// stays at 0 and cannot trigger until the CPU has genuinely started.
+reg seen_pc_start;
+always @ (posedge clk or negedge rst_n) begin
+	if (~rst_n)
+		seen_pc_start <= 1'b0;
+	else if (pc_start)
+		seen_pc_start <= 1'b1;
+end
+reg [31:2] dbg_pc_id_dly;
+reg [15:0] dbg_pc_stuck_cntr;
+always @ (posedge clk or negedge rst_n) begin
+	if (~rst_n) begin
+		dbg_pc_id_dly     <= 30'd0;
+		dbg_pc_stuck_cntr <= 16'd0;
+	end else if (~seen_pc_start) begin
+		dbg_pc_id_dly     <= pc_id;
+		dbg_pc_stuck_cntr <= 16'd0;
+	end else begin
+		dbg_pc_id_dly <= pc_id;
+		if (pc_id != dbg_pc_id_dly)
+			dbg_pc_stuck_cntr <= 16'd0;
+		else if (dbg_pc_stuck_cntr != 16'hffff)
+			dbg_pc_stuck_cntr <= dbg_pc_stuck_cntr + 16'd1;
+	end
+end
+(* mark_debug = "true" *) wire [15:0] dbg_pc_stuck_cntr_ila = dbg_pc_stuck_cntr;
+(* mark_debug = "true" *) wire dbg_seen_pc_start_ila = seen_pc_start;
+(* mark_debug = "true" *) wire [31:2] dbg_pc_id_ila = pc_id;
+(* mark_debug = "true" *) wire [3:0] dbg_cache_miss_current_ila = cache_miss_current;
+(* mark_debug = "true" *) wire dbg_ic_stall_ila = ic_stall;
+(* mark_debug = "true" *) wire dbg_use_collision_ila = use_collision;
+(* mark_debug = "true" *) wire dbg_jump_under_ic_stall_ila = jump_under_ic_stall;
+// FPGA (2026-09-15): real-hardware capture (post cpu_start, genuine hang)
+// showed cache_miss_current pinned at IDST_IDLE (0) - the I$/D$ overlap
+// FSM is not cycling, ruling out an ISWD-style livelock. pc_id_pre's own
+// hold condition is `ic_stall | stall | stall_ld` (see the always block
+// a few hundred lines up) - stall(=~cpu_run_state|dc_stall) is already
+// confirmed 0, so whichever of ic_stall/stall_ld is stuck at 1 is the
+// direct, immediate cause of PC not advancing. ic_stall is already
+// tapped above; stall_ld (forwarding.v's load-use hazard stall, an
+// input to this module, never tapped before) is the one remaining
+// untested candidate in this exact equation.
+(* mark_debug = "true" *) wire dbg_stall_ld_ila = stall_ld;
+(* mark_debug = "true" *) wire dbg_stall_top_ila = stall;
 
 //wire inst_mask_condition_with_jmp = ((cache_miss_current == `IDST_SYWB)|(cache_miss_current == `IDST_DSWI)) & jmp_condition_ex;
 
@@ -653,6 +779,10 @@ always @ (posedge clk or negedge rst_n) begin
         jump_under_ic_stall <= 1'b1;
 end
 
+// pc_hang_probe taps - pure taps of already-registered collision latches
+assign dbg_use_collision               = use_collision;
+assign dbg_jump_under_ic_stall         = jump_under_ic_stall;
+assign dbg_use_collision_clear_pending = use_collision_clear_pending;
 
 endmodule
 

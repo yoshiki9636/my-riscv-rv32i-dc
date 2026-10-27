@@ -117,7 +117,17 @@ module id_stage(
 	input stall_ld,
 	input stall_ld_ex,
 	input stall_ld_ma,
-	input rst_pipe
+	input rst_pipe,
+	// FPGA (2026-09-07): fires one cycle after a monitor cpu_start falls.
+	// Without this, restarting via monitor g<addr> right after a quit-stop
+	// inside a tight self-loop (e.g. `j .`) silently re-jumps back to the
+	// old halt address instead of the new one - the `~stall` branch below
+	// reloads cmd_jal_ex/cmd_jalr_ex/cmd_br_ex from whatever jump/branch
+	// was frozen in ID (cmd_jal_id etc. are pure combinational decodes of
+	// inst_id, themselves frozen during the stop) on the very cycle after
+	// pc_start's own one-shot address injection, so the stale jmp_cond
+	// wins the very next cycle and clobbers the fresh PC. See cpu_status.v.
+	input jmp_regs_flush
 
 	);
 
@@ -803,11 +813,15 @@ always @ (posedge clk or negedge rst_n) begin
         alui_shamt_ex <= alui_shamt_id;
         cmd_st_ex <= cmd_st_id & ~stall_ld;
         st_ofs_ex <= st_ofs_id;
-        cmd_jal_ex <= cmd_jal_id & ~stall_ld;
+        // jmp_regs_flush: see port declaration above - suppress reloading
+        // a jump/branch that was frozen in ID across a monitor quit-stop,
+        // so a restart's fresh pc_start-injected address can't be
+        // immediately clobbered by a stale jmp_cond the very next cycle.
+        cmd_jal_ex <= cmd_jal_id & ~stall_ld & ~jmp_regs_flush;
         jal_ofs_ex <= jal_ofs_id;
-        cmd_jalr_ex <= cmd_jalr_id & ~stall_ld;
+        cmd_jalr_ex <= cmd_jalr_id & ~stall_ld & ~jmp_regs_flush;
         jalr_ofs_ex <= jalr_ofs_id;
-        cmd_br_ex <= cmd_br_id & ~stall_ld;
+        cmd_br_ex <= cmd_br_id & ~stall_ld & ~jmp_regs_flush;
         br_ofs_ex <= br_ofs_id;
         cmd_fence_ex <= cmd_fence_id & ~stall_ld;
         cmd_fencei_ex <= cmd_fencei_id & ~stall_ld;

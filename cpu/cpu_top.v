@@ -122,25 +122,110 @@ module cpu_top
 	//output ic_stall,
 	output stall,
 
-	// forwarding_hazard_monitor taps (2026-07-23) - new output ports only,
-	// no functional signal touched; see forwarding_hazard_monitor.v
+	// pc_ex tap - new output port only, no functional signal touched.
+	// (Added 2026-07-23 for forwarding_hazard_monitor which was removed
+	// 2026-09-06; pc_ex is still consumed by ic_dc_overlap_monitor.)
 	output [31:2] fwdmon_pc_ex,
-	output fwdmon_stall_wb,
-	output [4:0] fwdmon_rd_adr_wb,
-	output fwdmon_hit_rs1_idwb_ex,
-	output fwdmon_hit_rs2_idwb_ex,
-	output [4:0] fwdmon_inst_rs1_id,
-	output [4:0] fwdmon_inst_rs2_id
+
+	// pc_jump_trace_logger taps removed 2026-09-06 (module removed for
+	// timing - its scratch-RAM burst write-back kept the dcflush_cntr ->
+	// scr_ram address mux alive, making dcflush_cntr_reg the repeated
+	// Vivado WNS startpoint).
+
+	// ic_dc_overlap_monitor taps (2026-08-09) - new output ports only, no
+	// functional signal touched. cache_miss_current comes from if_stage.v's
+	// own new icdcmon_cache_miss_current tap; ic_stall is this module's
+	// already-existing internal wire (dc_stall doesn't need a new port -
+	// the existing `stall` output above already carries it). See
+	// ic_dc_overlap_monitor.v.
+	output [3:0] icdcmon_cache_miss_current,
+	output icdcmon_ic_stall,
+
+	// pc_hang_probe load-use stall-chain taps (2026-09-06) - registered at
+	// source, see the assign block below and pc_hang_probe.v.
+	output dbg_stall_ld,
+	output dbg_stall_ld_add,
+	output dbg_dc_stall,
+	output dbg_rst_pipe,
+	output dbg_use_collision,
+	output dbg_jump_under_ic_stall,
+	output dbg_ucp,
+
+	// icr_start_rq_probe taps (2026-08-27) - new output ports only, no
+	// functional signal touched. See ilu_stage.v / project_slub_debug_u_axi_hang.
+	output [2:0] ic_miss_current_mon,
+	output ic_tag_miss_id_mon,
+	output ic_tag_empty_id_mon,
+	output [15:0] icr_start_rq_count_mon,
+	output [15:0] dcflush_cntr_mon,
+	output [15:0] ic_retry_repeat_cntr_mon,
+	output [31:0] ic_curric_ent_radr_keeper_mon,
+
+	// D$-side mirror of the above (2026-08-27, same session): the actual
+	// hang has the CPU parked on a D$ load, so these track lsu_stage.v's
+	// own DCMS_* miss FSM and retry-livelock counter.
+	output [3:0] dc_miss_current_mon,
+	output dc_tag_miss_ma_mon,
+	output dc_tag_empty_ma_mon,
+	output [15:0] dc_retry_repeat_cntr_mon,
+	output [31:0] current_radr_keeper_mon
 
 	);
 
+assign icdcmon_ic_stall = ic_stall;
+
+// FPGA (2026-09-06): pc_hang_probe taps for the load-use stall chain -
+// registered ONE stage at the source before leaving this module
+// (feedback_register_debug_mon_taps). pc_hang_probe's frozen snapshot
+// confirmed the hang has every I$/D$ miss FSM idle and ic_stall=0 with PC
+// frozen, so by elimination stall_ld (= stall_ld_pre | stall_ld_add) is
+// stuck; these two taps pin down which latch. stall_ld_add is already an
+// if_stage.v `output reg`; stall_ld is forwarding.v's combinational OR.
+// Both are low-fanout load-use interlock nets (not the dcflush_cntr /
+// pc_id / stall paths that caused earlier WNS violations, and the
+// pc_jump_trace_logger scratch-RAM mux that resurrected the dcflush_cntr
+// timed path is gone). See pc_hang_probe.v.
+wire dbg_use_collision_w;
+wire dbg_jump_under_ic_stall_w;
+wire dbg_ucp_w;
+reg dbg_stall_ld_r;
+reg dbg_stall_ld_add_r;
+reg dbg_dc_stall_r;
+reg dbg_rst_pipe_r;
+reg dbg_use_collision_r;
+reg dbg_jump_under_ic_stall_r;
+reg dbg_ucp_r;
+always @ (posedge clk or negedge rst_n) begin
+	if (~rst_n) begin
+		dbg_stall_ld_r            <= 1'b0;
+		dbg_stall_ld_add_r        <= 1'b0;
+		dbg_dc_stall_r            <= 1'b0;
+		dbg_rst_pipe_r            <= 1'b0;
+		dbg_use_collision_r       <= 1'b0;
+		dbg_jump_under_ic_stall_r <= 1'b0;
+		dbg_ucp_r                 <= 1'b0;
+	end else begin
+		dbg_stall_ld_r            <= stall_ld;
+		dbg_stall_ld_add_r        <= stall_ld_add;
+		dbg_dc_stall_r            <= dc_stall;
+		dbg_rst_pipe_r            <= rst_pipe;
+		dbg_use_collision_r       <= dbg_use_collision_w;
+		dbg_jump_under_ic_stall_r <= dbg_jump_under_ic_stall_w;
+		dbg_ucp_r                 <= dbg_ucp_w;
+	end
+end
+assign dbg_stall_ld            = dbg_stall_ld_r;
+assign dbg_stall_ld_add        = dbg_stall_ld_add_r;
+assign dbg_dc_stall            = dbg_dc_stall_r;
+assign dbg_rst_pipe            = dbg_rst_pipe_r;
+assign dbg_use_collision       = dbg_use_collision_r;
+assign dbg_jump_under_ic_stall = dbg_jump_under_ic_stall_r;
+assign dbg_ucp                 = dbg_ucp_r;
+
 assign fwdmon_pc_ex = pc_ex;
-assign fwdmon_stall_wb = stall_wb;
-assign fwdmon_rd_adr_wb = rd_adr_wb;
-assign fwdmon_hit_rs1_idwb_ex = hit_rs1_idwb_ex;
-assign fwdmon_hit_rs2_idwb_ex = hit_rs2_idwb_ex;
-assign fwdmon_inst_rs1_id = inst_rs1_id;
-assign fwdmon_inst_rs2_id = inst_rs2_id;
+
+// pc_jump_trace_logger taps (the trc_* replica logic + WB-commit taps that
+// used to live here) removed 2026-09-06 along with the module.
 
 `define M_MODE 2'b11
 `define S_MODE 2'b01
@@ -182,6 +267,8 @@ wire [4:0] inst_rs2_id;
 wire [4:0] rd_adr_ex;
 wire [4:0] rd_adr_ma;
 wire [4:0] rd_adr_wb;
+wire [31:2] pc_ma;
+wire [31:2] pc_wb;
 wire cmd_alu_add_ex;
 wire cmd_alu_ex;
 wire cmd_alu_sub_ex;
@@ -232,6 +319,7 @@ wire jmp_purge_ma;
 wire nohit_rs1_ex;
 wire nohit_rs2_ex;
 wire pc_start;
+wire jmp_regs_flush;
 wire rst_pipe;
 wire rst_pipe_id;
 wire rst_pipe_ex;
@@ -295,9 +383,24 @@ assign dma_io_rdata_in_u_fin = dma_io_rdata;
 wire [SWIDTH-3:0] scr_ram_radr_all; // output
 wire [127:0] scr_ram_rdata_all; // input
 wire scr_ram_ren_all; // output
-wire [SWIDTH-3:0] scr_ram_wadr_all; // output
-wire [127:0] scr_ram_wdata_all; // output
-wire scr_ram_wen_all; // output
+wire [SWIDTH-3:0] scr_ram_wadr_all_dma; // output, dma module's raw request
+wire [127:0] scr_ram_wdata_all_dma; // output, dma module's raw request
+wire scr_ram_wen_all_dma; // output, dma module's raw request
+
+// Scratch-RAM 128-bit burst write port. The pc_jump_trace_logger
+// arbitration that used to share this port was removed 2026-09-06 - only
+// the DMA engine drives it now. Nothing in this kernel tree triggers the
+// DMA engine, so scr_ram_wen_all constant-propagates to 0 and synthesis
+// optimises the downstream ram_wen_all mux (ma_stage.v/data_ram.v:
+// scr_ram_wadr = ram_wen_all ? ram_wadr_all : ram_wadr_part) away
+// entirely - restoring the pre-2026-07-25 state where the CPU's ordinary
+// scratch-RAM store path (lsu_stage/dcflush_cntr_reg -> ram_wadr_part) is
+// NOT a real timed path. While pc_jump_trace_logger drove this port that
+// mux stayed live and dcflush_cntr_reg was the startpoint of repeated
+// Vivado WNS violations.
+wire [SWIDTH-3:0] scr_ram_wadr_all  = scr_ram_wadr_all_dma;
+wire [127:0]      scr_ram_wdata_all = scr_ram_wdata_all_dma;
+wire             scr_ram_wen_all   = scr_ram_wen_all_dma;
 
 // for M arch support
 `ifdef SUPPORT_M
@@ -402,6 +505,7 @@ cpu_status cpu_status (
 	.cpu_run_state(cpu_run_state),
 	.pc_start(pc_start),
 	.start_adr_lat(start_adr_lat),
+	.jmp_regs_flush(jmp_regs_flush),
 	.pc_valid_id(pc_valid_id),
 	.cpu_stopping(cpu_stopping),
 	.stall(stall),
@@ -471,7 +575,11 @@ if_stage #(.IWIDTH(IWIDTH)) if_stage (
 	.ic_stall_fin(ic_stall_fin),
 	.ic_stall_fin2(ic_stall_fin2),
 	.stall_ld_add(stall_ld_add),
-	.pc_data(pc_data_dmy)
+	.pc_data(pc_data_dmy),
+	.icdcmon_cache_miss_current(icdcmon_cache_miss_current),
+	.dbg_use_collision(dbg_use_collision_w),
+	.dbg_jump_under_ic_stall(dbg_jump_under_ic_stall_w),
+	.dbg_use_collision_clear_pending(dbg_ucp_w)
 	);
 
 id_stage id_stage (
@@ -568,7 +676,8 @@ id_stage id_stage (
 	.stall_ld(stall_ld),
 	.stall_ld_ex(stall_ld_ex),
 	.stall_ld_ma(stall_ld_ma),
-	.rst_pipe(rst_pipe_id)
+	.rst_pipe(rst_pipe_id),
+	.jmp_regs_flush(jmp_regs_flush)
 	);
 
 ex_stage ex_stage (
@@ -637,6 +746,7 @@ ex_stage ex_stage (
 	.wbk_rd_reg_ma(wbk_rd_reg_ma),
 	.st_data_ma(st_data_ma),
 	.ldst_code_ma(ldst_code_ma),
+	.pc_ma(pc_ma),
 	.jmp_adr_ex(jmp_adr_ex),
 	.jmp_adr_if(jmp_adr_if),
 	.jmp_condition_ex(jmp_condition_ex),
@@ -757,12 +867,14 @@ ma_stage #(.DWIDTH(DWIDTH), .SWIDTH(SWIDTH)) ma_stage (
 	.wbk_rd_reg_ma(wbk_rd_reg_ma),
 	.st_data_ma(st_data_ma),
 	.ldst_code_ma(ldst_code_ma),
+	.pc_ma(pc_ma),
 	.cmd_ld_wb(cmd_ld_wb),
 	.ld_code_wb(ld_code_wb),
 	.rd_adr_wb(rd_adr_wb),
 	.rd_data_wb(rd_data_wb),
 	.wbk_rd_reg_wb(wbk_rd_reg_wb),
 	.ld_data_wb(ld_data_wb),
+	.pc_wb(pc_wb),
 	.ram_radr_all(ram_radr_all),
 	.ram_rdata_all(ram_rdata_all),
 	.ram_ren_all(ram_ren_all),
@@ -916,7 +1028,13 @@ lsu_stage #(.DWIDTH(DWIDTH)) lsu_stage (
 	.start_dcflush(start_dcflush),
 	.dcflush_running(dcflush_running),
 	.dc_wbback_state(dc_wbback_state),
-	.rst_pipe(rst_pipe)
+	.rst_pipe(rst_pipe),
+	.dcflush_cntr_mon(dcflush_cntr_mon),
+	.dc_miss_current_mon(dc_miss_current_mon),
+	.dc_tag_miss_ma_mon(dc_tag_miss_ma_mon),
+	.dc_tag_empty_ma_mon(dc_tag_empty_ma_mon),
+	.dc_retry_repeat_cntr_mon(dc_retry_repeat_cntr_mon),
+	.current_radr_keeper_mon(current_radr_keeper_mon)
 	);
 
 ilu_stage #(.IWIDTH(IWIDTH)) ilu_stage (
@@ -957,7 +1075,13 @@ ilu_stage #(.IWIDTH(IWIDTH)) ilu_stage (
 	.ic_rdat_m_valid(ic_rdat_m_valid),
 	.ic_finish_mrd(ic_finish_mrd),
 	.start_icflush(start_icflush),
-	.rst_pipe(rst_pipe)
+	.rst_pipe(rst_pipe),
+	.ic_miss_current_mon(ic_miss_current_mon),
+	.ic_tag_miss_id_mon(ic_tag_miss_id_mon),
+	.ic_tag_empty_id_mon(ic_tag_empty_id_mon),
+	.icr_start_rq_count_mon(icr_start_rq_count_mon),
+	.ic_retry_repeat_cntr_mon(ic_retry_repeat_cntr_mon),
+	.ic_curric_ent_radr_keeper_mon(ic_curric_ent_radr_keeper_mon)
 	);
 
 dma #(.SWIDTH(SWIDTH)) dma (
@@ -973,9 +1097,9 @@ dma #(.SWIDTH(SWIDTH)) dma (
 	.scr_ram_radr_all(scr_ram_radr_all),
 	.scr_ram_rdata_all(scr_ram_rdata_all),
 	.scr_ram_ren_all(scr_ram_ren_all),
-	.scr_ram_wadr_all(scr_ram_wadr_all),
-	.scr_ram_wdata_all(scr_ram_wdata_all),
-	.scr_ram_wen_all(scr_ram_wen_all),
+	.scr_ram_wadr_all(scr_ram_wadr_all_dma),
+	.scr_ram_wdata_all(scr_ram_wdata_all_dma),
+	.scr_ram_wen_all(scr_ram_wen_all_dma),
 	.dma_wstart_rq(dma_wstart_rq),
 	.dma_win_addr(dma_win_addr),
 	.dma_in_wdata(dma_in_wdata),
