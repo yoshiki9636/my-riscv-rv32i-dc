@@ -47,11 +47,11 @@ end
 
 wire [1:0] gwadr = { wadr[1], wadr[1] ^ wadr[0] };
 
-(* ASYC_REG = "TRUE", SHREG_EXTRACT="NO" *) reg [1:0] gwadr_l0;
-(* ASYC_REG = "TRUE", SHREG_EXTRACT="NO" *) reg [1:0] gwadr_l1;
-(* ASYC_REG = "TRUE", SHREG_EXTRACT="NO" *) reg [1:0] gwadr_l2;
-(* ASYC_REG = "TRUE", SHREG_EXTRACT="NO" *) reg [1:0] gwadr_l15;
-(* ASYC_REG = "TRUE", SHREG_EXTRACT="NO" *) reg [1:0] gwadr_l155;
+(* ASYNC_REG = "TRUE", SHREG_EXTRACT="NO" *) reg [1:0] gwadr_l0;
+(* ASYNC_REG = "TRUE", SHREG_EXTRACT="NO" *) reg [1:0] gwadr_l1;
+(* ASYNC_REG = "TRUE", SHREG_EXTRACT="NO" *) reg [1:0] gwadr_l2;
+(* ASYNC_REG = "TRUE", SHREG_EXTRACT="NO" *) reg [1:0] gwadr_l15;
+(* ASYNC_REG = "TRUE", SHREG_EXTRACT="NO" *) reg [1:0] gwadr_l155;
 
 always @ (posedge wclk or negedge wrst_n) begin
 	if (~wrst_n)
@@ -88,11 +88,11 @@ end
 
 wire [1:0] gradr = { radr[1], radr[1] ^ radr[0] } ;
 
-(* ASYC_REG = "TRUE", SHREG_EXTRACT="NO" *) reg [1:0] gradr_l0;
-(* ASYC_REG = "TRUE", SHREG_EXTRACT="NO" *) reg [1:0] gradr_l1;
-(* ASYC_REG = "TRUE", SHREG_EXTRACT="NO" *) reg [1:0] gradr_l2;
-(* ASYC_REG = "TRUE", SHREG_EXTRACT="NO" *) reg [1:0] gradr_l15;
-(* ASYC_REG = "TRUE", SHREG_EXTRACT="NO" *) reg [1:0] gradr_l155;
+(* ASYNC_REG = "TRUE", SHREG_EXTRACT="NO" *) reg [1:0] gradr_l0;
+(* ASYNC_REG = "TRUE", SHREG_EXTRACT="NO" *) reg [1:0] gradr_l1;
+(* ASYNC_REG = "TRUE", SHREG_EXTRACT="NO" *) reg [1:0] gradr_l2;
+(* ASYNC_REG = "TRUE", SHREG_EXTRACT="NO" *) reg [1:0] gradr_l15;
+(* ASYNC_REG = "TRUE", SHREG_EXTRACT="NO" *) reg [1:0] gradr_l155;
 
 always @ (posedge rclk or negedge rrst_n) begin
 	if (~rrst_n)
