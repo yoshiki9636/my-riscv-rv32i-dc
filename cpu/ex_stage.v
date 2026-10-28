@@ -937,6 +937,18 @@ wire amo_busy = amo_term;
 `else // SUPPORT_A
 wire amo_busy = 1'b0;
 `endif // SUPPORT_A
+// FIX (2026-10-28): also hold interrupts while a fence.i retry is pending
+// (fencei_wb_purge: fence.i EX .. retry jump).  Since ilu_stage delays the
+// retry jump (fencei_cond) past dc_stall, an interrupt could be taken in
+// that window: either in the same cycle as fencei_cond (the interrupt wins,
+// mepc = pc_ex = an instruction after the shadowed one, so the shadowed
+// instruction is never executed) or a few stalled cycles before it (the
+// 2-cycle post_intr_ecall_exception guard expires during the stall and the
+// retry jump then hijacks the trap handler with MIE off).  Reproduced by
+// rtl_atomic_test/fencei_pe_test.S (FENCE_OFS=8, IRQ=1, DWIDTH=12).  The
+// interrupt is kept in *_amo_pend and taken right after the retry jump,
+// where post_pc_ex (= retry target) gives the right mepc.
+wire irq_hold = amo_busy | fencei_wb_purge;
 reg g_int_amo_pend;
 reg frc_amo_pend;
 
@@ -948,19 +960,19 @@ always @ ( posedge clk or negedge rst_n) begin
 	else begin
 		if (interrupt_condition_ex)
 			g_int_amo_pend <= 1'b0;
-		else if (~stall & amo_busy & g_interrupt_1shot & csr_rmie)
+		else if (~stall & irq_hold & g_interrupt_1shot & csr_rmie)
 			g_int_amo_pend <= 1'b1;
 		if (timer_condition_ex)
 			frc_amo_pend <= 1'b0;
-		else if (~stall & amo_busy & frc_cntr_val_leq_1shot & csr_rmie)
+		else if (~stall & irq_hold & frc_cntr_val_leq_1shot & csr_rmie)
 			frc_amo_pend <= 1'b1;
 	end
 end
 
 // interrupt
-assign interrupt_condition_ex = ~stall & ~amo_busy & (g_interrupt_1shot | g_int_amo_pend) & csr_rmie;
+assign interrupt_condition_ex = ~stall & ~irq_hold & (g_interrupt_1shot | g_int_amo_pend) & csr_rmie;
 // timer interrupt
-assign timer_condition_ex = ~stall & ~amo_busy & (frc_cntr_val_leq_1shot | frc_amo_pend) & csr_rmie;
+assign timer_condition_ex = ~stall & ~irq_hold & (frc_cntr_val_leq_1shot | frc_amo_pend) & csr_rmie;
 
 // purge signal
 // FIX (2026-10-27): illegal-instruction exceptions (g_exception) must purge

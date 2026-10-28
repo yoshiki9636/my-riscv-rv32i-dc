@@ -944,6 +944,7 @@ ilu_stage #(.IWIDTH(IWIDTH)) ilu_stage (
 	.pc_valid_id(pc_valid_id),
 	.ic_ram_wadr_all(ic_ram_wadr_all),
 	.fencei_dcflush_end(fencei_dcflush_end),
+	.stall(stall),
 	.fencei_cond(fencei_cond),
 `ifdef SUPPORT_M
 	.ic_stall_fin2_add_div(ic_stall_fin2),

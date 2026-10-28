@@ -23,6 +23,7 @@ module ilu_stage
 	input pc_valid_id,
     output [IWIDTH-3:0] ic_ram_wadr_all,
 	input fencei_dcflush_end,
+	input stall,
 	output fencei_cond,
     //output [127:0] ic_ram_wdata_all,
     //output ic_ram_wen_all,
@@ -68,19 +69,42 @@ module ilu_stage
 
 // fencei wait
 
+// FIX (2026-10-28): the retry jump (fencei_cond) must not fire while the
+// pipeline is stalled.  The instruction after fence.i runs once in its
+// shadow (masked by fencei_wb_purge); if it is a load it misses the freshly
+// flushed D$ and dc_stall is high exactly when fencei_wt[1] rose.  A jump
+// during stall is lost by pc_if_pre (its stall hold has priority over
+// jmp_cond) and by ex_stage's ~stall-gated jmp_purge_ma update, while
+// pc_if_roll does take it: after the stall pc_id kept the old PC but the
+// fetched instruction came from the new one, so EX paired PC N with the
+// instruction at N+4 (one instruction lost, the next run twice).  Ordinary
+// jumps are already gated by ~stall.  Hold the wait chain during stall
+// (keeping a flush-end pulse that arrives during stall) and only emit
+// fin/fin2/cond on ~stall cycles; without a stall the timing is unchanged.
+// Reproduced by rtl_atomic_test/fencei_align_test.S (FENCE_OFS=8, DWIDTH=4).
 reg [2:0] fencei_wt;
+reg fencei_dfe_pend;
+
+always @ (posedge clk or negedge rst_n) begin
+    if (~rst_n)
+        fencei_dfe_pend <= 1'b0;
+    else if (~stall)
+        fencei_dfe_pend <= 1'b0;
+    else if (fencei_dcflush_end)
+        fencei_dfe_pend <= 1'b1;
+end
 
 always @ (posedge clk or negedge rst_n) begin
     if (~rst_n)
         fencei_wt <= 3'd0;
-    else
-        fencei_wt <= { fencei_wt[1:0], fencei_dcflush_end };
+    else if (~stall)
+        fencei_wt <= { fencei_wt[1:0], fencei_dcflush_end | fencei_dfe_pend };
 end
 
-wire fencei_stall = fencei_wt[0] | fencei_dcflush_end;
-wire fencei_stall_fin = fencei_wt[0];
-wire fencei_stall_fin2 = fencei_wt[1];
-assign fencei_cond = fencei_wt[1];
+wire fencei_stall = fencei_wt[0] | fencei_dcflush_end | fencei_dfe_pend;
+wire fencei_stall_fin = fencei_wt[0] & ~stall;
+wire fencei_stall_fin2 = fencei_wt[1] & ~stall;
+assign fencei_cond = fencei_wt[1] & ~stall;
 //wire fencei_stall = 1'b0;
 //wire fencei_stall_fin = 1'b0;
 //wire fencei_stall_fin2 = 1'b0;
