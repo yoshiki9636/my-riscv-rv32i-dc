@@ -983,7 +983,20 @@ wire amo_busy = 1'b0;
 // rtl_atomic_test/fencei_pe_test.S (FENCE_OFS=8, IRQ=1, DWIDTH=12).  The
 // interrupt is kept in *_amo_pend and taken right after the retry jump,
 // where post_pc_ex (= retry target) gives the right mepc.
-wire irq_hold = amo_busy | fencei_wb_purge;
+// FIX (2026-10-29): also hold interrupts while a mul/div is in EX or the
+// divider is running (div_stall_start .. div_stall_dly).  The div/rem
+// instruction writes rd = 0 through the normal pipeline right after it
+// starts the divider; the real result comes later via div_result_valid.  An
+// interrupt in between cancelled the result (muldiv_cancel) and set mepc to
+// the div, so the re-run read the clobbered rd: with rd == rs2,
+// `remu s4,s1,s4` divided by 0 and returned the dividend (#857
+// slab_pad_check -> "Padding overwritten", rtl_atomic_test/div_fwd_test.S).
+`ifdef SUPPORT_M
+wire muldiv_busy = div_stall_start | div_stall_dly;
+`else // SUPPORT_M
+wire muldiv_busy = 1'b0;
+`endif // SUPPORT_M
+wire irq_hold = amo_busy | fencei_wb_purge | muldiv_busy;
 reg g_int_amo_pend;
 reg frc_amo_pend;
 
