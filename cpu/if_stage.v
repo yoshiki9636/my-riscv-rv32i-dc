@@ -93,7 +93,8 @@ wire [31:2] jmp_adr = (intr_ecall_exception | ecall_condition_ex | g_exception) 
                       //cmd_sret_ex ? csr_sepc_ex : jmp_adr_ex;
 
 assign jmp_adr_if = mret_condition_ex ? csr_mepc_ex :
-                    fencei_cond ? pc_id - 30'd1 : // retry for self modify code
+                    // fencei_cond: retry target (fence.i PC + 4) now comes on jmp_adr_ex
+                    // from ex_stage (FIX 2026-10-28) - was pc_id - 30'd1
                     cmd_sret_ex ? csr_sepc_ex : jmp_adr_ex;
 
 reg keep_jmp_between;
@@ -468,6 +469,19 @@ always @ (posedge clk or negedge rst_n) begin
 	if (~rst_n) begin
         jump_only_c1 <= 1'b0;
         jump_only_c2 <= 1'b0;
+	end
+	// FIX (2026-10-28): record the jump even when it lands on the cycle right
+	// after an ic_stall (ic_stall_dly = 1).  The shift below is frozen on
+	// that cycle, so such a jump was never seen and an interrupt taken while
+	// the jump target was still being fetched (I$ miss) saved the stale
+	// pc_ex as mepc instead of post_pc_ex (the target) - the target and the
+	// instructions after it were skipped after mret.  fence.i's retry jump
+	// (fencei_cond) always lands there, because fencei_stall is part of
+	// ic_stall on the cycle before.  Reproduced by
+	// rtl_atomic_test/fencei_align_test.S (FENCE_OFS=4, IRQ=1, DWIDTH=12).
+	else if (jump_only) begin
+        jump_only_c1 <= 1'b1;
+        jump_only_c2 <= jump_only_c1;
 	end
 	//else if (~stall & ~ic_stall) begin
 	else if (~ic_stall_dly) begin

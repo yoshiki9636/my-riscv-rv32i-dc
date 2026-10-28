@@ -878,7 +878,26 @@ assign fencei_condition_ex = ~stall & fencei_condition_ex_pre;
 
 // jamp/br
 
-assign jmp_adr_ex = jump_adr[31:2];
+// FIX (2026-10-28): fence.i retry target.  if_stage used pc_id - 1, which
+// assumes the pipeline advances exactly one slot between fence.i's EX
+// cycle and the start of the D$-flush stall.  When fence.i enters EX on the
+// cycle a previous load's D$ refill is finishing, lsu_stage only starts the
+// flush once dc_miss is back in IDLE, the pipeline advances two slots, and
+// the retry jump skips the instruction right after fence.i - it never
+// executes (its shadow run is masked by fencei_wb_purge).  Seen on the real
+// board as kernel#855/#859 hangs/panics (place_entity's fence.i), reproduced
+// by rtl_atomic_test/fencei_align_test.S.  Latch fence.i's own PC + 4 and
+// drive it on jmp_adr_ex while fencei_cond is high.
+reg [31:2] fencei_ret_adr;
+
+always @ ( posedge clk or negedge rst_n) begin
+	if (~rst_n)
+		fencei_ret_adr <= 30'd0;
+	else if (fencei_condition_ex)
+		fencei_ret_adr <= pc_ex + 30'd1;
+end
+
+assign jmp_adr_ex = fencei_cond ? fencei_ret_adr : jump_adr[31:2];
 
 //wire jmp_condition_ex_pre = ~jmp_purge_ma & (
 //wire jmp_condition_ex_pre = ~jmp_purge_ma & ~jmp_purge_ma2 & (
