@@ -631,7 +631,13 @@ always @ (posedge clk or negedge rst_n) begin
         rs1_data_roll <= 32'd0;
         rs2_data_roll <= 32'd0;
 	end
-	else if (stall_1shot | stall_ld) begin
+	// FIX (2026-10-28): not on stall_ld while a stall is running.  A load
+	// held in EX by a D$ stall, with a load-use dependent instruction in ID,
+	// keeps stall_ld high; rs1_data_st then reads the ID instruction's
+	// registers, so the roll lost the load's base and the release cycle saw
+	// rs1_sel = the ID instruction's rs1 (the address itself was safe via
+	// rd_data_roll, but the misaligned check, lr.w and AMOs use rs1_sel).
+	else if (stall_1shot | (stall_ld & ~stall_dly)) begin
         rs1_data_roll <= rs1_data_st;
         rs2_data_roll <= rs2_data_st;
 	end

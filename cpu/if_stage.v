@@ -118,13 +118,22 @@ end
 reg use_collision;
 reg [31:2] pc_if_pre;
 
+// FIX (2026-10-28): exception traps (g_exception: illegal instruction,
+// misaligned load/store) redirect with the same priority as interrupts.
+// A misaligned load whose rd is used by the next instruction raises
+// stall_ld in the trap cycle, and the stall/stall_ld hold below used to
+// win over jmp_cond: the trap updated mepc/mcause but the jump to mtvec
+// was lost and execution fell through.  g_exception is only acted on in
+// ~stall cycles, as in ex_stage's jmp_purge_ex.
+wire exc_redirect = ~stall & g_exception;
+
 always @ (posedge clk or negedge rst_n) begin
 	if (~rst_n)
 		pc_if_pre <= 30'd0;
 	else if (pc_start)
 		pc_if_pre <= start_adr_lat;
 	//else if (interrupt_condition_ex | timer_condition_ex)
-	else if (interrupt_condition_ex | timer_condition_ex)
+	else if (interrupt_condition_ex | timer_condition_ex | exc_redirect)
 		pc_if_pre <= jmp_adr;
 	else if (keep_jmp_between)
 		pc_if_pre <= pc_if_between;
@@ -145,7 +154,7 @@ always @ (posedge clk or negedge rst_n) begin
         pc_if_roll <= 30'd0;
 	else if (pc_start)
 		pc_if_roll <= start_adr_lat;
-	else if (interrupt_condition_ex | timer_condition_ex)
+	else if (interrupt_condition_ex | timer_condition_ex | exc_redirect)
         pc_if_roll <= jmp_adr;
 	else if (keep_jmp_between)
 		pc_if_roll <= pc_if_between;

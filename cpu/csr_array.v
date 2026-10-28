@@ -29,6 +29,9 @@ module csr_array(
 	input post_jump_cmd_cond, // old?
 	input illegal_ops_ex,
     input [31:0] illegal_ops_inst, // new
+	input misal_ld_ex,
+	input misal_st_ex,
+	input [31:0] misal_adr,
 	input g_exception,
 	input [1:0] g_interrupt_priv,
 	input [1:0] g_current_priv,
@@ -433,6 +436,8 @@ assign mcause_code = interrupt_condition_ex ? 6'd11 :
                      timer_condition_ex ? 6'd7 :
                      illegal_ops_ex ? 6'd2 :
                      cmd_ebreak_ex ? 6'd3 :
+                     misal_ld_ex ? 6'd4 :
+                     misal_st_ex ? 6'd6 :
                      ecall_condition_ex ?  6'd11 :
                      6'h3f;
 
@@ -445,6 +450,7 @@ assign mcause_code = interrupt_condition_ex ? 6'd11 :
 // is valid, and Linux's do_trap_break() doesn't inspect it either way).
 wire [31:0] sel_tval = (interrupt_condition_ex | timer_condition_ex) ? 32'd0 :
                        illegal_ops_ex ? illegal_ops_inst :
+                       (misal_ld_ex | misal_st_ex) ? misal_adr :
                        cmd_ebreak_ex ? { pc_ex, 2'd0 } : 32'd0;
 
 

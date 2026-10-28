@@ -13,13 +13,15 @@ module exception(
 	input rst_n,
 	// from external
 	input illegal_ops_ex,
+	input misal_ld_ex,
+	input misal_st_ex,
 	// from csr
 	output g_exception
 
 	);
 
-// currntly supporting just illegal operations
-assign g_exception = illegal_ops_ex;
+// illegal operations and misaligned load/store (2026-10-28)
+assign g_exception = illegal_ops_ex | misal_ld_ex | misal_st_ex;
 //assign g_exception = 1'b0;
 
 endmodule

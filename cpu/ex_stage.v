@@ -307,7 +307,12 @@ input dc_stall_fin;
 begin
     case(amo_current)
 		`AMO_IDLE: begin
-			if (amo_cmds) amo_decode = `AMO_LOAD;
+			// FIX (2026-10-28): start only when the AMO's own load is
+			// issued (~stall).  An AMO right behind a load that misses the
+			// D$ sits in EX during that miss; it used to enter AMO_LOAD at
+			// once, took the older load's dc_stall_fin as its own, and
+			// computed/stored from the wrong data (the AMO's store was lost).
+			if (amo_cmds & ~stall) amo_decode = `AMO_LOAD;
 			else amo_decode = `AMO_IDLE;
 		end
 		`AMO_LOAD: begin
@@ -367,7 +372,7 @@ always @ (posedge clk or negedge rst_n) begin
 		amo_rs1_addr <= 32'd0;
 		amo_rs2_oper <= 32'd0;
 	end
-	else if (amo_cmds) begin
+	else if (amo_cmds & ~stall) begin
 		amo_rs1_addr <= rs1_sel;
 		amo_rs2_oper <= rs2_sel_for_oper;
 	end
@@ -609,6 +614,31 @@ wire [31:0] jump_adr = adr_s1 + adr_s2;
 // csrs , ecall
 wire [31:0] csr_rd_data;
 
+// misaligned load/store (2026-10-28)
+// lw/sw need addr[1:0] == 0, lh/lhu/sh need addr[0] == 0 (funct3[1:0] is
+// the access size; byte accesses never trap).  The core used to ignore the
+// low address bits silently, so a misaligned lw read the aligned word.  Now
+// it traps like an illegal instruction (g_exception): mcause 4 (load) or
+// 6 (store), mtval = the address, mepc = the load/store, which is purged
+// (no D$ access, no write-back).  Evaluated only on ~stall cycles, and not
+// for an instruction that is being purged (jump shadow, fence.i shadow) or
+// is losing to an interrupt in the same cycle (the interrupt wins, mepc =
+// the load/store, which re-executes and traps after mret).
+// lr.w/sc.w/AMO are not checked here.
+// The address is recomputed from rs1_sel + offset instead of using the ALU
+// result: the ALU only adds the offset while cmd_ld_pur/cmd_st_pur are set,
+// and those are cleared by g_exception itself (combinational loop).  Only
+// the low 2 bits feed the trap condition; the full sum is just for mtval.
+wire [31:0] misal_ofs = cmd_st_ex ? st_ofs : ld_alui_ofs;
+wire [1:0] misal_lo = rs1_sel[1:0] + misal_ofs[1:0];
+wire [31:0] misal_va = rs1_sel + misal_ofs;
+wire misal_adr_ex = (alu_code_ex[1:0] == 2'b10) ? (misal_lo != 2'b00) :
+                    (alu_code_ex[1:0] == 2'b01) ? misal_lo[0] : 1'b0;
+wire misal_ok_ex = ~stall & ~interrupt_condition_ex & ~timer_condition_ex &
+                   ~jmp_purge_ma & ~jmp_purge_ma2 & ~fencei_wb_purge & misal_adr_ex;
+wire misal_ld_ex = misal_ok_ex & cmd_ld_ex;
+wire misal_st_ex = misal_ok_ex & cmd_st_ex;
+
 csr_array csr_array(
 	.clk(clk),
 	.rst_n(rst_n),
@@ -627,6 +657,9 @@ csr_array csr_array(
 	.post_jump_cmd_cond(post_jump_cmd_cond),
 	.illegal_ops_ex(illegal_ops_ex),
 	.illegal_ops_inst(illegal_ops_inst), // new
+	.misal_ld_ex(misal_ld_ex),
+	.misal_st_ex(misal_st_ex),
+	.misal_adr(misal_va),
 	.g_exception(g_exception),
 	.g_interrupt_priv(g_interrupt_priv),
 	.g_current_priv(g_current_priv),
@@ -668,6 +701,8 @@ exception exception (
 	.clk(clk),
 	.rst_n(rst_n),
 	.illegal_ops_ex(illegal_ops_ex),
+	.misal_ld_ex(misal_ld_ex),
+	.misal_st_ex(misal_st_ex),
 	.g_exception(g_exception)
 	);
 
