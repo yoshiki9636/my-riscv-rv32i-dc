@@ -639,6 +639,17 @@ wire misal_ok_ex = ~stall & ~interrupt_condition_ex & ~timer_condition_ex &
 wire misal_ld_ex = misal_ok_ex & cmd_ld_ex;
 wire misal_st_ex = misal_ok_ex & cmd_st_ex;
 
+// FIX (2026-10-29): a mul/div in the 1-2 purged slots after a taken jump
+// (the wrong-path instructions jmp_purge_ma/ma2 cancel) still raised
+// div_stall_start, and csr_array then overwrote post_pc_ex (the jump
+// target) with that instruction's own PC.  An interrupt taken while the
+// target was still being fetched (I$ miss: post_jump_cmd_cond frozen) saved
+// mepc = the wrong-path instruction, so the jump was lost after mret.  Seen
+// as glibc qsort misorder: msort_with_tmp's `bnez s4,77d0` followed by
+// `mul a2,s5,s9` (rtl_atomic_test/glibc_msort_test.S, IRQ=1,
+// TIMER_INTERVAL=13001).  Only a mul/div that really executes may latch.
+wire div_stall_start_pur = div_stall_start & ~jmp_purge_ma & ~jmp_purge_ma2;
+
 csr_array csr_array(
 	.clk(clk),
 	.rst_n(rst_n),
@@ -683,7 +694,7 @@ csr_array csr_array(
 	.fencei_condition_ex(fencei_cond),
 	.mret_condition_ex(mret_condition_ex),
 `ifdef SUPPORT_M
-	.div_stall_start(div_stall_start),
+	.div_stall_start(div_stall_start_pur),
 	.div_stall_dly(div_stall_dly),
 `endif // SUPPORT_M
 	.stall(stall),

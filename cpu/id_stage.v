@@ -663,7 +663,18 @@ always @ (posedge clk or negedge rst_n) begin
     end
 end
 
-assign pc_ex = stall_ld_ma ? pc_ex_roll : pc_ex_pre;
+// FIX (2026-10-29): pc_ex_pre alone.  stall_ld/stall_ld_ex/stall_ld_ma are
+// not gated by stall, so a load held in EX by a D$ stall (previous load
+// missing) with a load-use dependent instruction in ID keeps all three high
+// and pc_ex_roll latches the load's own PC.  On the load-use bubble cycle
+// after the release, pc_ex then still read the load's PC although the load
+// was already in MA: a timer interrupt taken on that bubble set mepc to the
+// load, and the load ran twice - `lw a5,0(a5)` (glibc qsort's comparator)
+// dereferenced its own result (real board: `sort -r` / mtest qsort
+// occasionally misordered; rtl_atomic_test/msort_irq_test.S ISLED).
+// In every other case pc_ex_roll equals pc_ex_pre.
+assign pc_ex = pc_ex_pre;
+//assign pc_ex = stall_ld_ma ? pc_ex_roll : pc_ex_pre;
 
 // FF to EX stage
 
