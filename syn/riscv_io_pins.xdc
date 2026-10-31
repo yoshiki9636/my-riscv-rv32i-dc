@@ -273,5 +273,19 @@ set_output_delay -clock [get_clocks -of_objects [get_nets clk]] -max -add_delay 
 
 set_output_delay -clock [get_clocks -of_objects [get_nets clk]] -min -add_delay -3.000 [get_ports {gpio[*]}]
 set_output_delay -clock [get_clocks -of_objects [get_nets clk]] -max -add_delay -3.000 [get_ports {gpio[*]}]
- 
+
+# NOTE (investigated then reverted): mclk (= MIG's ui_clk, fpga_top.v: wire mclk =
+# ui_clk) is NOT missing a clock definition - mig_7series_0's own generated XDC
+# (mig_7series_0_in_context.xdc) already does `create_clock -period 12.308
+# [get_pins mig_7series_0/ui_clk]`, and get_nets mclk resolves to that same
+# clock via net connectivity. A create_clock was added here briefly to chase a
+# "Set Up Debug wizard shows no clock for mclk" symptom, but it only collided
+# with (completely overrode) the IP's own correct constraint - see
+# [Constraints 18-1056] - and used a wrong period (12.000ns/83.33MHz) vs the
+# IP's authoritative 12.308ns/~81.25MHz. Removed; the real cause of the
+# missing-clock symptom is still open (likely just stale synthesis after the
+# mig_if.v mark_debug edit, not a constraints problem).
+
 set_clock_groups -group [get_clocks -of_objects [get_nets clk]] -group [get_clocks -of_objects [get_nets mclk]] -asynchronous
+
+set_property CLOCK_DEDICATED_ROUTE BACKBONE [get_nets clkin_IBUF]
