@@ -551,6 +551,19 @@ assign rs2_sel = (cmd_ld_pur | cmd_alui_ex) ? ld_alui_ofs :
 
 wire [31:0] st_data_ex_pre = ~nohit_rs2_ex ? rs2_fwd : rs2_data_ex;
 
+// branch comparator (timing fix 2026-11-03)
+//   rs2_sel's select terms (cmd_ld_pur / cmd_st_pur) contain intexp_purge_ex,
+//   which is driven by ~stall (interrupt_condition_ex / timer_condition_ex).
+//   Comparing branches with rs2_sel made the path
+//   dc_stall -> interrupt_condition_ex -> rs2_sel -> compare -> jmp_condition -> pc
+//   the critical path. While cmd_br_ex is set, cmd_ld/alui/st/shamt are all 0
+//   (different opcodes), so rs2_sel always equals the register operand; the
+//   branch compare uses that operand directly. Result is unchanged.
+wire [31:0] rs2_br = st_data_ex_pre;
+wire br_slt  = ($signed( rs1_sel ) < $signed( rs2_br ));
+wire br_sltu = ( rs1_sel < rs2_br );
+wire br_seq  = ( rs1_sel == rs2_br );
+
 // jump / branch / auipc
 
 wire [31:0] adr_s1 = cmd_jalr_ex ? rs1_sel : pc_data;
@@ -949,12 +962,12 @@ assign jmp_adr_ex = fencei_cond ? fencei_ret_adr : jump_adr[31:2];
 //wire jmp_condition_ex_pre = ~jmp_purge_ma & ~jmp_purge_ma2 & (
 wire jmp_condition_ex_pre = ~intexp_purge_ex & ~jmp_purge_ma & ~jmp_purge_ma2 & ~fencei_cond & ~fencei_wb_purge & (
                         cmd_jal_ex | cmd_jalr_ex | cmd_br_ex &
-						( seq  & (alu_code_ex == 3'b000) |
-					      sne  & (alu_code_ex == 3'b001) |
-					      slt  & (alu_code_ex == 3'b100) |
-					      sge  & (alu_code_ex == 3'b101) |
-					      sltu & (alu_code_ex == 3'b110) |
-					      sbgu & (alu_code_ex == 3'b111) ));
+						(  br_seq  & (alu_code_ex == 3'b000) |
+					      ~br_seq  & (alu_code_ex == 3'b001) |
+					       br_slt  & (alu_code_ex == 3'b100) |
+					      ~br_slt  & (alu_code_ex == 3'b101) |
+					       br_sltu & (alu_code_ex == 3'b110) |
+					      ~br_sltu & (alu_code_ex == 3'b111) ));
 
 assign jmp_condition_ex = ~stall & jmp_condition_ex_pre;
 
