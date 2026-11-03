@@ -85,7 +85,9 @@ end
 // for fpga *** please comment out for tiny tapeout ***
 
 // clk 100MHz, 921600bps
-`define TERM_0 16'd109
+//`define TERM_0 16'd109
+// clk 48MHz, 921600bps
+`define TERM_0 16'd52
 // clk 50MHz, 921600bps
 `define TERM_1 16'd54
 // test1 6MHz 38400bps

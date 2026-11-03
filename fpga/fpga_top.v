@@ -1,6 +1,6 @@
 /*
  * My RISC-V RV32I CPU
- *   FPGA Top Module for Tang Premier
+ *   FPGA Top Module (board / main memory selected in fpga_config.vh)
  *    Verilog code
  * @auther		Yoshiki Kurokawa <yoshiki.k963@gmail.com>
  * @copylight	2021 Yoshiki Kurokawa
@@ -8,29 +8,75 @@
  * @version		0.1
  */
 
-//`define TANG_PRIMER
-`define ARTY_A7
+`include "fpga_config.vh"
+
+`ifdef BOARD_CMOD_A7
+  `ifdef MEM_MIG
+    // CMOD A7 has no DDR3 : MEM_MIG can not be used with BOARD_CMOD_A7
+    `define FPGA_CONFIG_ERROR
+  `endif
+`endif
+
+// cache / scratch size per board
+`ifdef BOARD_CMOD_A7
+  `define FT_IWIDTH 10
+  `define FT_DWIDTH 10
+  `define FT_SWIDTH 4
+`else // BOARD_ARTY_A7
+  `define FT_IWIDTH 12
+  `define FT_DWIDTH 12
+  `define FT_SWIDTH 13
+`endif
+
+// external pins per board / memory
+//   CMOD A7             : gpio[3:0], no rgb_led1-3, no SPI pins
+//   Arty A7 + MEM_QSPI  : gpio[5:0], no rgb_led1-3, no SPI pins
+//                         (syn/tiny_outer_io_pins_v2_bmedemo.xdc)
+//   Arty A7 + MEM_MIG   : gpio[7:0], rgb_led1-3, SPI pins
+`ifdef BOARD_CMOD_A7
+  `define FT_NO_LED123_SPI
+  `define FT_GPIO_W 4
+`elsif MEM_QSPI
+  `define FT_NO_LED123_SPI
+  `define FT_GPIO_W 6
+`else
+  `define FT_GPIO_W 8
+`endif
 
 module fpga_top
-    #(parameter IWIDTH = 12,
-      parameter DWIDTH = 12,
-      parameter SWIDTH = 13)
+    #(parameter IWIDTH = `FT_IWIDTH,
+      parameter DWIDTH = `FT_DWIDTH,
+      parameter SWIDTH = `FT_SWIDTH)
     (
 	input clkin,
+`ifdef BOARD_CMOD_A7
+	input rst_p, // CMOD A7 : push button, active high
+`else
 	input rst_n,
+`endif
 	input rx,
 	output tx,
 	input interrupt_0,
 	output [2:0] rgb_led,
+	inout [`FT_GPIO_W-1:0] gpio, // see FT_GPIO_W
+`ifndef FT_NO_LED123_SPI
 	output [2:0] rgb_led1,
 	output [2:0] rgb_led2,
 	output [2:0] rgb_led3,
-	inout [7:0] gpio,
 	output spi_sck,
 	output [1:0] spi_csn,
 	output spi_mosi,
 	input spi_miso,
+`endif
 
+`ifdef MEM_QSPI
+// qspi signal
+	output sck,
+	output [2:0] ce_n,
+	inout [3:0] sio,
+	input [1:0] init_latency,
+	input init_qspicmd
+`else // MEM_MIG
 // ddr signal
 	inout [15:0] ddr3_dq,
 	inout [1:0] ddr3_dqs_n,
@@ -47,8 +93,19 @@ module fpga_top
 	output [0:0] ddr3_cs_n,
 	output [1:0] ddr3_dm,
 	output [0:0] ddr3_odt
+`endif
 
 	);
+
+`ifdef FPGA_CONFIG_ERROR
+// intentionally undefined module : stops the build on an invalid fpga_config.vh
+fpga_config_error_cmod_a7_has_no_ddr3 fpga_config_error ();
+`endif
+
+`ifdef BOARD_CMOD_A7
+// CMOD A7 : active high reset button
+wire rst_n = ~rst_p;
+`endif
 
 wire dma_wstart_rq; // input
 wire [31:0] dma_win_addr; // input
@@ -120,6 +177,22 @@ wire [3:0] rid; // input
 wire [31:0] rdata; // input
 wire rlast; // input
 
+`ifdef MEM_QSPI
+// qspi_if signals
+wire qspi_read_req; // output
+wire qspi_read_w; // output
+wire qspi_read_hw; // output
+wire qspi_read_valid; // input
+wire [31:0] qspi_read_adr; // output
+wire [31:0] qspi_read_data; // input
+wire qspi_write_req; // output
+wire qspi_write_w; // output
+wire qspi_write_hw; // output
+wire qspi_write_finish; // input
+wire [31:0] qspi_write_adr; // output
+wire [31:0] qspi_write_data; // output
+wire [2:0] qspi_dbg_bpoint_en; // not used
+`else // MEM_MIG
 // mig i/f signals
 wire [27:0] app_addr; // output
 wire [2:0] app_cmd; // output
@@ -133,6 +206,7 @@ wire app_wdf_rdy; // input
 wire [127:0] app_rd_data; // input
 wire app_rd_data_end; // input
 wire app_rd_data_valid; // input
+`endif
 
 //wire [DWIDTH+1:2] d_ram_radr = { DWIDTH{ 1'b0 }};
 //wire [DWIDTH+1:2] d_ram_wadr = { DWIDTH{ 1'b0 }};
@@ -186,6 +260,9 @@ wire [31:0] dma_io_rdata_in_2; // input
 wire [31:0] dma_io_rdata_in_3; // input
 wire [31:0] dma_io_rdata_in_4; // input
 wire [31:0] dma_io_rdata_in_5; // input
+`ifdef MEM_QSPI
+wire [31:0] dma_io_rdata_in_6; // input : io chain -> qspi_if
+`endif
 
 wire ibus_ren;
 wire [19:2] ibus_radr;
@@ -248,30 +325,49 @@ wire [7:0] rout;
 wire ext_uart_interrpt_1shot;
 wire rx_disable_echoback;
 
-`ifdef ARTY_A7
 wire locked;
-//wire clk_166mhz;
-wire clk_200mhz;
+`ifdef MEM_MIG
+wire clk_200mhz; // Arty A7 : MIG reference clock
+`endif
 
  // Instantiation of the clocking network
  //--------------------------------------
+`ifdef BOARD_CMOD_A7
+  // CMOD A7 : 12MHz in, clk_out1 = clk (48MHz)
   clk_wiz_0 clknetwork
    (
-    // Clock out ports
-    .clk_out1           (clk_200mhz),
-    .clk_out2           (clk),
-    //.clk_out2           (clk_166mhz),
-    //.clk_out3           (clk),
-    //.clk_out2           (clk),
-
-    // Status and control signals
+    .clk_out1           (clk),
     .reset              (~rst_n),
     .locked             (locked),
-   // Clock in ports
+    .clk_in1            (clkin)
+    );
+`elsif MEM_QSPI
+  // Arty A7 + QSPI : 100MHz in, clk_out1 = clk (50MHz), no MIG reference clock
+  clk_wiz_0 clknetwork
+   (
+    .clk_out1           (clk),
+    .reset              (~rst_n),
+    .locked             (locked),
+    .clk_in1            (clkin)
+    );
+`else // BOARD_ARTY_A7 + MEM_MIG
+  // Arty A7 : 100MHz in, clk_out1 = 200MHz (MIG ref), clk_out2 = clk (50MHz)
+  clk_wiz_0 clknetwork
+   (
+    .clk_out1           (clk_200mhz),
+    .clk_out2           (clk),
+    .reset              (~rst_n),
+    .locked             (locked),
     .clk_in1            (clkin)
     );
 `endif
 
+`ifdef MEM_QSPI
+// QSPI version : memory side runs on clk (MIG removed)
+wire mclk = clk;
+wire mrst_n = rst_n;
+wire init_calib_complete = 1'b1;
+`else // MEM_MIG
 wire sys_clk_i = clkin; // input
 //wire sys_clk_i = clk_166mhz; // input
 wire clk_ref_i = clk_200mhz; // input
@@ -298,6 +394,7 @@ wire [6:0] calib_tap_addr = 7'd0; // input
 wire [7:0] calib_tap_val = 8'd0; // input
 wire calib_tap_load_done = 1'b0; // input
 wire sys_rst = rst_n; // input
+`endif
 
 wire cpu_run_state;
 
@@ -319,10 +416,19 @@ wire frc_cntr_val_leq_1shot;
 
 // spi select signal : not used for 5 stage 
 wire spi_select_io; // not used
-//wire spi_sck;
-//wire [1:0] spi_csn; // zantei
-//wire spi_mosi; // zantei
-//wire spi_miso = 1'b0; // zantei
+`ifdef FT_NO_LED123_SPI
+// CMOD A7 / Arty A7 + MEM_QSPI : SPI (ether) is not used, pins are removed
+wire spi_sck; // not used
+wire [1:0] spi_csn; // not used
+wire spi_mosi; // not used
+wire spi_miso = 1'b0;
+// rgb_led1-3 are not connected to pins
+wire [2:0] rgb_led1; // not used
+wire [2:0] rgb_led2; // not used
+wire [2:0] rgb_led3; // not used
+// gpio[7:FT_GPIO_W] are not connected to pins
+wire [7:`FT_GPIO_W] gpio_nc; // not used
+`endif
 
 // for interrupt
 wire g_interrupt_1shot;
@@ -513,6 +619,20 @@ axi_bus_top axi_bus_top (
 dram_top dram_top (
 	.mclk(mclk),
 	.mrst_n(mrst_n),
+`ifdef MEM_QSPI
+	.read_req(qspi_read_req),
+	.read_w(qspi_read_w),
+	.read_hw(qspi_read_hw),
+	.read_valid(qspi_read_valid),
+	.read_adr(qspi_read_adr),
+	.read_data(qspi_read_data),
+	.write_req(qspi_write_req),
+	.write_w(qspi_write_w),
+	.write_hw(qspi_write_hw),
+	.write_finish(qspi_write_finish),
+	.write_adr(qspi_write_adr),
+	.write_data(qspi_write_data),
+`else // MEM_MIG
 	.app_addr(app_addr),
 	.app_cmd(app_cmd),
 	.app_en(app_en),
@@ -525,6 +645,7 @@ dram_top dram_top (
 	.app_rd_data(app_rd_data),
 	.app_rd_data_end(app_rd_data_end),
 	.app_rd_data_valid(app_rd_data_valid),
+`endif
 	.clk(clk),
 	.rst_n(rst_n),
 	.awvalid(awvalid),
@@ -552,6 +673,37 @@ dram_top dram_top (
 	.rlast(rlast)
 	);
 
+`ifdef MEM_QSPI
+qspi_if qspi_if (
+	.clk(clk),
+	.rst_n(rst_n),
+	.sck(sck),
+	.ce_n(ce_n),
+	.sio(sio),
+	.dbg_bpoint_en(qspi_dbg_bpoint_en),
+	.init_latency(init_latency),
+	.init_qspicmd(init_qspicmd),
+	.read_req(qspi_read_req),
+	.read_w(qspi_read_w),
+	.read_hw(qspi_read_hw),
+	.read_valid(qspi_read_valid),
+	.read_adr(qspi_read_adr),
+	.read_data(qspi_read_data),
+	.write_req(qspi_write_req),
+	.write_w(qspi_write_w),
+	.write_hw(qspi_write_hw),
+	.write_finish(qspi_write_finish),
+	.write_adr(qspi_write_adr),
+	.write_data(qspi_write_data),
+	.dma_io_we(dma_io_we),
+	.dma_io_wadr(dma_io_wadr),
+	.dma_io_wdata(dma_io_wdata),
+	.dma_io_radr(dma_io_radr),
+	.dma_io_radr_en(dma_io_radr_en),
+	.dma_io_rdata_in(dma_io_rdata_in_6),
+	.dma_io_rdata(dma_io_rdata)
+	);
+`else // MEM_MIG
 mig_7series_0 mig_7series_0 (
 	.ddr3_dq(ddr3_dq),
 	.ddr3_dqs_n(ddr3_dqs_n),
@@ -599,6 +751,7 @@ mig_7series_0 mig_7series_0 (
 	//.calib_tap_load_done(calib_tap_load_done),
 	.sys_rst(sys_rst)
 	);
+`endif
 
 /*
 dummy_mig dummy_mig (
@@ -709,7 +862,11 @@ io_led io_led (
 	.rgb_led3(rgb_led3),
 	.dbg_bpoint(dbg_bpoint),
 	.cpu_start(cpu_start),
+`ifdef FT_NO_LED123_SPI
+	.gpio({ gpio_nc, gpio })
+`else
 	.gpio(gpio)
+`endif
 	);
 
 io_uart_out io_uart_out (
@@ -780,7 +937,11 @@ io_spi_lite io_spi_lite(
     .dma_io_radr(dma_io_radr),
     .dma_io_radr_en(dma_io_radr_en),
     .dma_io_rdata_in(dma_io_rdata_in_5),
+`ifdef MEM_QSPI
+    .dma_io_rdata(dma_io_rdata_in_6), // -> qspi_if
+`else
     .dma_io_rdata(dma_io_rdata),
+`endif
     .spi_select_io(spi_select_io),
     .spi_sck(spi_sck),
     .spi_csn(spi_csn),

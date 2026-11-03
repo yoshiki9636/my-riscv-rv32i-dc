@@ -1,6 +1,6 @@
 /*
  * My RISC-V RV32I CPU
- *   dram interface top
+ *   dram interface top (MEM_MIG : MIG / MEM_QSPI : qspi_if)
  *    Verilog code
  * @auther		Yoshiki Kurokawa <yoshiki.k963@gmail.com>
  * @copylight	2024 Yoshiki Kurokawa
@@ -8,7 +8,27 @@
  * @version		0.1
  */
 
+`include "fpga_config.vh"
+
 module dram_top (
+`ifdef MEM_QSPI
+	// memory side clock (QSPI version : connect to clk / rst_n)
+	input mclk,
+	input mrst_n,
+	// qspi_if interface
+	output read_req,
+	output read_w,
+	output read_hw,
+	input read_valid,
+	output [31:0] read_adr,
+	input [31:0] read_data,
+	output write_req,
+	output write_w,
+	output write_hw,
+	input write_finish,
+	output [31:0] write_adr,
+	output [31:0] write_data,
+`else // MEM_MIG
 	// mig ingerface
 	input mclk,
 	input mrst_n,
@@ -27,6 +47,7 @@ module dram_top (
 	input [127:0] app_rd_data,
 	input app_rd_data_end,
 	input app_rd_data_valid,
+`endif
 
 	// bus clock
 	input clk,
@@ -255,6 +276,34 @@ req_queue req_queue (
 	.rd_bwt(req_rd_bwt)
 	);
 
+`ifdef MEM_QSPI
+// QSPI line interface (replacement of mig_if)
+qspi_line_if qspi_line_if (
+	.clk(mclk),
+	.rst_n(mrst_n),
+	.req_rnext(req_rnext),
+	.req_rqempty(req_rqempty),
+	.req_qraddr(req_qraddr),
+	.req_rd_bwt(req_rd_bwt),
+	.wdq_rnext(wdq_rnext),
+	.wdq_rqempty(wdq_rqempty),
+	.wdq_mask_rdata(wdq_mask_rdata),
+	.rdq_wen(rdq_wen),
+	.rdq_wdata(rdq_wdata),
+	.read_req(read_req),
+	.read_w(read_w),
+	.read_hw(read_hw),
+	.read_valid(read_valid),
+	.read_adr(read_adr),
+	.read_data(read_data),
+	.write_req(write_req),
+	.write_w(write_w),
+	.write_hw(write_hw),
+	.write_finish(write_finish),
+	.write_adr(write_adr),
+	.write_data(write_data)
+	);
+`else // MEM_MIG
 // MIG interface
 mig_if mig_if (
 	.mclk(mclk),
@@ -281,6 +330,6 @@ mig_if mig_if (
 	.rdq_wen(rdq_wen),
 	.rdq_wdata(rdq_wdata)
 	);
-
+`endif
 
 endmodule
