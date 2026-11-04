@@ -10,6 +10,12 @@
 
 `include "fpga_config.vh"
 
+// FPGA_MODE : bidir pins are inout ports (tri-state buffers inside, for FPGA)
+//   not defined : LSI mode, every bidir pin is split into _i / _o / _en ports
+//   (same as swc1. io_led.v / qspi_if.v also have `define FPGA_MODE at the top :
+//    comment out all three for LSI mode)
+`define FPGA_MODE
+
 `ifdef BOARD_CMOD_A7
   `ifdef MEM_MIG
     // CMOD A7 has no DDR3 : MEM_MIG can not be used with BOARD_CMOD_A7
@@ -61,12 +67,31 @@ module fpga_top
 	input rx,
 	output tx,
 	input interrupt_0,
+`ifdef FPGA_MODE
 	inout [2:0] rgb_led,
 	inout [`FT_GPIO_W-1:0] gpio, // see FT_GPIO_W
+`else // FPGA_MODE
+	input [2:0] rgb_led_i,
+	output [2:0] rgb_led_o,
+	output [2:0] rgb_led_en,
+	input [`FT_GPIO_W-1:0] gpio_i, // see FT_GPIO_W
+	output [`FT_GPIO_W-1:0] gpio_o,
+	output [`FT_GPIO_W-1:0] gpio_en,
+`endif // FPGA_MODE
 	input [1:0] init_uart, // uart_term reset value select (see io_uart_out.v)
+	input init_cpu_start, // 1 at reset release : auto start cpu from FT_INIT_START_ADR
 `ifndef FT_NO_UART2_PINS
+  `ifdef FPGA_MODE
 	inout rx2,
 	inout tx2,
+  `else // FPGA_MODE
+	input rx2_i,
+	output rx2_o,
+	output rx2_en,
+	input tx2_i,
+	output tx2_o,
+	output tx2_en,
+  `endif // FPGA_MODE
 `endif
 `ifndef FT_NO_SPI_PINS
 	output spi_sck,
@@ -79,7 +104,13 @@ module fpga_top
 // qspi signal
 	output sck,
 	output [2:0] ce_n,
+  `ifdef FPGA_MODE
 	inout [3:0] sio,
+  `else // FPGA_MODE
+	input [3:0] sio_i,
+	output [3:0] sio_o,
+	output [3:0] sio_en,
+  `endif // FPGA_MODE
 	input [1:0] init_latency,
 	input init_qspicmd
 `else // MEM_MIG
@@ -337,7 +368,14 @@ wire clk_200mhz; // Arty A7 : MIG reference clock
 
  // Instantiation of the clocking network
  //--------------------------------------
-`ifdef BOARD_CMOD_A7
+`ifndef FPGA_MODE
+// LSI mode : no clk_wiz_0, clkin is used as clk directly
+assign clk = clkin;
+assign locked = 1'b1;
+  `ifdef MEM_MIG
+assign clk_200mhz = clkin; // MIG is FPGA only : not meaningful in LSI mode
+  `endif
+`elsif BOARD_CMOD_A7
   // CMOD A7 : 12MHz in, clk_out1 = clk (48MHz)
   clk_wiz_0 clknetwork
    (
@@ -365,7 +403,7 @@ wire clk_200mhz; // Arty A7 : MIG reference clock
     .locked             (locked),
     .clk_in1            (clkin)
     );
-`endif
+`endif // FPGA_MODE
 
 `ifdef MEM_QSPI
 // QSPI version : memory side runs on clk (MIG removed)
@@ -434,12 +472,27 @@ wire spi_miso = 1'b0;
 `endif
 `ifdef FT_NO_UART2_PINS
 // CMOD A7 : rx2/tx2 are not connected to pins
+  `ifdef FPGA_MODE
 wire rx2; // not used
 wire tx2; // not used
+  `else // FPGA_MODE
+wire rx2_i = 1'b0; // not used
+wire rx2_o; // not used
+wire rx2_en; // not used
+wire tx2_i = 1'b0; // not used
+wire tx2_o; // not used
+wire tx2_en; // not used
+  `endif // FPGA_MODE
 `endif
 `ifdef BOARD_CMOD_A7
 // gpio[5:FT_GPIO_W] are not connected to pins
+  `ifdef FPGA_MODE
 wire [5:`FT_GPIO_W] gpio_nc; // not used
+  `else // FPGA_MODE
+wire [5:`FT_GPIO_W] gpio_i_nc = { (6-`FT_GPIO_W){ 1'b0 }}; // not used
+wire [5:`FT_GPIO_W] gpio_o_nc; // not used
+wire [5:`FT_GPIO_W] gpio_en_nc; // not used
+  `endif // FPGA_MODE
 `endif
 
 // io_led : uart2 pin control / read only inputs
@@ -482,7 +535,43 @@ assign dbg_bpoint_en = dbg_bpoint_en_reg;
 wire [1:0] gpi_init_latency = 2'b00;
 wire gpi_in = spi_miso;
 `endif
-wire gpi_init_cpu_start = 1'b0; // lab4 : cpu start is done by monitor
+
+// auto start (same function as swc1 init_cpu_start)
+//   if init_cpu_start pin is 1 after reset release, a cpu_start pulse is generated
+//   once, same as the monitor 'g' command, with start address FT_INIT_START_ADR.
+//   wait FT_INIT_START_WAIT cycles after clk_wiz locked (memory power-up / init).
+//   MEM_MIG : cpu_status waits init_calib_complete by itself (cpu_start_lat).
+`ifndef FT_INIT_START_ADR
+  `define FT_INIT_START_ADR 32'h0000_1000 // ctest/link.ld ORIGIN
+`endif
+`define FT_INIT_START_WAIT 17'h1_0000 // 65536 cycles : about 1.3ms @50MHz
+
+reg [1:0] init_cpu_start_sync;
+always @ (posedge clk or negedge rst_n) begin
+	if (~rst_n)
+		init_cpu_start_sync <= 2'b00;
+	else
+		init_cpu_start_sync <= { init_cpu_start_sync[0], init_cpu_start };
+end
+
+wire gpi_init_cpu_start = init_cpu_start_sync[1]; // also readable from io_led GPI_IN
+
+reg [16:0] init_start_cntr;
+always @ (posedge clk or negedge rst_n) begin
+	if (~rst_n)
+		init_start_cntr <= 17'd0;
+	else if (locked & (init_start_cntr != `FT_INIT_START_WAIT))
+		init_start_cntr <= init_start_cntr + 17'd1;
+end
+
+wire init_start_pulse = (init_start_cntr == (`FT_INIT_START_WAIT - 17'd1)) & locked & gpi_init_cpu_start;
+
+// cpu_start / start_adr to cpu : monitor command or auto start
+wire cpu_start_mon; // from uart_top (monitor 'g' command)
+wire [31:2] start_adr_mon; // from uart_top
+wire [31:0] init_start_adr = `FT_INIT_START_ADR;
+assign cpu_start = cpu_start_mon | init_start_pulse;
+assign start_adr = init_start_pulse ? init_start_adr[31:2] : start_adr_mon;
 
 // for interrupt
 wire g_interrupt_1shot;
@@ -733,7 +822,13 @@ qspi_if qspi_if (
 	.rst_n(rst_n),
 	.sck(sck),
 	.ce_n(ce_n),
+`ifdef FPGA_MODE
 	.sio(sio),
+`else // FPGA_MODE
+	.sio_i(sio_i),
+	.sio_o(sio_o),
+	.sio_en(sio_en),
+`endif // FPGA_MODE
 	.dbg_bpoint_en(qspi_dbg_bpoint_en),
 	.init_latency(init_latency),
 	.init_qspicmd(init_qspicmd),
@@ -886,10 +981,10 @@ uart_top #(.DWIDTH(DWIDTH), .IWIDTH(IWIDTH), .SWIDTH(SWIDTH)) uart_top (
 	.rd_data_ma(rd_data_ma),
 	.dbg_bpoint(dbg_bpoint),
 
-	.cpu_start(cpu_start),
+	.cpu_start(cpu_start_mon),
 	.cpu_run_state(cpu_run_state),
 	.quit_cmd(quit_cmd),
-	.start_adr(start_adr),
+	.start_adr(start_adr_mon),
 	.uart_io_char(uart_io_char),
 	.uart_io_we(uart_io_we),
 	.uart_io_full(uart_io_full),
@@ -917,9 +1012,21 @@ io_led io_led (
 	.uart2_io_en(uart2_io_en),
 	.rx2_org(rx2_org),
 	.tx2_org(tx2_org),
+`ifdef FPGA_MODE
 	.rgb_led(rgb_led),
 	.rx2(rx2),
 	.tx2(tx2),
+`else // FPGA_MODE
+	.rgb_led_i(rgb_led_i),
+	.rgb_led_o(rgb_led_o),
+	.rgb_led_en(rgb_led_en),
+	.rx2_i(rx2_i),
+	.rx2_o(rx2_o),
+	.rx2_en(rx2_en),
+	.tx2_i(tx2_i),
+	.tx2_o(tx2_o),
+	.tx2_en(tx2_en),
+`endif // FPGA_MODE
 	.dbg_bpoint_en(dbg_bpoint_en),
 	.dbg_bpoint(dbg_bpoint),
 	.cpu_start(cpu_start),
@@ -927,11 +1034,23 @@ io_led io_led (
 	.init_latency(gpi_init_latency),
 	.init_cpu_start(gpi_init_cpu_start),
 	.gpi_in(gpi_in),
-`ifdef BOARD_CMOD_A7
+`ifdef FPGA_MODE
+  `ifdef BOARD_CMOD_A7
 	.gpio({ gpio_nc, gpio })
-`else
+  `else
 	.gpio(gpio)
-`endif
+  `endif
+`else // FPGA_MODE
+  `ifdef BOARD_CMOD_A7
+	.gpio_i({ gpio_i_nc, gpio_i }),
+	.gpio_o({ gpio_o_nc, gpio_o }),
+	.gpio_en({ gpio_en_nc, gpio_en })
+  `else
+	.gpio_i(gpio_i),
+	.gpio_o(gpio_o),
+	.gpio_en(gpio_en)
+  `endif
+`endif // FPGA_MODE
 	);
 
 io_uart_out io_uart_out (
