@@ -164,7 +164,7 @@ wire uart_finish_wresp; // output
 wire uart_rstart_rq; // input
 wire [31:0] uart_rin_addr; // input
 wire [127:0] uart_rdat_m_data; // output
-wire [15:0] uart_rdat_m_mask = 16'd0; // output
+wire [15:0] uart_rdat_m_mask; // output (driven 0 by axi_bus_top; the extra "= 16'd0" was a 2nd driver, yosys error)
 wire uart_rdat_m_valid; // output
 wire uart_finish_mrd; // output
 
@@ -597,7 +597,7 @@ cpu_top #(.DWIDTH(DWIDTH), .IWIDTH(IWIDTH), .SWIDTH(SWIDTH)) cpu_top (
     .scr_ram_wdata(scr_ram_wdata),
     .scr_ram_rdata(scr_ram_rdata),
 	.scr_ram_wen(scr_ram_wen),
-	.scr_read_sel(_read_sel),
+	.scr_read_sel(scr_read_sel),
 	//.d_ram_wen(d_ram_wen),
 	//.d_read_sel(d_read_sel),
 
@@ -938,7 +938,7 @@ uart_top #(.DWIDTH(DWIDTH), .IWIDTH(IWIDTH), .SWIDTH(SWIDTH)) uart_top (
     .scr_ram_wdata(scr_ram_wdata),
     .scr_ram_rdata(scr_ram_rdata),
 	.scr_ram_wen(scr_ram_wen),
-	.scr_read_sel(_read_sel),
+	.scr_read_sel(scr_read_sel),
     //.d_read_sel(uart_d_read_sel),
     .d_ram_mask(uart_in_mask),
     .u_read_req(uart_rstart_rq),

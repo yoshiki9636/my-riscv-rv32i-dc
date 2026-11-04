@@ -217,7 +217,7 @@ assign data_we_ma = st_we_mem & { 4{ dc_st_ok}} & { 4{ dc_tag_hit_ma }};
 assign dc_cache_wr_ma = |data_we_ma;
 
 //assign sel_data_rd_ma = cmd_ld_ma; 
-assign dataram_rdata_wb = data_rdata_wb_mem[15:0];
+wire [15:0] dataram_rdata_wb = data_rdata_wb_mem[15:0];
 
 data_ram #(.DWIDTH(DWIDTH)) data_ram (
 	.clk(clk),

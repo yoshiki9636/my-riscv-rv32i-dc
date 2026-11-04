@@ -250,7 +250,7 @@ wire [1:0] g_current_priv = `M_MODE; // temp
 //wire g_interrupt;
 wire post_jump_cmd_cond;
 //wire csr_meie;
-//wire csr_msie;
+wire csr_msie; // declared 2026-11-05 (was implicit; default_nettype none error in yosys)
 
 
 // io bus for cpu

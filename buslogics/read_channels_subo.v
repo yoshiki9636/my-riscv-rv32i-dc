@@ -38,7 +38,7 @@ module read_channels_subo (
 
 	);
 
-wire [5:0] aratop;
+wire [5:0] aratop = 6'b000000; // read channel has no atop: non-atomic (was undriven, yosys check error)
 
 req_chan_subo read_req_chan_subo (
 	.clk(clk),

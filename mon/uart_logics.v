@@ -330,7 +330,7 @@ assign all_read_running = (status_dump != `D_IDLE)|(next_status_dump != `D_IDLE)
 //wire read_running2 = (status_dump == `D_RED1)|(next_status_dump == `D_RED2);
 //wire rdata_snd_wait = (status_dump == `D_WAIT)|(status_dump == `D_DRDF)|(status_dump == `D_WAIT);
 wire rdata_snd_wait = (status_dump == `D_DRDF)|(status_dump == `D_WAIT);
-assign scr_1st_radr = (status_dump == `D_SCR1);
+wire scr_1st_radr = (status_dump == `D_SCR1);
 
 //assign u_read_req = (dradr_cntup | dread_start) & ~cmd_read_adr_for_csr_scr;
 assign u_read_req = dradr_cntup | dread_start;

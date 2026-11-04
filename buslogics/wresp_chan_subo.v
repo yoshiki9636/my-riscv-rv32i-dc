@@ -20,7 +20,7 @@ module wresp_chan_subo (
 	// signals other side
 	input reqc_s_valid,
 	input [3:0] reqc_s_id,
-	output finish_swd
+	input finish_swd // driven by wdata_chan_subo (was output: 2nd driver, yosys check error)
 
 	);
 
