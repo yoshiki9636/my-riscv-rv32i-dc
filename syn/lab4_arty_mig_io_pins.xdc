@@ -245,3 +245,8 @@ set_property PACKAGE_PIN A8 [get_ports {init_uart[0]}]
 set_property IOSTANDARD LVCMOS33 [get_ports {init_uart[1]}]
 set_property PACKAGE_PIN C11 [get_ports {init_uart[1]}]
 set_false_path -from [get_ports {init_uart[*]}]
+
+# ---- lab4_addio : init_cpu_start (BTN3) : hold at reset release -> auto start cpu ----
+set_property IOSTANDARD LVCMOS33 [get_ports init_cpu_start]
+set_property PACKAGE_PIN B8 [get_ports init_cpu_start]
+set_false_path -from [get_ports init_cpu_start]
