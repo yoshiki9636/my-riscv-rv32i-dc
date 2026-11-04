@@ -28,19 +28,23 @@
   `define FT_SWIDTH 13
 `endif
 
-// external pins per board / memory
-//   CMOD A7             : gpio[3:0], no rgb_led1-3, no SPI pins
-//   Arty A7 + MEM_QSPI  : gpio[5:0], no rgb_led1-3, no SPI pins
-//                         (syn/tiny_outer_io_pins_v2_bmedemo.xdc)
-//   Arty A7 + MEM_MIG   : gpio[7:0], rgb_led1-3, SPI pins
+// external pins per board / memory (io_led : swc1 io version)
+//   all                 : rgb_led[2:0] (inout, SPI output can be muxed), init_uart[1:0]
+//   CMOD A7             : gpio[3:0], no rx2/tx2 pins, no SPI pins
+//                         (syn/lab4_cmod_a7_io_pins.xdc)
+//   Arty A7 + MEM_QSPI  : gpio[5:0], rx2/tx2, no SPI pins (spi_miso = init_qspicmd)
+//                         (syn/lab4_arty_qspi_io_pins.xdc)
+//   Arty A7 + MEM_MIG   : gpio[5:0], rx2/tx2, SPI pins
+//                         (syn/lab4_arty_mig_io_pins.xdc)
 `ifdef BOARD_CMOD_A7
-  `define FT_NO_LED123_SPI
+  `define FT_NO_SPI_PINS
+  `define FT_NO_UART2_PINS
   `define FT_GPIO_W 4
 `elsif MEM_QSPI
-  `define FT_NO_LED123_SPI
+  `define FT_NO_SPI_PINS
   `define FT_GPIO_W 6
 `else
-  `define FT_GPIO_W 8
+  `define FT_GPIO_W 6
 `endif
 
 module fpga_top
@@ -57,12 +61,14 @@ module fpga_top
 	input rx,
 	output tx,
 	input interrupt_0,
-	output [2:0] rgb_led,
+	inout [2:0] rgb_led,
 	inout [`FT_GPIO_W-1:0] gpio, // see FT_GPIO_W
-`ifndef FT_NO_LED123_SPI
-	output [2:0] rgb_led1,
-	output [2:0] rgb_led2,
-	output [2:0] rgb_led3,
+	input [1:0] init_uart, // uart_term reset value select (see io_uart_out.v)
+`ifndef FT_NO_UART2_PINS
+	inout rx2,
+	inout tx2,
+`endif
+`ifndef FT_NO_SPI_PINS
 	output spi_sck,
 	output [1:0] spi_csn,
 	output spi_mosi,
@@ -260,9 +266,8 @@ wire [31:0] dma_io_rdata_in_2; // input
 wire [31:0] dma_io_rdata_in_3; // input
 wire [31:0] dma_io_rdata_in_4; // input
 wire [31:0] dma_io_rdata_in_5; // input
-`ifdef MEM_QSPI
-wire [31:0] dma_io_rdata_in_6; // input : io chain -> qspi_if
-`endif
+wire [31:0] dma_io_rdata_in_6; // input : io_spi_lite -> io_uart2
+wire [31:0] dma_io_rdata_in_7; // input : io_uart2 -> qspi_if (MEM_QSPI) / dbg_bpoint_en reg (MEM_MIG)
 
 wire ibus_ren;
 wire [19:2] ibus_radr;
@@ -398,7 +403,7 @@ wire sys_rst = rst_n; // input
 
 wire cpu_run_state;
 
-wire [15:0] uart_term = 16'd54;
+wire [15:0] uart_term; // from io_uart_out (reset value selected by init_uart)
 
 wire cmd_ld_ma;
 wire cmd_st_ma;
@@ -414,21 +419,70 @@ wire csr_meie;
 wire frc_cntr_val_leq;
 wire frc_cntr_val_leq_1shot;
 
-// spi select signal : not used for 5 stage 
-wire spi_select_io; // not used
-`ifdef FT_NO_LED123_SPI
-// CMOD A7 / Arty A7 + MEM_QSPI : SPI (ether) is not used, pins are removed
-wire spi_sck; // not used
-wire [1:0] spi_csn; // not used
-wire spi_mosi; // not used
+// spi select signal : SPI output is muxed to rgb_led[2:0] in io_led
+wire spi_select_io;
+`ifdef FT_NO_SPI_PINS
+// CMOD A7 / Arty A7 + MEM_QSPI : no dedicated SPI pins (use rgb_led mux)
+wire spi_sck;
+wire [1:0] spi_csn;
+wire spi_mosi;
+  `ifdef MEM_QSPI
+wire spi_miso = init_qspicmd; // same as swc1
+  `else
 wire spi_miso = 1'b0;
-// rgb_led1-3 are not connected to pins
-wire [2:0] rgb_led1; // not used
-wire [2:0] rgb_led2; // not used
-wire [2:0] rgb_led3; // not used
-// gpio[7:FT_GPIO_W] are not connected to pins
-wire [7:`FT_GPIO_W] gpio_nc; // not used
+  `endif
 `endif
+`ifdef FT_NO_UART2_PINS
+// CMOD A7 : rx2/tx2 are not connected to pins
+wire rx2; // not used
+wire tx2; // not used
+`endif
+`ifdef BOARD_CMOD_A7
+// gpio[5:FT_GPIO_W] are not connected to pins
+wire [5:`FT_GPIO_W] gpio_nc; // not used
+`endif
+
+// io_led : uart2 pin control / read only inputs
+wire uart2_io_en;
+wire rx2_org;
+wire tx2_org;
+wire ext_uart2_interrpt_1shot;
+wire [2:0] dbg_bpoint_en;
+`ifdef MEM_QSPI
+assign dbg_bpoint_en = qspi_dbg_bpoint_en; // same as swc1
+wire [1:0] gpi_init_latency = init_latency;
+wire gpi_in = init_qspicmd;
+`else
+// MEM_MIG : no qspi_if, so dbg_bpoint_en register is placed here
+//   same address / bits as qspi_if SYS_QSPI_SCKDIV (0xC000F40C) [23:21] : read / write
+//   other bits : write ignored, read 0
+`define FT_SYS_DBG_EN 14'h3D03
+wire we_dbg_en_value = dma_io_we      & (dma_io_wadr == `FT_SYS_DBG_EN);
+wire re_dbg_en_value = dma_io_radr_en & (dma_io_radr == `FT_SYS_DBG_EN);
+reg [2:0] dbg_bpoint_en_reg;
+
+always @ (posedge clk or negedge rst_n) begin
+	if (~rst_n)
+		dbg_bpoint_en_reg <= 3'd0;
+	else if (we_dbg_en_value)
+		dbg_bpoint_en_reg <= dma_io_wdata[23:21];
+end
+
+reg re_dbg_en_value_dly;
+always @ (posedge clk or negedge rst_n) begin
+	if (~rst_n)
+		re_dbg_en_value_dly <= 1'b0;
+	else
+		re_dbg_en_value_dly <= re_dbg_en_value;
+end
+
+assign dma_io_rdata = re_dbg_en_value_dly ? { 8'd0, dbg_bpoint_en_reg, 21'd0 } : dma_io_rdata_in_7;
+
+assign dbg_bpoint_en = dbg_bpoint_en_reg;
+wire [1:0] gpi_init_latency = 2'b00;
+wire gpi_in = spi_miso;
+`endif
+wire gpi_init_cpu_start = 1'b0; // lab4 : cpu start is done by monitor
 
 // for interrupt
 wire g_interrupt_1shot;
@@ -700,7 +754,7 @@ qspi_if qspi_if (
 	.dma_io_wdata(dma_io_wdata),
 	.dma_io_radr(dma_io_radr),
 	.dma_io_radr_en(dma_io_radr_en),
-	.dma_io_rdata_in(dma_io_rdata_in_6),
+	.dma_io_rdata_in(dma_io_rdata_in_7),
 	.dma_io_rdata(dma_io_rdata)
 	);
 `else // MEM_MIG
@@ -856,13 +910,24 @@ io_led io_led (
 	.dma_io_radr_en(dma_io_radr_en),
 	.dma_io_rdata_in(dma_io_rdata_in_2),
 	.dma_io_rdata(dma_io_rdata_in_3),
+	.spi_mosi(spi_mosi),
+	.spi_csn(spi_csn),
+	.spi_sck(spi_sck),
+	.spi_select_io(spi_select_io),
+	.uart2_io_en(uart2_io_en),
+	.rx2_org(rx2_org),
+	.tx2_org(tx2_org),
 	.rgb_led(rgb_led),
-	.rgb_led1(rgb_led1),
-	.rgb_led2(rgb_led2),
-	.rgb_led3(rgb_led3),
+	.rx2(rx2),
+	.tx2(tx2),
+	.dbg_bpoint_en(dbg_bpoint_en),
 	.dbg_bpoint(dbg_bpoint),
 	.cpu_start(cpu_start),
-`ifdef FT_NO_LED123_SPI
+	.init_uart(init_uart),
+	.init_latency(gpi_init_latency),
+	.init_cpu_start(gpi_init_cpu_start),
+	.gpi_in(gpi_in),
+`ifdef BOARD_CMOD_A7
 	.gpio({ gpio_nc, gpio })
 `else
 	.gpio(gpio)
@@ -882,8 +947,8 @@ io_uart_out io_uart_out (
     .uart_io_char(uart_io_char),
     .uart_io_we(uart_io_we),
     .uart_io_full(uart_io_full),
-    //.init_uart(init_uart),
-    //.uart_term(uart_term),
+    .init_uart(init_uart),
+    .uart_term(uart_term),
     .cpu_run_state(cpu_run_state),
     .rout_en(rout_en),
     .rout(rout),
@@ -913,6 +978,7 @@ interrupter interrupter (
     .rst_n(rst_n),
     .interrupt_0(interrupt_0),
     .ext_uart_interrpt_1shot(ext_uart_interrpt_1shot),
+    .ext_uart2_interrpt_1shot(ext_uart2_interrpt_1shot),
     .csr_rmie(csr_rmie),
     .csr_meie(csr_meie),
     .g_interrupt_1shot(g_interrupt_1shot),
@@ -937,16 +1003,28 @@ io_spi_lite io_spi_lite(
     .dma_io_radr(dma_io_radr),
     .dma_io_radr_en(dma_io_radr_en),
     .dma_io_rdata_in(dma_io_rdata_in_5),
-`ifdef MEM_QSPI
-    .dma_io_rdata(dma_io_rdata_in_6), // -> qspi_if
-`else
-    .dma_io_rdata(dma_io_rdata),
-`endif
+    .dma_io_rdata(dma_io_rdata_in_6), // -> io_uart2
     .spi_select_io(spi_select_io),
     .spi_sck(spi_sck),
     .spi_csn(spi_csn),
     .spi_mosi(spi_mosi),
     .spi_miso(spi_miso)
+    );
+
+io_uart2 io_uart2 (
+    .clk(clk),
+    .rst_n(rst_n),
+    .rx2(rx2_org),
+    .tx2(tx2_org),
+    .uart2_io_en(uart2_io_en),
+    .dma_io_we(dma_io_we),
+    .dma_io_wadr(dma_io_wadr),
+    .dma_io_wdata(dma_io_wdata),
+    .dma_io_radr(dma_io_radr),
+    .dma_io_radr_en(dma_io_radr_en),
+    .dma_io_rdata_in(dma_io_rdata_in_6),
+    .dma_io_rdata(dma_io_rdata_in_7), // -> qspi_if (MEM_QSPI) / dbg_bpoint_en reg (MEM_MIG)
+    .ext_uart2_interrpt_1shot(ext_uart2_interrpt_1shot)
     );
 
 endmodule

@@ -24,8 +24,8 @@ module io_uart_out(
 	output reg [7:0] uart_io_char,
 	output reg uart_io_we,
 	input uart_io_full,
-	//input [1:0] init_uart,
-	//output reg [15:0] uart_term,
+	input [1:0] init_uart,
+	output reg [15:0] uart_term,
 	input cpu_run_state,
 	input rout_en,
 	input [7:0] rout,
@@ -47,8 +47,8 @@ wire re_uart_char = dma_io_radr_en & (dma_io_radr == `SYS_UART_OUTC);
 
 wire re_uart_full = dma_io_radr_en & (dma_io_radr == `SYS_UART_FULL);
 
-//wire we_uart_term = dma_io_we      & (dma_io_wadr == `SYS_UART_TERM);
-//wire re_uart_term = dma_io_radr_en & (dma_io_radr == `SYS_UART_TERM);
+wire we_uart_term = dma_io_we      & (dma_io_wadr == `SYS_UART_TERM);
+wire re_uart_term = dma_io_radr_en & (dma_io_radr == `SYS_UART_TERM);
 
 wire re_uart_rxch = dma_io_radr_en & (dma_io_radr == `SYS_UART_RXCH);
 
@@ -84,12 +84,21 @@ end
 
 // for fpga *** please comment out for tiny tapeout ***
 
-// clk 100MHz, 921600bps
-//`define TERM_0 16'd109
-// clk 48MHz, 921600bps
-`define TERM_0 16'd52
+// lab4 (5stage) : init_uart[1:0] pins select the reset value of uart_term
+//   0 : clk 50MHz (Arty A7), 921600bps
+//   1 : clk 48MHz (CMOD A7), 921600bps
+//   2 : clk 50MHz (Arty A7), 115200bps
+//   3 : clk 48MHz (CMOD A7), 115200bps
+`define TERM_0 16'd54
+`define TERM_1 16'd52
+`define TERM_2 16'd434
+`define TERM_3 16'd417
+// clk 50MHz, 115200bps
+//`define TERM_0 16'd434
+// clk 48MHz, 115200bps
+//`define TERM_1 16'd417
 // clk 50MHz, 921600bps
-`define TERM_1 16'd54
+//`define TERM_1 16'd54
 // test1 6MHz 38400bps
 //`define TERM_1 16'd156
 // test2 5MHz 19200bps
@@ -109,33 +118,37 @@ end
 // test10 13MHz 576000bps
 //`define TERM_1 16'd226
 // clk:50MHz, 9600bps
-`define TERM_2 16'd5208
+//`define TERM_2 16'd5208
 // clk:48MHz, 9600bps
-`define TERM_3 16'd5000
+//`define TERM_3 16'd5000
+// clk 40MHz, 115200bps
+//`define TERM_2 16'd347
+// clk 54MHz, 115200bps
+//`define TERM_3 16'd469
 	
-//wire [15:0] uart_term_reset_value = (init_uart == 2'd0) ? `TERM_0 :
-                                    //(init_uart == 2'd1) ? `TERM_1 :
-                                    //(init_uart == 2'd2) ? `TERM_2 : `TERM_3;
+wire [15:0] uart_term_reset_value = (init_uart == 2'd0) ? `TERM_0 :
+                                    (init_uart == 2'd1) ? `TERM_1 :
+                                    (init_uart == 2'd2) ? `TERM_2 : `TERM_3;
 
-//reg [1:0] first_edge_lat;
+reg [1:0] first_edge_lat;
 
-//always @ (posedge clk or negedge rst_n) begin
-    //if (~rst_n)
-		//first_edge_lat <= 2'b11;
-	//else
-		//first_edge_lat <= { first_edge_lat[0], 1'b0 };
-//end
+always @ (posedge clk or negedge rst_n) begin
+    if (~rst_n)
+		first_edge_lat <= 2'b11;
+	else
+		first_edge_lat <= { first_edge_lat[0], 1'b0 };
+end
 
-//wire first_edge = first_edge_lat[1];
+wire first_edge = first_edge_lat[1];
 
-//always @ (posedge clk or negedge rst_n) begin
-    //if (~rst_n)
-        //uart_term <= 16'd0 ;
-	//else if ( first_edge )
-        //uart_term <= uart_term_reset_value ;
-	//else if ( we_uart_term )
-		//uart_term <= dma_io_wdata[15:0];
-//end
+always @ (posedge clk or negedge rst_n) begin
+    if (~rst_n)
+        uart_term <= 16'd0 ;
+	else if ( first_edge )
+        uart_term <= uart_term_reset_value ;
+	else if ( we_uart_term )
+		uart_term <= dma_io_wdata[15:0];
+end
 
 // rx data : latch rx char during CPU running
 reg [7:0] rx_data_latch;
@@ -150,14 +163,14 @@ end
 assign ext_uart_interrpt_1shot = cpu_run_state & rout_en;
 
 // polling bit for rx data
-reg [3:0] re_uart_rdflg_dly;
+reg [4:0] re_uart_rdflg_dly;
 
 reg rx_first_read;
 
 always @ (posedge clk or negedge rst_n) begin
     if (~rst_n)
         rx_first_read <= 1'b0 ;
-	else if ( re_uart_rdflg_dly[2] ) // clear when read
+	else if ( re_uart_rdflg_dly[3] ) // clear when read
         rx_first_read <= 1'b0 ;
 	else if ( cpu_run_state & rout_en ) // set when write
         rx_first_read <= 1'b1 ;
@@ -169,7 +182,7 @@ reg rx_write_error;
 always @ (posedge clk or negedge rst_n) begin
     if (~rst_n)
         rx_write_error <= 1'b0 ;
-	else if ( re_uart_rdflg_dly[2] ) // clear when read
+	else if ( re_uart_rdflg_dly[3] ) // clear when read
         rx_write_error <= 1'b0 ;
 	else if ( cpu_run_state & rout_en & rx_first_read ) // set when write on not read data
         rx_write_error <= 1'b1 ;
@@ -193,16 +206,16 @@ assign rx_disable_echoback = rx_disable_echoback_value & cpu_run_state;
 
 always @ (posedge clk or negedge rst_n) begin
     if (~rst_n)
-        re_uart_rdflg_dly <= 4'd0 ;
+        re_uart_rdflg_dly <= 5'd0 ;
 	else
-        re_uart_rdflg_dly <= { re_uart_rxec, re_uart_rxch, re_uart_full, re_uart_char };
+        re_uart_rdflg_dly <= { re_uart_rxec, re_uart_rxch, re_uart_term, re_uart_full, re_uart_char };
 end
 
 assign dma_io_rdata = (re_uart_rdflg_dly[0]) ? { 24'd0, uart_io_char } :
                       (re_uart_rdflg_dly[1]) ? { 31'd0, uart_io_full } :
-                      //(re_uart_rdflg_dly[2]) ? { 16'd0, uart_term } :
-                      (re_uart_rdflg_dly[2]) ? { 23'd0, rx_write_error, rx_first_read, rx_data_latch } :
-                      (re_uart_rdflg_dly[3]) ? { 31'd0, rx_disable_echoback } : dma_io_rdata_in;
+                      (re_uart_rdflg_dly[2]) ? { 16'd0, uart_term } :
+                      (re_uart_rdflg_dly[3]) ? { 23'd0, rx_write_error, rx_first_read, rx_data_latch } :
+                      (re_uart_rdflg_dly[4]) ? { 31'd0, rx_disable_echoback } : dma_io_rdata_in;
 
 
 endmodule

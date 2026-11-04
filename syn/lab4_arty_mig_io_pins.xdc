@@ -1,0 +1,247 @@
+# lab4_addio (5stage + swc1 io) : Arty A7 + MEM_MIG  (from riscv_io_pins.xdc, gpio[7:6]/rgb_led1-3 removed, rx2/tx2/init_uart added)
+
+# not used
+## Pmod pins JA for SPI
+## JA7 cs D13 out
+## JA8 sck B18 out
+## JA9 MOSI A18 out
+## JA10 MISO K16 in
+
+# used
+# Pmod pins JB for SPI
+# JB3_P cs J17 out
+# JB3_N sck J18 out
+# JB4_P MOSI K15 out 
+# JB4_N MISO J15 in
+
+# zantei for GPIO
+# JD1 gpio[0]  U12  6
+# JD2 gpio[1]   V12  1
+# JD3 gpio[2]   V10  5
+# JD4 gpio[3]   V11  2
+# JD7 gpio[4]   U14  3
+# JD8 gpio[5]   V14  7
+
+set_property OFFCHIP_TERM NONE [get_ports {gpio[*]}]
+set_property IOSTANDARD LVCMOS33 [get_ports {gpio[*]}]
+set_property DRIVE 12 [get_ports {gpio[*]}]
+set_property SLEW SLOW [get_ports {gpio[*]}]
+set_property PACKAGE_PIN U12 [get_ports {gpio[0]}]
+set_property PACKAGE_PIN V12 [get_ports {gpio[1]}]
+set_property PACKAGE_PIN V10 [get_ports {gpio[2]}]
+set_property PACKAGE_PIN V11 [get_ports {gpio[3]}]
+set_property PACKAGE_PIN U14 [get_ports {gpio[4]}]
+set_property PACKAGE_PIN V14 [get_ports {gpio[5]}]
+
+set_property OFFCHIP_TERM NONE [get_ports spi_sck]
+set_property OFFCHIP_TERM NONE [get_ports spi_csn[1]]
+set_property OFFCHIP_TERM NONE [get_ports spi_csn[0]]
+set_property OFFCHIP_TERM NONE [get_ports spi_mosi]
+set_property IOSTANDARD LVCMOS33 [get_ports {spi_sck}]
+set_property IOSTANDARD LVCMOS33 [get_ports {spi_csn[1]}]
+set_property IOSTANDARD LVCMOS33 [get_ports {spi_csn[0]}]
+set_property IOSTANDARD LVCMOS33 [get_ports {spi_mosi}]
+set_property IOSTANDARD LVCMOS33 [get_ports {spi_miso}]
+set_property DRIVE 12 [get_ports {spi_sck}]
+set_property DRIVE 12 [get_ports {spi_csn[1]}]
+set_property DRIVE 12 [get_ports {spi_csn[0]}]
+set_property DRIVE 12 [get_ports {spi_mosi}]
+set_property SLEW SLOW [get_ports {spi_sck}]
+set_property SLEW SLOW [get_ports {spi_csn[1]}]
+set_property SLEW SLOW [get_ports {spi_csn[0]}]
+set_property SLEW SLOW [get_ports {spi_mosi}]
+set_property PACKAGE_PIN J18 [get_ports {spi_sck}]
+set_property PACKAGE_PIN D13 [get_ports {spi_csn[1]}]
+set_property PACKAGE_PIN J17 [get_ports {spi_csn[0]}]
+set_property PACKAGE_PIN K15 [get_ports {spi_mosi}]
+set_property PACKAGE_PIN J15 [get_ports {spi_miso}]
+
+set_property OFFCHIP_TERM NONE [get_ports rgb_led[2]]
+set_property OFFCHIP_TERM NONE [get_ports rgb_led[1]]
+set_property OFFCHIP_TERM NONE [get_ports rgb_led[0]]
+set_property OFFCHIP_TERM NONE [get_ports tx]
+set_property IOSTANDARD LVCMOS33 [get_ports {rgb_led[2]}]
+set_property IOSTANDARD LVCMOS33 [get_ports {rgb_led[1]}]
+set_property IOSTANDARD LVCMOS33 [get_ports {rgb_led[0]}]
+set_property DRIVE 12 [get_ports {rgb_led[2]}]
+set_property DRIVE 12 [get_ports {rgb_led[1]}]
+set_property DRIVE 12 [get_ports {rgb_led[0]}]
+set_property SLEW SLOW [get_ports {rgb_led[2]}]
+set_property SLEW SLOW [get_ports {rgb_led[1]}]
+set_property SLEW SLOW [get_ports {rgb_led[0]}]
+set_property PACKAGE_PIN E1 [get_ports {rgb_led[2]}]
+set_property PACKAGE_PIN F6 [get_ports {rgb_led[1]}]
+set_property PACKAGE_PIN G6 [get_ports {rgb_led[0]}]
+set_property IOSTANDARD LVCMOS33 [get_ports clkin]
+set_property PACKAGE_PIN E3 [get_ports clkin]
+set_property IOSTANDARD LVCMOS33 [get_ports rx]
+set_property PACKAGE_PIN A9 [get_ports rx]
+set_property IOSTANDARD LVCMOS33 [get_ports interrupt_0]
+set_property PACKAGE_PIN D9 [get_ports interrupt_0]
+set_property IOSTANDARD LVCMOS33 [get_ports tx]
+set_property DRIVE 12 [get_ports tx]
+set_property SLEW SLOW [get_ports tx]
+set_property PACKAGE_PIN D10 [get_ports tx]
+set_property IOSTANDARD LVCMOS33 [get_ports rst_n]
+set_property PACKAGE_PIN C2 [get_ports rst_n]
+
+
+#set_property PACKAGE_PIN K5 [get_ports ddr3_dq[0]]
+#set_property IOSTANDARD SSTL135 [get_ports ddr3_dq[0]]
+#set_property PACKAGE_PIN L3 [get_ports ddr3_dq[1]]
+#set_property IOSTANDARD SSTL135 [get_ports ddr3_dq[1]]
+#set_property PACKAGE_PIN K3 [get_ports ddr3_dq[2]]
+#set_property IOSTANDARD SSTL135 [get_ports ddr3_dq[2]]
+#set_property PACKAGE_PIN L6 [get_ports ddr3_dq[3]]
+#set_property IOSTANDARD SSTL135 [get_ports ddr3_dq[3]]
+#set_property PACKAGE_PIN M3 [get_ports ddr3_dq[4]]
+#set_property IOSTANDARD SSTL135 [get_ports ddr3_dq[4]]
+#set_property PACKAGE_PIN M1 [get_ports ddr3_dq[5]]
+#set_property IOSTANDARD SSTL135 [get_ports ddr3_dq[5]]
+#set_property PACKAGE_PIN L4 [get_ports ddr3_dq[6]]
+#set_property IOSTANDARD SSTL135 [get_ports ddr3_dq[6]]
+#set_property PACKAGE_PIN M2 [get_ports ddr3_dq[7]]
+#set_property IOSTANDARD SSTL135 [get_ports ddr3_dq[7]]
+#set_property PACKAGE_PIN V4 [get_ports ddr3_dq[8]]
+#set_property IOSTANDARD SSTL135 [get_ports ddr3_dq[8]]
+#set_property PACKAGE_PIN T5 [get_ports ddr3_dq[9]]
+#set_property IOSTANDARD SSTL135 [get_ports ddr3_dq[9]]
+#set_property PACKAGE_PIN U4 [get_ports ddr3_dq[10]]
+#set_property IOSTANDARD SSTL135 [get_ports ddr3_dq[10]]
+#set_property PACKAGE_PIN V5 [get_ports ddr3_dq[11]]
+#set_property IOSTANDARD SSTL135 [get_ports ddr3_dq[11]]
+#set_property PACKAGE_PIN V1 [get_ports ddr3_dq[12]]
+#set_property IOSTANDARD SSTL135 [get_ports ddr3_dq[12]]
+#set_property PACKAGE_PIN T3 [get_ports ddr3_dq[13]]
+#set_property IOSTANDARD SSTL135 [get_ports ddr3_dq[13]]
+#set_property PACKAGE_PIN U3 [get_ports ddr3_dq[14]]
+#set_property IOSTANDARD SSTL135 [get_ports ddr3_dq[14]]
+#set_property PACKAGE_PIN R3 [get_ports ddr3_dq[15]]
+#set_property IOSTANDARD SSTL135 [get_ports ddr3_dq[15]]
+#set_property PACKAGE_PIN L1 [get_ports ddr3_dm[0]]
+#set_property IOSTANDARD SSTL135 [get_ports ddr3_dm[0]]
+#set_property PACKAGE_PIN U1 [get_ports ddr3_dm[1]]
+#set_property IOSTANDARD SSTL135 [get_ports ddr3_dm[1]]
+#set_property PACKAGE_PIN N2 [get_ports ddr3_dqs_p[0]]
+#set_property IOSTANDARD DIFF_SSTL135 [get_ports ddr3_dqs_p[0]]
+#set_property PACKAGE_PIN N1 [get_ports ddr3_dqs_n[0]]
+#set_property IOSTANDARD DIFF_SSTL135 [get_ports ddr3_dqs_n[0]]
+#set_property PACKAGE_PIN U2 [get_ports ddr3_dqs_p[1]]
+#set_property IOSTANDARD DIFF_SSTL135 [get_ports ddr3_dqs_p[1]]
+#set_property PACKAGE_PIN V2 [get_ports ddr3_dqs_n[1]]
+#set_property IOSTANDARD DIFF_SSTL135 [get_ports ddr3_dqs_n[1]]
+#set_property PACKAGE_PIN T8 [get_ports ddr3_addr[13]]
+#set_property IOSTANDARD SSTL135 [get_ports ddr3_addr[13]]
+#set_property PACKAGE_PIN T6 [get_ports ddr3_addr[12]]
+#set_property IOSTANDARD SSTL135 [get_ports ddr3_addr[12]]
+#set_property PACKAGE_PIN U6 [get_ports ddr3_addr[11]]
+#set_property IOSTANDARD SSTL135 [get_ports ddr3_addr[11]]
+#set_property PACKAGE_PIN R6 [get_ports ddr3_addr[10]]
+#set_property IOSTANDARD SSTL135 [get_ports ddr3_addr[10]]
+#set_property PACKAGE_PIN V7 [get_ports ddr3_addr[9]]
+#set_property IOSTANDARD SSTL135 [get_ports ddr3_addr[9]]
+#set_property PACKAGE_PIN R8 [get_ports ddr3_addr[8]]
+#set_property IOSTANDARD SSTL135 [get_ports ddr3_addr[8]]
+#set_property PACKAGE_PIN U7 [get_ports ddr3_addr[7]]
+#set_property IOSTANDARD SSTL135 [get_ports ddr3_addr[7]]
+#set_property PACKAGE_PIN V6 [get_ports ddr3_addr[6]]
+#set_property IOSTANDARD SSTL135 [get_ports ddr3_addr[6]]
+#set_property PACKAGE_PIN R7 [get_ports ddr3_addr[5]]
+#set_property IOSTANDARD SSTL135 [get_ports ddr3_addr[5]]
+#set_property PACKAGE_PIN N6 [get_ports ddr3_addr[4]]
+#set_property IOSTANDARD SSTL135 [get_ports ddr3_addr[4]]
+#set_property PACKAGE_PIN T1 [get_ports ddr3_addr[3]]
+#set_property IOSTANDARD SSTL135 [get_ports ddr3_addr[3]]
+#set_property PACKAGE_PIN N4 [get_ports ddr3_addr[2]]
+#set_property IOSTANDARD SSTL135 [get_ports ddr3_addr[2]]
+#set_property PACKAGE_PIN M6 [get_ports ddr3_addr[1]]
+#set_property IOSTANDARD SSTL135 [get_ports ddr3_addr[1]]
+#set_property PACKAGE_PIN R2 [get_ports ddr3_addr[0]]
+#set_property IOSTANDARD SSTL135 [get_ports ddr3_addr[0]]
+#set_property PACKAGE_PIN P2 [get_ports ddr3_ba[2]]
+#set_property IOSTANDARD SSTL135 [get_ports ddr3_ba[2]]
+#set_property PACKAGE_PIN P4 [get_ports ddr3_ba[1]]
+#set_property IOSTANDARD SSTL135 [get_ports ddr3_ba[1]]
+#set_property PACKAGE_PIN R1 [get_ports ddr3_ba[0]]
+#set_property IOSTANDARD SSTL135 [get_ports ddr3_ba[0]]
+#set_property PACKAGE_PIN U9 [get_ports ddr3_ck_p[0]]
+#set_property IOSTANDARD DIFF_SSTL135 [get_ports ddr3_ck_p[0]]
+#set_property PACKAGE_PIN V9 [get_ports ddr3_ck_n[0]]
+#set_property IOSTANDARD DIFF_SSTL135 [get_ports ddr3_ck_n[0]]
+#set_property PACKAGE_PIN P3 [get_ports ddr3_ras_n]
+#set_property IOSTANDARD SSTL135 [get_ports ddr3_ras_n]
+#set_property PACKAGE_PIN M4 [get_ports ddr3_cas_n]
+#set_property IOSTANDARD SSTL135 [get_ports ddr3_cas_n]
+#set_property PACKAGE_PIN P5 [get_ports ddr3_we_n]
+#set_property IOSTANDARD SSTL135 [get_ports ddr3_we_n]
+#set_property PACKAGE_PIN K6 [get_ports ddr3_reset_n]
+#set_property IOSTANDARD SSTL135 [get_ports ddr3_reset_n]
+#set_property PACKAGE_PIN N5 [get_ports ddr3_cke[0]]
+#set_property IOSTANDARD SSTL135 [get_ports ddr3_cke[0]]
+#set_property PACKAGE_PIN R5 [get_ports ddr3_odt[0]]
+#set_property IOSTANDARD SSTL135 [get_ports ddr3_odt[0]]
+#set_property PACKAGE_PIN U8 [get_ports ddr3_cs_n[0]]
+#set_property IOSTANDARD SSTL135 [get_ports ddr3_cs_n[0]]
+
+set_property OFFCHIP_TERM NONE [get_ports tx]
+set_property OFFCHIP_TERM NONE [get_ports rgb_led[2]]
+set_property OFFCHIP_TERM NONE [get_ports rgb_led[1]]
+set_property OFFCHIP_TERM NONE [get_ports rgb_led[0]]
+create_clock -period 10.000 -name clkin -waveform {0.000 5.000} [get_ports clkin]
+
+#create_generated_clock -name clk [get_pins fpga_all_top/clknetwork/clk_out1]
+set_input_delay -clock [get_clocks -of_objects [get_nets clk]] -min -add_delay 1.000 [get_ports rst_n]
+set_input_delay -clock [get_clocks -of_objects [get_nets clk]] -max -add_delay 1.000 [get_ports rst_n]
+set_input_delay -clock [get_clocks -of_objects [get_nets clk]] -min -add_delay 1.000 [get_ports rx]
+set_input_delay -clock [get_clocks -of_objects [get_nets clk]] -max -add_delay 1.000 [get_ports rx]
+set_input_delay -clock [get_clocks -of_objects [get_nets clk]] -min -add_delay 1.000 [get_ports interrupt_0]
+set_input_delay -clock [get_clocks -of_objects [get_nets clk]] -max -add_delay 1.000 [get_ports interrupt_0]
+set_output_delay -clock [get_clocks -of_objects [get_nets clk]] -min -add_delay -3.000 [get_ports {rgb_led[*]}]
+set_output_delay -clock [get_clocks -of_objects [get_nets clk]] -max -add_delay -3.000 [get_ports {rgb_led[*]}]
+set_output_delay -clock [get_clocks -of_objects [get_nets clk]] -min -add_delay -3.000 [get_ports tx]
+set_output_delay -clock [get_clocks -of_objects [get_nets clk]] -max -add_delay -3.000 [get_ports tx]
+
+set_output_delay -clock [get_clocks -of_objects [get_nets clk]] -min -add_delay -3.000 [get_ports spi_sck]
+set_output_delay -clock [get_clocks -of_objects [get_nets clk]] -max -add_delay -3.000 [get_ports spi_sck]
+set_output_delay -clock [get_clocks -of_objects [get_nets clk]] -min -add_delay -3.000 [get_ports {spi_csn[*]}]
+set_output_delay -clock [get_clocks -of_objects [get_nets clk]] -max -add_delay -3.000 [get_ports {spi_csn[*]}]
+set_output_delay -clock [get_clocks -of_objects [get_nets clk]] -min -add_delay -3.000 [get_ports spi_mosi]
+set_output_delay -clock [get_clocks -of_objects [get_nets clk]] -max -add_delay -3.000 [get_ports spi_mosi]
+
+set_output_delay -clock [get_clocks -of_objects [get_nets clk]] -min -add_delay -3.000 [get_ports {gpio[*]}]
+set_output_delay -clock [get_clocks -of_objects [get_nets clk]] -max -add_delay -3.000 [get_ports {gpio[*]}]
+
+# NOTE (investigated then reverted): mclk (= MIG's ui_clk, fpga_top.v: wire mclk =
+# ui_clk) is NOT missing a clock definition - mig_7series_0's own generated XDC
+# (mig_7series_0_in_context.xdc) already does `create_clock -period 12.308
+# [get_pins mig_7series_0/ui_clk]`, and get_nets mclk resolves to that same
+# clock via net connectivity. A create_clock was added here briefly to chase a
+# "Set Up Debug wizard shows no clock for mclk" symptom, but it only collided
+# with (completely overrode) the IP's own correct constraint - see
+# [Constraints 18-1056] - and used a wrong period (12.000ns/83.33MHz) vs the
+# IP's authoritative 12.308ns/~81.25MHz. Removed; the real cause of the
+# missing-clock symptom is still open (likely just stale synthesis after the
+# mig_if.v mark_debug edit, not a constraints problem).
+
+set_clock_groups -group [get_clocks -of_objects [get_nets clk]] -group [get_clocks -of_objects [get_nets mclk]] -asynchronous
+
+set_property CLOCK_DEDICATED_ROUTE BACKBONE [get_nets clkin_IBUF]
+
+# ---- lab4_addio : uart2 (ChipKit IO40/IO41, same as tiny_outer_io_pins_v2_qspi.xdc) ----
+set_property IOSTANDARD LVCMOS33 [get_ports rx2]
+set_property PACKAGE_PIN P18 [get_ports rx2]
+set_property DRIVE 12 [get_ports rx2]
+set_property SLEW SLOW [get_ports rx2]
+set_property OFFCHIP_TERM NONE [get_ports rx2]
+set_property IOSTANDARD LVCMOS33 [get_ports tx2]
+set_property PACKAGE_PIN N17 [get_ports tx2]
+set_property DRIVE 12 [get_ports tx2]
+set_property SLEW SLOW [get_ports tx2]
+set_property OFFCHIP_TERM NONE [get_ports tx2]
+
+# ---- lab4_addio : init_uart (SW0/SW1) : uart_term reset value select ----
+set_property IOSTANDARD LVCMOS33 [get_ports {init_uart[0]}]
+set_property PACKAGE_PIN A8 [get_ports {init_uart[0]}]
+set_property IOSTANDARD LVCMOS33 [get_ports {init_uart[1]}]
+set_property PACKAGE_PIN C11 [get_ports {init_uart[1]}]
+set_false_path -from [get_ports {init_uart[*]}]
