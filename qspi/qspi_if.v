@@ -68,6 +68,11 @@ module qspi_if (
 reg word_w;
 reg word_hw;
 reg [25:0] word_adr;
+reg [1:0] word_cs;     // chip select index decoded with the memory map register
+wire [25:0] adrmap_base1; // cs1 start address
+wire [25:0] adrmap_base2; // cs2 start address
+wire [23:0] adr_mask0;    // valid device address bits of cs0
+wire [23:0] adr_mask1;    // valid device address bits of cs1
 
 // tristate buffer of sio
 reg [3:0] sio_out_enbl;
@@ -394,13 +399,9 @@ wire dbg_2div_cew = dbg_2div_cew_pre & dbg_2div_cew_lat;
 
 //wire ce_n_pre = (qspi_state == `QS_IDLE) | (qspi_state == `QS_CMDW) | (qspi_state == `QS_CETRT) |  (qspi_state == `QS_FWIT1) | (qspi_state == `QS_FWIT2) | dbg_2div_cew | dbg_2div_cec;
 wire ce_n_pre = (qspi_state == `QS_IDLE) | (qspi_state == `QS_CETRT) |  (qspi_state == `QS_FWIT1) | (qspi_state == `QS_FWIT2) | dbg_2div_cew | dbg_2div_cec;
-// chip select decode : 64Mbit (8MB) devices packed contiguously
-//   cs0 : 0x0000000-0x07fffff  cs1 : 0x0800000-0x0ffffff  cs2 : 0x1000000-0x17fffff
-//   0x1800000 and above : no chip selected
-wire [1:0] cs_sel = word_adr[25] ? 2'd3 : word_adr[24:23];
-wire ce_0_dec = (cs_sel == 2'd0);
-wire ce_1_dec = (cs_sel == 2'd1);
-wire ce_2_dec = (cs_sel == 2'd2);
+wire ce_0_dec = (word_cs == 2'd0);
+wire ce_1_dec = (word_cs == 2'd1);
+wire ce_2_dec = (word_cs == 2'd2);
 wire ce_0_en = ~ce_0_dec | ce_n_pre;
 wire ce_1_en = ~ce_1_dec | ce_n_pre;
 wire ce_2_en = ~ce_2_dec | ce_n_pre;
@@ -475,7 +476,13 @@ always @ (posedge clk or negedge rst_n) begin
 		adr_ofs <= adr_ofs - 3'd1;
 end
 
-assign adr_rw = { 1'b0, word_adr[22:0] }; // 8MB per chip
+// device address = (cpu address - cs base address) & cs mask
+wire [25:0] adr_base_sel = ce_1_dec ? adrmap_base1 :
+                           ce_2_dec ? adrmap_base2 : 26'd0;
+wire [23:0] adr_mask_sel = ce_1_dec ? adr_mask1 :
+                           ce_2_dec ? 24'hff_ffff : adr_mask0;
+wire [25:0] adr_rel = word_adr - adr_base_sel;
+assign adr_rw = adr_rel[23:0] & adr_mask_sel;
 
 assign adr_slice = (adr_ofs == 3'd5) ? adr_rw[23:20] :
                    (adr_ofs == 3'd4) ? adr_rw[19:16] :
@@ -709,6 +716,7 @@ assign rst_end = (state_rsten | state_rst) & (rst_cntr == 4'd0) & fall_edge;
 `define SYS_QSPI_RDEDGE   14'h3D09
 `define SYS_QSPI_FLWRITE  14'h3D0A
 `define SYS_QSPI_MODEBIT  14'h3D0B
+`define SYS_QSPI_ADRMAP   14'h3D0C
 
 wire we_qspi_latency0 = dma_io_we      & (dma_io_wadr == `SYS_QSPI_LATENCY0);
 wire re_qspi_latency0 = dma_io_radr_en & (dma_io_radr == `SYS_QSPI_LATENCY0);
@@ -735,6 +743,8 @@ wire we_qspi_flwrite = dma_io_we      & (dma_io_wadr == `SYS_QSPI_FLWRITE);
 wire re_qspi_flwrite = dma_io_radr_en & (dma_io_radr == `SYS_QSPI_FLWRITE);
 wire we_qspi_modebit = dma_io_we      & (dma_io_wadr == `SYS_QSPI_MODEBIT);
 wire re_qspi_modebit = dma_io_radr_en & (dma_io_radr == `SYS_QSPI_MODEBIT);
+wire we_qspi_adrmap = dma_io_we      & (dma_io_wadr == `SYS_QSPI_ADRMAP);
+wire re_qspi_adrmap = dma_io_radr_en & (dma_io_radr == `SYS_QSPI_ADRMAP);
 
 
 reg [3:0] read_latency_0;
@@ -899,13 +909,47 @@ end
 assign mode_bit_value = ce_1_dec ? modebit[7:4] :
                         ce_2_dec ? modebit[11:8] : modebit[3:0];
 
-reg [11:0] re_qspi_latency_dly;
+// qspi memory map shift
+//   [3:0] : s0 : cs0 size = 16MB >> s0  (0-8, values over 8 are clamped to 8)
+//   [7:4] : s1 : cs1 size = 16MB >> s1  (0-8, values over 8 are clamped to 8)
+//   cs0 : 0x0000_0000 - base1-1
+//   cs1 : base1 = 0x0100_0000 >> s0          - base2-1
+//   cs2 : base2 = base1 + (0x0100_0000 >> s1) - 0x02ff_ffff
+//   0x0300_0000 and above : no chip selected
+//   device address : cs0 = adr & (24'hff_ffff >> s0)
+//                    cs1 = (adr - base1) & (24'hff_ffff >> s1)
+//                    cs2 = (adr - base2) & 24'hff_ffff
+//   examples
+//     0x00 : 0x0000_0000 / 0x0100_0000 / 0x0200_0000 (reset value, compatible)
+//     0x11 : 0x0000_0000 / 0x0080_0000 / 0x0100_0000
+//     0x22 : 0x0000_0000 / 0x0040_0000 / 0x0080_0000
+//     0x12 : 0x0000_0000 / 0x0040_0000 / 0x00C0_0000 (cs0 4MB, cs1 8MB)
+reg [3:0] adrmap_shift0;
+reg [3:0] adrmap_shift1;
+
+always @ (posedge clk or negedge rst_n) begin
+	if (~rst_n) begin
+		 adrmap_shift0 <= 4'd0;
+		 adrmap_shift1 <= 4'd0;
+	end
+	else if (we_qspi_adrmap) begin
+		 adrmap_shift0 <= (dma_io_wdata[3:0] > 4'd8) ? 4'd8 : dma_io_wdata[3:0];
+		 adrmap_shift1 <= (dma_io_wdata[7:4] > 4'd8) ? 4'd8 : dma_io_wdata[7:4];
+	end
+end
+
+assign adr_mask0 = 24'hff_ffff >> adrmap_shift0;
+assign adr_mask1 = 24'hff_ffff >> adrmap_shift1;
+assign adrmap_base1 = 26'h100_0000 >> adrmap_shift0;
+assign adrmap_base2 = adrmap_base1 + (26'h100_0000 >> adrmap_shift1);
+
+reg [12:0] re_qspi_latency_dly;
 
 always @ (posedge clk or negedge rst_n) begin
 	if (~rst_n)
-		 re_qspi_latency_dly <= 12'd0;
+		 re_qspi_latency_dly <= 13'd0;
 	else
-		 re_qspi_latency_dly <= { re_qspi_modebit, re_qspi_flwrite, re_qspi_rdedge, re_qspi_rdwrch, re_qspi_wrcmd1, re_qspi_wrcmd0, re_qspi_rdcmd1, re_qspi_rdcmd0,
+		 re_qspi_latency_dly <= { re_qspi_adrmap, re_qspi_modebit, re_qspi_flwrite, re_qspi_rdedge, re_qspi_rdwrch, re_qspi_wrcmd1, re_qspi_wrcmd0, re_qspi_rdcmd1, re_qspi_rdcmd0,
                                   re_qspi_sckdiv, re_qspi_latency2, re_qspi_latency1, re_qspi_latency0 };
 end
 
@@ -920,7 +964,8 @@ assign dma_io_rdata = (re_qspi_latency_dly[0] == 1'b1) ? { 28'd0, read_latency_0
                       (re_qspi_latency_dly[8] == 1'b1) ? { 26'd0, rdwrch } :
                       (re_qspi_latency_dly[9] == 1'b1) ? { 25'd0, wredge, 1'b0, rdedge } :
                       (re_qspi_latency_dly[10] == 1'b1) ? { 16'd0, fl_status, 3'd0, flwr_erase, 1'b0, flwr_en } :
-                      (re_qspi_latency_dly[11] == 1'b1) ? { 20'd0, modebit } : dma_io_rdata_in;
+                      (re_qspi_latency_dly[11] == 1'b1) ? { 20'd0, modebit } :
+                      (re_qspi_latency_dly[12] == 1'b1) ? { 24'd0, adrmap_shift1, adrmap_shift0 } : dma_io_rdata_in;
 
 wire [3:0] read_latency = ce_1_dec ? read_latency_1 :
                           ce_2_dec ? read_latency_2 : read_latency_0;
@@ -963,7 +1008,8 @@ end
 //assign read_data_end = state_read & (read_cntr == 4'd0) & fall_edge;
 assign read_data_end = state_read & (read_cntr == 4'd0);
 
-// qspi cs0 : 0x00000000, cs1 : 0x01000000, cs2 : 0x02000000
+// qspi cs0 : 0x00000000, cs1 : 0x01000000, cs2 : 0x02000000 (reset value)
+//   (cs1 / cs2 base addresses move with adrmap_shift0/1)
 wire qspi_read_req = read_req;
 wire qspi_write_req = write_req;
 
@@ -1008,9 +1054,9 @@ always @ (posedge clk or negedge rst_n) begin
 end
 
 assign cmd_freadq = (inner_state == `IN_READ);
-wire fl_sel = (cs_sel == 2'd0) ? flwr_en[0] :
-              (cs_sel == 2'd1) ? flwr_en[1] :
-              (cs_sel == 2'd2) ? flwr_en[2] : 1'b0;
+wire fl_sel = (word_cs == 2'd0) ? flwr_en[0] :
+              (word_cs == 2'd1) ? flwr_en[1] :
+              (word_cs == 2'd2) ? flwr_en[2] : 1'b0;
 assign cmd_flwrite = (inner_state == `IN_WRITE) & fl_sel;
 assign cmd_qwrite = (inner_state == `IN_WRITE) & ~fl_sel;
 wire qspi_read_valid = read_data_end & fall_edge;
@@ -1021,17 +1067,24 @@ wire qspi_write_finish = write_data_end | fl_write_end;
 wire word_w_pre = qspi_read_req ? read_w : write_w;
 wire word_hw_pre = qspi_read_req ? read_hw : write_hw;
 wire [25:0] word_adr_pre = qspi_read_req ? read_adr[25:0] : write_adr[25:0];
+// chip select index : compare with the cs1 / cs2 start addresses
+//   0x03000000 and above : no chip selected (3)
+wire [1:0] word_cs_pre = (word_adr_pre[25:24] == 2'd3) ? 2'd3 :
+                         (word_adr_pre < adrmap_base1) ? 2'd0 :
+                         (word_adr_pre < adrmap_base2) ? 2'd1 : 2'd2;
 
 always @ (posedge clk or negedge rst_n) begin
 	if (~rst_n) begin
 		word_w <= 1'b0;
 		word_hw <= 1'b0;
 		word_adr <= 26'd0;
+		word_cs <= 2'd0;
 	end
 	else if (qspi_read_req | qspi_write_req) begin
 		word_w <= word_w_pre;
 		word_hw <= word_hw_pre;
 		word_adr <= word_adr_pre;
+		word_cs <= word_cs_pre;
 	end
 end
 
