@@ -21,6 +21,7 @@ module ilu_stage
 	input [31:2] pc_if,
 	input [31:2] pc_id_pre,
 	input pc_valid_id,
+	input btb_spec_fetch,   // the fetch checked now is a discarded BTB-target fetch
     output [IWIDTH-3:0] ic_ram_wadr_all,
 	input fencei_dcflush_end,
 	input stall,
@@ -162,8 +163,10 @@ end
 
 wire ic_tag_equal = (ic_tag_adr_id == ic_tag_radr);
 assign ic_tag_hit_id = ic_tag_equal & ic_cache_valid_id & pc_valid_id;
-wire ic_tag_empty_id = ~ic_cache_valid_id & pc_valid_id;
-wire ic_tag_miss_id = ~ic_tag_equal & ic_cache_valid_id & pc_valid_id;
+// btb_spec_fetch (2026-11-12): no refill for a BTB-target fetch whose result
+// is discarded (see if_stage)
+wire ic_tag_empty_id = ~ic_cache_valid_id & pc_valid_id & ~btb_spec_fetch;
+wire ic_tag_miss_id = ~ic_tag_equal & ic_cache_valid_id & pc_valid_id & ~btb_spec_fetch;
 
 // dirty / valid bits
 //reg [(2**(IWIDTH-2))-1:0] ic_ent_dirty_bit_id;

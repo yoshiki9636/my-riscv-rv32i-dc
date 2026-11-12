@@ -52,6 +52,10 @@ module csr_array(
 	input jmp_condition_ex,
 	input fencei_condition_ex,
 	input mret_condition_ex,
+	// ID-stage jump prediction (2026-11-12): predicted jump/branch confirmed
+	// in EX (no EX redirect) and its target
+	input pred_hit_ex,
+	input [31:2] pred_adr_ex,
 `ifdef SUPPORT_M
 	input div_stall_start,
 	input div_stall_dly,
@@ -548,6 +552,11 @@ always @ ( posedge clk or negedge rst_n) begin
 	else if ( jmp_condition_ex | mret_condition_ex | fencei_condition_ex )
 		post_pc_ex <= jmp_adr_if;
 		//post_pc_ex <= jmp_condition_ex ? jmp_adr_ex : pc_ex;
+	// ID-stage jump prediction (2026-11-12): the jump was already redirected
+	// in ID, so the slot after it in EX is a killed NOP.  An interrupt taken
+	// on that slot (post_jump_cmd_cond) must save the jump target as mepc.
+	else if ( pred_hit_ex )
+		post_pc_ex <= pred_adr_ex;
 `ifdef SUPPORT_M
 	else if ( div_stall_start )
 		post_pc_ex <= pc_ex;

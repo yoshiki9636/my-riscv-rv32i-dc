@@ -9,6 +9,25 @@
  * @version		0.2 add ecall
  */
 
+// ID-stage static jump prediction (2026-11-12)
+//   JAL                       : always taken, target = pc + imm
+//   conditional branch (B)    : backward taken / forward not taken (BTFN)
+//   JALR                      : not predicted (resolved in EX as before)
+// comment out to get the original (EX-resolved only) behavior
+//`define ID_JUMP_PRED
+
+// IF-stage dynamic prediction (BTB + 2-bit counter) (2026-11-12)
+//   jal / conditional branches : predicted at fetch, taken penalty 0
+//   JALR                       : not predicted
+// takes priority over ID_JUMP_PRED.  Comment out both for the original.
+`define IF_BTB_PRED
+// BTB entries = 2**BTB_IDX_W
+`define BTB_IDX_W 6
+
+`ifdef IF_BTB_PRED
+  `undef ID_JUMP_PRED
+`endif
+
 module if_stage
 	#(parameter IWIDTH = 14)
 	(
@@ -37,6 +56,19 @@ module if_stage
     //input g_interrupt_1shot,
 	output post_jump_cmd_cond,
 	input g_exception,
+	// ID-stage jump prediction
+	input pred_hit_ex,
+	input pred_block_ex,
+	input jmp_regs_flush,
+	output reg pred_ex,
+	output pred_a_mode,
+	input btb_upd_valid,
+	input btb_upd_taken,
+	input btb_upd_jal,
+	input [31:2] btb_upd_pc,
+	input [31:2] btb_upd_target,
+	input btb_flush,
+	output reg btb_spec_fetch, // to ilu_stage : don't start an I$ miss for this fetch
 	// from monitor
 	input [IWIDTH+1:2] i_ram_radr,
 	output [31:0] i_ram_rdata,
@@ -97,6 +129,14 @@ assign jmp_adr_if = mret_condition_ex ? csr_mepc_ex :
                     // from ex_stage (FIX 2026-10-28) - was pc_id - 30'd1
                     cmd_sret_ex ? csr_sepc_ex : jmp_adr_ex;
 
+// ID-stage jump prediction (defined at the bottom)
+wire pred_fire;
+wire [31:2] pred_adr;
+wire pred_kill_id;
+// IF-stage BTB prediction (defined at the bottom)
+wire btb_take;          // pc_if is a jal/branch predicted taken
+wire [31:2] btb_tgt;    // its target
+
 reg keep_jmp_between;
 reg [31:2] pc_if_between;
 always @ (posedge clk or negedge rst_n) begin
@@ -141,10 +181,13 @@ always @ (posedge clk or negedge rst_n) begin
 		pc_if_pre <= pc_if_pre;	
 	else if (jmp_cond)
 		pc_if_pre <= jmp_adr;
+	else if (pred_fire)
+		pc_if_pre <= pred_adr;
 	else if (ic_stall)
 		pc_if_pre <= pc_if_pre;	
 	else
-		pc_if_pre <= pc_if + 30'd1;
+		// next fetch PC : BTB-predicted target or sequential
+		pc_if_pre <= btb_take ? btb_tgt : pc_if + 30'd1;
 end
 
 reg [31:2] pc_if_roll;
@@ -160,6 +203,8 @@ always @ (posedge clk or negedge rst_n) begin
 		pc_if_roll <= pc_if_between;
 	else if (jmp_cond)
         pc_if_roll <= jmp_adr;
+	else if (pred_fire)
+        pc_if_roll <= pred_adr;
 	else if (~ic_stall)
         pc_if_roll <= pc_if_pre;
 end
@@ -192,7 +237,35 @@ always @ (posedge clk or negedge rst_n) begin
         pc_collision <= pc_id;
 end
 
+always @ (posedge clk or negedge rst_n) begin
+	if (~rst_n)
+        pred_collision <= 1'b0;
+	else if (rst_pipe)
+        pred_collision <= 1'b0;
+	else if ((stall_1shot & stall_ld_ex)|inst_collision_smpl1)
+        pred_collision <= pred_id;
+end
+
 assign pc_id = use_collision ?  pc_collision : pc_id_pre;
+
+// BTB prediction bit of the ID instruction.  It follows pc_id exactly
+// (same enables as pc_id_pre / pc_collision): pc_if_pre takes the
+// predicted target in exactly the cycles where pc_id_pre <= pc_if, so
+// "pred bit = 1" always means "the instruction after this one in the fetch
+// stream is the BTB target".
+reg pred_id_pre;
+reg pred_collision;
+always @ (posedge clk or negedge rst_n) begin
+	if (~rst_n)
+		pred_id_pre <= 1'b0;
+	else if (rst_pipe)
+		pred_id_pre <= 1'b0;
+	else if (ic_stall | stall | stall_ld)
+		pred_id_pre <= pred_id_pre;
+	else
+		pred_id_pre <= btb_take;
+end
+wire pred_id = use_collision ? pred_collision : pred_id_pre;
 assign pc_data = {pc_if, 2'd0};
 
 // instruction RAM
@@ -425,6 +498,9 @@ wire inst_masked_in_icdc_sync_start;
 //reg inst_mask_condition_with_jmp_lat;
 
 assign inst_id =
+                 // ID-stage jump prediction: the fall-through instruction
+                 // after a predicted jump is replaced by NOP
+                 pred_kill_id ? 32'h0000_0013 :
                  //(inst_masked_in_icdc_sync_start | inst_mask_condition_with_jmp_lat) ? 32'h0000_0013 :
                  (inst_masked_in_icdc_sync_start) ? 32'h0000_0013 :
                  // FPGA (2026-07-17): close a remaining hole in the 2026-07-16
@@ -458,7 +534,10 @@ always @ (posedge clk or negedge rst_n) begin
 end
 
 // post cump command condition
-wire jump_only = jmp_condition_ex | mret_condition_ex | fencei_cond;
+// pred_hit_ex : a jump predicted in ID is confirmed in EX.  The next EX slot
+// is the killed fall-through NOP, so mepc must be the target (post_pc_ex)
+// for an interrupt taken there, same as after a taken jump.
+wire jump_only = jmp_condition_ex | mret_condition_ex | fencei_cond | pred_hit_ex;
 
 always @ (posedge clk or negedge rst_n) begin   
 	if (~rst_n) begin
@@ -709,6 +788,228 @@ always @ (posedge clk or negedge rst_n) begin
         jump_under_ic_stall <= 1'b1;
 end
 
+
+// ---------------------------------------------------------------------------
+// ID-stage static jump prediction (2026-11-12)
+//
+// Without prediction every taken jal/jalr/branch is resolved in EX and
+// costs 2 cycles (jmp_purge_ma / jmp_purge_ma2 cancel the 2 fall-through
+// instructions).  Here jal and backward branches are redirected while they
+// are in ID:
+//
+//   cycle t   : J in ID, IF fetches pc+4.  pred_fire -> pc_if_pre/roll <= target
+//   cycle t+1 : J in EX (pred_ex=1), pc+4 in ID -> killed (inst_id = NOP)
+//   cycle t+2 : NOP in EX, target in ID
+//
+//   -> taken penalty 2 -> 1 cycle.  A mispredicted branch (predicted taken,
+//      not taken) is redirected in EX to pc+4 by the normal jmp_condition_ex
+//      path, which purges the 2 younger slots as before (penalty 2).
+//
+// The fall-through instruction is killed by PC (pred_kill_pc), not by
+// timing, so it is also dropped when it is held / replayed by the stall
+// machinery (inst_roll / inst_collision) or dropped by an I$ miss.  The kill
+// is disarmed when the first instruction with another PC (= the target)
+// advances from ID to EX, or by any EX redirect (which purges the younger
+// slots itself).
+//
+// Prediction is only made when the pipeline is quiet (no D$/I$/ld-use
+// stall now or in the last 2 cycles, no collision replay, no pending
+// redirect window).  In every other case the jump is simply not predicted
+// and EX resolves it exactly as before, so the stall corner cases keep their
+// original behavior.
+// ---------------------------------------------------------------------------
+wire [6:0] pd_opc = inst_id[6:0];
+wire [2:0] pd_f3  = inst_id[14:12];
+wire pd_jal = (pd_opc == 7'b1101111);
+wire pd_br  = (pd_opc == 7'b1100011) & (pd_f3[2:1] != 2'b01); // beq/bne/blt/bge/bltu/bgeu
+// word offsets ( imm[1] is dropped : same as EX's (pc+imm)[31:2] since pc[1:0]=0 )
+wire [31:2] pd_jal_ofs = {{11{inst_id[31]}}, inst_id[31], inst_id[19:12], inst_id[20], inst_id[30:22]};
+wire [31:2] pd_br_ofs  = {{19{inst_id[31]}}, inst_id[31], inst_id[7], inst_id[30:25], inst_id[11:9]};
+wire pd_br_back = inst_id[31]; // negative offset = backward branch
+wire [31:2] pd_ofs = pd_jal ? pd_jal_ofs : pd_br_ofs;
+assign pred_adr = pc_id + pd_ofs;
+// target == pc+4 would make the target itself the killed instruction
+wire pd_ofs_is_1 = (pd_ofs == 30'd1);
+
+// pipeline busy conditions (now / history)
+wire pred_busy_now = stall | stall_dly | stall_ld | stall_ld_ex | stall_ld_add |
+                     ic_stall | ic_stall_dly | use_collision | use_collision_clear_pending |
+                     jump_under_ic_stall | (cache_miss_current != `IDST_IDLE) |
+                     dc_stall_fin | dc_stall_fin2 | ic_stall_fin | ic_stall_fin2 |
+                     pc_start | jmp_regs_flush | rst_pipe;
+reg [1:0] pred_busy_hist;
+
+always @ (posedge clk or negedge rst_n) begin
+	if (~rst_n)
+		pred_busy_hist <= 2'b11;
+	else
+		pred_busy_hist <= { pred_busy_hist[0], pred_busy_now };
+end
+
+wire pred_quiet = ~pred_busy_now & ~(|pred_busy_hist) &
+                  ~pred_block_ex & ~(|post_intr_ecall_exception) &
+                  ~keep_jmp_between & ~jump_between_stall & ~exc_redirect;
+
+`ifdef ID_JUMP_PRED
+// note: an EX redirect in the same cycle (jmp_cond) has priority in the PC
+// muxes and disarms the kill, and the predicted jump itself is purged in EX
+// by jmp_purge_ma, so jmp_cond is not needed in this (timing critical) term.
+assign pred_fire = pred_quiet & (pd_jal | pd_br & pd_br_back) & ~pd_ofs_is_1;
+`else
+assign pred_fire = 1'b0;
+`endif
+
+// to EX : the jump/branch entering EX was predicted taken
+always @ (posedge clk or negedge rst_n) begin
+	if (~rst_n)
+		pred_ex <= 1'b0;
+	else if (rst_pipe)
+		pred_ex <= 1'b0;
+	else if (~stall)
+		pred_ex <= pred_fire | pred_id;
+end
+
+// kill the fall-through instruction of a predicted jump
+reg pred_kill_armed;
+reg [31:2] pred_kill_pc;
+wire id_advance = ~stall & ~stall_ld;
+
+always @ (posedge clk or negedge rst_n) begin
+	if (~rst_n)
+		pred_kill_armed <= 1'b0;
+	else if (rst_pipe | pc_start | jmp_cond | exc_redirect)
+		pred_kill_armed <= 1'b0;
+	else if (pred_fire)
+		pred_kill_armed <= 1'b1;
+	else if (id_advance & (pc_id != pred_kill_pc))
+		pred_kill_armed <= 1'b0;
+end
+
+always @ (posedge clk or negedge rst_n) begin
+	if (~rst_n)
+		pred_kill_pc <= 30'd0;
+	else if (pred_fire)
+		pred_kill_pc <= pc_id + 30'd1;
+end
+
+assign pred_kill_id = pred_kill_armed & (pc_id == pred_kill_pc);
+
+// ---------------------------------------------------------------------------
+// IF-stage BTB (2026-11-12)
+//
+// Looked up with pc_if in the fetch cycle.  On a hit with counter[1] = 1 the
+// next fetch PC is the stored target (pc_if_pre mux), so a correctly
+// predicted taken jal/branch has no penalty.  The prediction bit travels
+// with the instruction (pred_id -> pred_ex) and EX checks it:
+//   predicted, branch not taken  -> redirect to pc+4 (penalty 2)
+//   not predicted, taken         -> redirect to target as before
+// Entries are only written for jal/branches that executed in EX, with full
+// tags, and the BTB is flushed on fence.i / pc_start / rst_pipe, so a hit is
+// always a jal/branch at that PC whose target (pc-relative) is the stored
+// one: the target never has to be compared in EX.
+// Training is registered once (btb_u_*) to keep EX's branch compare off the
+// BTB write path.
+// ---------------------------------------------------------------------------
+`ifdef IF_BTB_PRED
+localparam BTB_W = `BTB_IDX_W;
+localparam BTB_N = 1 << BTB_W;
+
+reg [31:BTB_W+2] btb_tag [0:BTB_N-1];
+reg [31:2]       btb_tgt_ram [0:BTB_N-1];
+reg [1:0]        btb_cnt [0:BTB_N-1];
+reg [BTB_N-1:0]  btb_vld;
+
+// lookup (fetch)
+wire [BTB_W-1:0] btb_ridx = pc_if[BTB_W+1:2];
+wire btb_rhit = btb_vld[btb_ridx] & (btb_tag[btb_ridx] == pc_if[31:BTB_W+2]);
+assign btb_take = btb_rhit & btb_cnt[btb_ridx][1];
+assign btb_tgt = btb_tgt_ram[btb_ridx];
+
+// training (one cycle after EX)
+reg btb_u_v;
+reg btb_u_taken;
+reg btb_u_jal;
+reg [31:2] btb_u_pc;
+reg [31:2] btb_u_tgt;
+wire btb_clr = btb_flush | pc_start | rst_pipe;
+
+always @ (posedge clk or negedge rst_n) begin
+	if (~rst_n) begin
+		btb_u_v <= 1'b0;
+		btb_u_taken <= 1'b0;
+		btb_u_jal <= 1'b0;
+		btb_u_pc <= 30'd0;
+		btb_u_tgt <= 30'd0;
+	end
+	else begin
+		btb_u_v <= btb_upd_valid & ~btb_clr;
+		btb_u_taken <= btb_upd_taken;
+		btb_u_jal <= btb_upd_jal;
+		btb_u_pc <= btb_upd_pc;
+		btb_u_tgt <= btb_upd_target;
+	end
+end
+
+wire [BTB_W-1:0] btb_widx = btb_u_pc[BTB_W+1:2];
+wire btb_whit = btb_vld[btb_widx] & (btb_tag[btb_widx] == btb_u_pc[31:BTB_W+2]);
+wire [1:0] btb_wcnt = btb_cnt[btb_widx];
+wire [1:0] btb_ncnt = btb_u_jal ? 2'b11 :
+                      ~btb_whit ? 2'b10 : // new entry : weakly taken
+                      btb_u_taken ? ((btb_wcnt == 2'b11) ? 2'b11 : btb_wcnt + 2'd1) :
+                                    ((btb_wcnt == 2'b00) ? 2'b00 : btb_wcnt - 2'd1);
+// allocate only on taken, update counters of existing entries
+wire btb_we = btb_u_v & (btb_whit | btb_u_taken);
+
+always @ (posedge clk) begin
+	if (btb_we) begin
+		btb_tag[btb_widx] <= btb_u_pc[31:BTB_W+2];
+		btb_tgt_ram[btb_widx] <= btb_u_tgt;
+		btb_cnt[btb_widx] <= btb_ncnt;
+	end
+end
+
+always @ (posedge clk or negedge rst_n) begin
+	if (~rst_n)
+		btb_vld <= {BTB_N{1'b0}};
+	else if (btb_clr)
+		btb_vld <= {BTB_N{1'b0}};
+	else if (btb_we)
+		btb_vld[btb_widx] <= 1'b1;
+end
+assign pred_a_mode = 1'b0;
+
+// (1) The fetch made while a predicted jump/branch is held in ID (pc_if = the
+// predicted target, its result is discarded because pc_id does not
+// advance) must not start an I$ refill.  The original design only ever
+// fetches pc+4 there, i.e. the same or the adjacent line; a refill of the
+// target (any line) could evict the held instruction's own line before it
+// is refetched, or start a second miss in a state the icdc state machine
+// does not expect (IDST_SYAD).  The target is fetched again in the cycle
+// the jump leaves ID and an I$ miss is handled normally from there.
+// (registered : qualifies ilu_stage's tag check one cycle later)
+always @ (posedge clk or negedge rst_n) begin
+	if (~rst_n)
+		btb_spec_fetch <= 1'b0;
+	else
+		btb_spec_fetch <= pred_id & ~ic_stall_dly & (ic_stall | stall | stall_ld) |
+		                  // IDST_SYAD : the I$ refill that started together with a
+		                  // D$ stall is over, the D$ stall still runs, ID holds the
+		                  // refilled instruction.  The original design never misses
+		                  // here (no jump can land on an uncached line exactly when
+		                  // an older load starts a D$ stall; the sequential next
+		                  // fetch is in the refilled line) and the state machine
+		                  // has no path for it (SYAD -> ISWD "not occured" loses the
+		                  // ID instruction).  With the BTB the target of a branch in
+		                  // ID can be such a line (target = its last word, the next
+		                  // fetch crosses).  The fetch is redone when ID advances.
+		                  (cache_miss_next == `IDST_SYAD);
+end
+`else
+always @ (posedge clk) btb_spec_fetch <= 1'b0;
+assign btb_take = 1'b0;
+assign btb_tgt = 30'd0;
+assign pred_a_mode = 1'b1;
+`endif
 
 endmodule
 

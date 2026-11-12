@@ -249,6 +249,18 @@ wire [1:0] g_interrupt_priv = `M_MODE; // temp
 wire [1:0] g_current_priv = `M_MODE; // temp
 //wire g_interrupt;
 wire post_jump_cmd_cond;
+// ID-stage jump prediction (2026-11-12)
+wire pred_ex;
+wire pred_hit_ex;
+wire pred_block_ex;
+wire pred_a_mode;
+wire btb_upd_valid;
+wire btb_upd_taken;
+wire btb_upd_jal;
+wire [31:2] btb_upd_pc;
+wire [31:2] btb_upd_target;
+wire btb_flush;
+wire btb_spec_fetch;
 //wire csr_meie;
 wire csr_msie; // declared 2026-11-05 (was implicit; default_nettype none error in yosys)
 
@@ -444,6 +456,18 @@ if_stage #(.IWIDTH(IWIDTH)) if_stage (
     //.g_interrupt_1shot(g_interrupt_1shot),
     .post_jump_cmd_cond(post_jump_cmd_cond),
     .g_exception(g_exception),
+	.pred_hit_ex(pred_hit_ex),
+	.pred_block_ex(pred_block_ex),
+	.jmp_regs_flush(jmp_regs_flush),
+	.pred_ex(pred_ex),
+	.pred_a_mode(pred_a_mode),
+	.btb_upd_valid(btb_upd_valid),
+	.btb_upd_taken(btb_upd_taken),
+	.btb_upd_jal(btb_upd_jal),
+	.btb_upd_pc(btb_upd_pc),
+	.btb_upd_target(btb_upd_target),
+	.btb_flush(btb_flush),
+	.btb_spec_fetch(btb_spec_fetch),
 	.i_ram_radr(i_ram_radr),
 	.i_ram_rdata(i_ram_rdata),
 	.i_ram_wadr(i_ram_wadr),
@@ -649,6 +673,16 @@ ex_stage ex_stage (
 	.interrupt_condition_ex(interrupt_condition_ex),
 	.timer_condition_ex(timer_condition_ex),
 	.jump_between_stall(jump_between_stall),
+	.pred_ex(pred_ex),
+	.pred_a_mode(pred_a_mode),
+	.btb_upd_valid(btb_upd_valid),
+	.btb_upd_taken(btb_upd_taken),
+	.btb_upd_jal(btb_upd_jal),
+	.btb_upd_pc(btb_upd_pc),
+	.btb_upd_target(btb_upd_target),
+	.btb_flush(btb_flush),
+	.pred_hit_ex(pred_hit_ex),
+	.pred_block_ex(pred_block_ex),
 	.csr_mtvec_ex(csr_mtvec_ex),
 	.csr_mepc_ex(csr_mepc_ex),
 	.csr_sepc_ex(csr_sepc_ex),
@@ -942,6 +976,7 @@ ilu_stage #(.IWIDTH(IWIDTH)) ilu_stage (
 	//.pc_id(pc_id),
 	.pc_id_pre(pc_id_pre),
 	.pc_valid_id(pc_valid_id),
+	.btb_spec_fetch(btb_spec_fetch),
 	.ic_ram_wadr_all(ic_ram_wadr_all),
 	.fencei_dcflush_end(fencei_dcflush_end),
 	.stall(stall),

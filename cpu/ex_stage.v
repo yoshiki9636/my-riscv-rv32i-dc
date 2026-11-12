@@ -106,6 +106,18 @@ module ex_stage(
     output interrupt_condition_ex,
     output timer_condition_ex,
 	output jump_between_stall,
+	// ID-stage jump prediction (2026-11-12)
+	input pred_ex,          // the jump/branch in EX was predicted taken in ID
+	output pred_hit_ex,     // prediction confirmed (no EX redirect needed)
+	output pred_block_ex,   // ID must not predict in this cycle
+	input pred_a_mode,      // 1: ID-stage static prediction (A), 0: IF-stage BTB (B)
+	// IF-stage BTB update / flush (2026-11-12)
+	output btb_upd_valid,
+	output btb_upd_taken,
+	output btb_upd_jal,
+	output [31:2] btb_upd_pc,
+	output [31:2] btb_upd_target,
+	output btb_flush,
 	output [31:2] csr_mepc_ex,
 	output [31:2] csr_sepc_ex,
 	// from somewhere...
@@ -704,6 +716,8 @@ csr_array csr_array(
 	.pc_ex(pc_ex),
 	.jmp_adr_if(jmp_adr_if),
 	.jmp_condition_ex(jmp_condition_ex),
+	.pred_hit_ex(pred_hit_ex),
+	.pred_adr_ex(jump_adr[31:2]),
 	.fencei_condition_ex(fencei_cond),
 	.mret_condition_ex(mret_condition_ex),
 `ifdef SUPPORT_M
@@ -956,20 +970,58 @@ always @ ( posedge clk or negedge rst_n) begin
 		fencei_ret_adr <= pc_ex + 30'd1;
 end
 
-assign jmp_adr_ex = fencei_cond ? fencei_ret_adr : jump_adr[31:2];
+// ID-stage jump prediction (2026-11-12): a branch predicted taken in ID
+// (pred_ex) that turns out NOT taken is redirected back to the
+// fall-through PC (pc_ex + 4).  The select only uses registered signals
+// (pred_ex & cmd_br_ex), so the branch compare stays off this path; when the
+// predicted branch IS taken, jmp_adr_ex is unused (no EX redirect).
+assign jmp_adr_ex = fencei_cond ? fencei_ret_adr :
+                    (pred_ex & cmd_br_ex) ? pc_ex + 30'd1 :
+                    jump_adr[31:2];
 
-//wire jmp_condition_ex_pre = ~jmp_purge_ma & (
-//wire jmp_condition_ex_pre = ~jmp_purge_ma & ~jmp_purge_ma2 & (
-wire jmp_condition_ex_pre = ~intexp_purge_ex & ~jmp_purge_ma & ~jmp_purge_ma2 & ~fencei_cond & ~fencei_wb_purge & (
-                        cmd_jal_ex | cmd_jalr_ex | cmd_br_ex &
+wire br_taken_ex = cmd_br_ex &
 						(  br_seq  & (alu_code_ex == 3'b000) |
 					      ~br_seq  & (alu_code_ex == 3'b001) |
 					       br_slt  & (alu_code_ex == 3'b100) |
 					      ~br_slt  & (alu_code_ex == 3'b101) |
 					       br_sltu & (alu_code_ex == 3'b110) |
-					      ~br_sltu & (alu_code_ex == 3'b111) ));
+					      ~br_sltu & (alu_code_ex == 3'b111) );
+
+wire jmp_ok_ex = ~intexp_purge_ex & ~jmp_purge_ma & ~jmp_purge_ma2 & ~fencei_cond & ~fencei_wb_purge;
+
+//wire jmp_condition_ex_pre = ~jmp_purge_ma & (
+//wire jmp_condition_ex_pre = ~jmp_purge_ma & ~jmp_purge_ma2 & (
+// not predicted : taken jal/jalr/branch redirects in EX (as before)
+// predicted     : only a mispredicted branch (not taken) redirects
+// jalr is never predicted (always resolved here)
+wire jmp_condition_ex_pre = jmp_ok_ex & (
+                        cmd_jalr_ex |
+                        ~pred_ex & (cmd_jal_ex | br_taken_ex) |
+                         pred_ex & cmd_br_ex & ~br_taken_ex );
+
+// predicted jump confirmed : IF already fetches the target, nothing to purge
+// here (ID killed the fall-through slot).  Used for mepc (post_pc_ex /
+// post_jump_cmd_cond) exactly like a taken jump.
+// (A only : with the IF-stage BTB the target follows the jump directly, there
+//  is no killed slot)
+assign pred_hit_ex = pred_a_mode & ~stall & jmp_ok_ex & pred_ex & (cmd_jal_ex | br_taken_ex);
+
+// ID must not predict while the ID instruction may be on a wrong path or
+// shadowed by fence.i
+assign pred_block_ex = jmp_purge_ma | jmp_purge_ma2 | fencei_wb_purge | cmd_fencei_ex;
 
 assign jmp_condition_ex = ~stall & jmp_condition_ex_pre;
+
+// IF-stage BTB training (registered again in if_stage, off the timing path).
+// Only jal / conditional branches that really execute here are recorded, so
+// a BTB entry always describes a jal/branch at that PC with its (pc-relative,
+// fixed) target.  Entries are flushed by fence.i (code may have changed).
+assign btb_upd_valid  = ~stall & jmp_ok_ex & (cmd_br_ex | cmd_jal_ex);
+assign btb_upd_taken  = cmd_jal_ex | br_taken_ex;
+assign btb_upd_jal    = cmd_jal_ex;
+assign btb_upd_pc     = pc_ex;
+assign btb_upd_target = jump_adr[31:2];
+assign btb_flush      = (~stall & cmd_fencei_ex) | fencei_cond;
 
 // ecall
 //wire ecall_condition_ex_pre = ~jmp_purge_ma & ((cmd_ecall_ex & csr_rmie) | illegal_ops_ex);
