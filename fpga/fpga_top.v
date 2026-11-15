@@ -22,12 +22,27 @@
     `define FPGA_CONFIG_ERROR
   `endif
 `endif
+`ifdef BOARD_TANG_PRIMER_25K
+  `ifndef MEM_SDRAM
+    // Tang Primer 25K : only MEM_SDRAM is supported
+    `define FPGA_CONFIG_ERROR
+  `endif
+`elsif MEM_SDRAM
+    // MEM_SDRAM is supported on Tang Primer 25K only
+    `define FPGA_CONFIG_ERROR
+`endif
 
 // cache / scratch size per board
 `ifdef BOARD_CMOD_A7
   `define FT_IWIDTH 10
   `define FT_DWIDTH 10
   `define FT_SWIDTH 4
+`elsif BOARD_TANG_PRIMER_25K
+  // GW5A-25 (23K LUT4) : I$ / D$ 4KB. the entry valid / dirty bits are flip-flops
+  //   (2**(WIDTH-2) entries each) : 12 does not fit (LUT 92%, CLS 98%, PnR fails)
+  `define FT_IWIDTH 10
+  `define FT_DWIDTH 10
+  `define FT_SWIDTH 13
 `else // BOARD_ARTY_A7
   `define FT_IWIDTH 12
   `define FT_DWIDTH 12
@@ -42,10 +57,24 @@
 //                         (syn/lab4_arty_qspi_io_pins.xdc)
 //   Arty A7 + MEM_MIG   : gpio[5:0], rx2/tx2, SPI pins
 //                         (syn/lab4_arty_mig_io_pins.xdc)
+//   Tang Primer 25K + MEM_SDRAM : gpio[5:0], SPI pins, no rx2/tx2 pins,
+//                         no init_uart / init_cpu_start pins (fpga_config.vh FT_TANG_INIT_*)
+//                         (syn/lab6_tang_sdram_io_pins.cst)
+// reset button : CMOD A7 / Tang Primer 25K (H11, pressed = high, PULL_MODE=DOWN) : rst_p (active high)
+`ifdef BOARD_CMOD_A7
+  `define FT_RST_ACTIVE_HIGH
+`elsif BOARD_TANG_PRIMER_25K
+  `define FT_RST_ACTIVE_HIGH
+`endif
+
 `ifdef BOARD_CMOD_A7
   `define FT_NO_SPI_PINS
   `define FT_NO_UART2_PINS
   `define FT_GPIO_W 4
+`elsif BOARD_TANG_PRIMER_25K
+  `define FT_NO_UART2_PINS
+  `define FT_NO_INIT_PINS
+  `define FT_GPIO_W 6
 `elsif MEM_QSPI
   `define FT_NO_SPI_PINS
   `define FT_GPIO_W 6
@@ -59,8 +88,8 @@ module fpga_top
       parameter SWIDTH = `FT_SWIDTH)
     (
 	input clkin,
-`ifdef BOARD_CMOD_A7
-	input rst_p, // CMOD A7 : push button, active high
+`ifdef FT_RST_ACTIVE_HIGH
+	input rst_p, // CMOD A7 / Tang Primer 25K : push button, active high
 `else
 	input rst_n,
 `endif
@@ -78,8 +107,10 @@ module fpga_top
 	output [`FT_GPIO_W-1:0] gpio_o,
 	output [`FT_GPIO_W-1:0] gpio_en,
 `endif // FPGA_MODE
+`ifndef FT_NO_INIT_PINS
 	input [1:0] init_uart, // uart_term reset value select (see io_uart_out.v)
 	input init_cpu_start, // 1 at reset release : auto start cpu from FT_INIT_START_ADR
+`endif
 `ifndef FT_NO_UART2_PINS
   `ifdef FPGA_MODE
 	inout rx2,
@@ -113,6 +144,23 @@ module fpga_top
   `endif // FPGA_MODE
 	input [1:0] init_latency,
 	input init_qspicmd
+`elsif MEM_SDRAM
+// sdram signal (Tang Primer 25K SDRAM module)
+	output sdram_clk,
+	output sdram_cs,
+	output sdram_ras,
+	output sdram_cas,
+	output sdram_we,
+	output [1:0] sdram_ba,
+	output [12:0] sdram_adr,
+	output [1:0] sdram_dqm,
+  `ifdef FPGA_MODE
+	inout [15:0] sdram_dq
+  `else // FPGA_MODE
+	input [15:0] sdram_dq_i,
+	output [15:0] sdram_dq_o,
+	output sdram_dq_en
+  `endif // FPGA_MODE
 `else // MEM_MIG
 // ddr signal
 	inout [15:0] ddr3_dq,
@@ -139,8 +187,8 @@ module fpga_top
 fpga_config_error_cmod_a7_has_no_ddr3 fpga_config_error ();
 `endif
 
-`ifdef BOARD_CMOD_A7
-// CMOD A7 : active high reset button
+`ifdef FT_RST_ACTIVE_HIGH
+// CMOD A7 / Tang Primer 25K : active high reset button
 wire rst_n = ~rst_p;
 `endif
 
@@ -229,6 +277,14 @@ wire qspi_write_finish; // input
 wire [31:0] qspi_write_adr; // output
 wire [31:0] qspi_write_data; // output
 wire [2:0] qspi_dbg_bpoint_en; // not used
+`elsif MEM_SDRAM
+// sdram_if signals
+wire sdram_init_done; // output (mclk domain)
+  `ifdef FPGA_MODE
+wire [15:0] sdram_dq_i; // input
+wire [15:0] sdram_dq_o; // output
+wire sdram_dq_en; // output
+  `endif // FPGA_MODE
 `else // MEM_MIG
 // mig i/f signals
 wire [27:0] app_addr; // output
@@ -368,12 +424,51 @@ wire clk_200mhz; // Arty A7 : MIG reference clock
 
  // Instantiation of the clocking network
  //--------------------------------------
+`ifdef MEM_SDRAM
+wire mclk_pll; // SDRAM controller clock (also SDRAM chip clock, 0deg)
+`endif
 `ifndef FPGA_MODE
 // LSI mode : no clk_wiz_0, clkin is used as clk directly
 assign clk = clkin;
 assign locked = 1'b1;
   `ifdef MEM_MIG
 assign clk_200mhz = clkin; // MIG is FPGA only : not meaningful in LSI mode
+  `endif
+  `ifdef MEM_SDRAM
+assign mclk_pll = clkin;
+  `endif
+`elsif BOARD_TANG_PRIMER_25K
+  // Tang Primer 25K : 50MHz in, Gowin PLL (module name / freq. : fpga_config.vh TANG_PLL_*)
+  //   clkout0 = mclk (= sdram_clk), clkout1 = clk
+  //   mdclk : clock of the PLL init logic (PLL_INIT, MDRP) in the IP wrapper : clkin
+  `ifdef FT_PLL_NO_LOCK
+  // PLL IP without lock / reset ports : locked is made by a wait counter
+  `FT_PLL_MODULE clknetwork
+   (
+    .clkout0            (mclk_pll),
+    .clkout1            (clk),
+    .mdclk              (clkin),
+    .clkin              (clkin)
+    );
+  // lock substitute : 1 after 2^FT_PLL_WAIT_W clkin cycles from rst_n release
+  reg [`FT_PLL_WAIT_W:0] pll_wait_cntr;
+  always @ (posedge clkin or negedge rst_n) begin
+	if (~rst_n)
+		pll_wait_cntr <= { (`FT_PLL_WAIT_W+1){ 1'b0 } };
+	else if (~pll_wait_cntr[`FT_PLL_WAIT_W])
+		pll_wait_cntr <= pll_wait_cntr + { { `FT_PLL_WAIT_W{ 1'b0 } }, 1'b1 };
+  end
+  assign locked = pll_wait_cntr[`FT_PLL_WAIT_W];
+  `else
+  `FT_PLL_MODULE clknetwork
+   (
+    .clkout0            (mclk_pll),
+    .clkout1            (clk),
+    .lock               (locked),
+    .reset              (~rst_n),
+    .mdclk              (clkin),
+    .clkin              (clkin)
+    );
   `endif
 `elsif BOARD_CMOD_A7
   // CMOD A7 : 12MHz in, clk_out1 = clk (48MHz)
@@ -410,6 +505,39 @@ assign clk_200mhz = clkin; // MIG is FPGA only : not meaningful in LSI mode
 wire mclk = clk;
 wire mrst_n = rst_n;
 wire init_calib_complete = 1'b1;
+`elsif MEM_SDRAM
+// SDRAM version : memory side runs on mclk (PLL clkout0)
+wire mclk = mclk_pll;
+// SDRAM chip clock : mclk itself (0deg, no phase adjustment : see sdram_if.v)
+assign sdram_clk = mclk;
+
+// mclk domain reset : asserted while rst_n = 0 or PLL unlocked, released synchronously
+reg [2:0] mrst_sync;
+always @ (posedge mclk or negedge rst_n) begin
+	if (~rst_n)
+		mrst_sync <= 3'b000;
+	else if (~locked)
+		mrst_sync <= 3'b000;
+	else
+		mrst_sync <= { mrst_sync[1:0], 1'b1 };
+end
+wire mrst_n = mrst_sync[2];
+
+// sdram init done (mclk) -> clk domain
+reg [1:0] sdram_init_done_sync;
+always @ (posedge clk or negedge rst_n) begin
+	if (~rst_n)
+		sdram_init_done_sync <= 2'b00;
+	else
+		sdram_init_done_sync <= { sdram_init_done_sync[0], sdram_init_done };
+end
+wire init_calib_complete = sdram_init_done_sync[1];
+
+  `ifdef FPGA_MODE
+// sdram dq tri-state buffer
+assign sdram_dq = sdram_dq_en ? sdram_dq_o : 16'hzzzz;
+assign sdram_dq_i = sdram_dq;
+  `endif // FPGA_MODE
 `else // MEM_MIG
 wire sys_clk_i = clkin; // input
 //wire sys_clk_i = clk_166mhz; // input
@@ -493,6 +621,12 @@ wire [5:`FT_GPIO_W] gpio_i_nc = { (6-`FT_GPIO_W){ 1'b0 }}; // not used
 wire [5:`FT_GPIO_W] gpio_o_nc; // not used
 wire [5:`FT_GPIO_W] gpio_en_nc; // not used
   `endif // FPGA_MODE
+`endif
+
+`ifdef FT_NO_INIT_PINS
+// Tang Primer 25K : init_uart / init_cpu_start are fixed values (fpga_config.vh)
+wire [1:0] init_uart = `FT_TANG_INIT_UART;
+wire init_cpu_start = `FT_TANG_INIT_CPU_START;
 `endif
 
 // io_led : uart2 pin control / read only inputs
@@ -775,6 +909,18 @@ dram_top dram_top (
 	.write_finish(qspi_write_finish),
 	.write_adr(qspi_write_adr),
 	.write_data(qspi_write_data),
+`elsif MEM_SDRAM
+	.sdram_init_done(sdram_init_done),
+	.sdram_cs(sdram_cs),
+	.sdram_ras(sdram_ras),
+	.sdram_cas(sdram_cas),
+	.sdram_we(sdram_we),
+	.sdram_ba(sdram_ba),
+	.sdram_adr(sdram_adr),
+	.sdram_dqm(sdram_dqm),
+	.sdram_dq_i(sdram_dq_i),
+	.sdram_dq_o(sdram_dq_o),
+	.sdram_dq_en(sdram_dq_en),
 `else // MEM_MIG
 	.app_addr(app_addr),
 	.app_cmd(app_cmd),
@@ -852,7 +998,7 @@ qspi_if qspi_if (
 	.dma_io_rdata_in(dma_io_rdata_in_7),
 	.dma_io_rdata(dma_io_rdata)
 	);
-`else // MEM_MIG
+`elsif MEM_MIG
 mig_7series_0 mig_7series_0 (
 	.ddr3_dq(ddr3_dq),
 	.ddr3_dqs_n(ddr3_dqs_n),

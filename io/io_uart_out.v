@@ -8,6 +8,8 @@
  * @version		0.1
  */
 
+`include "fpga_config.vh"
+
 module io_uart_out(
 	input clk,
 	input rst_n,
@@ -89,10 +91,23 @@ end
 //   1 : clk 48MHz (CMOD A7), 921600bps
 //   2 : clk 50MHz (Arty A7), 115200bps
 //   3 : clk 48MHz (CMOD A7), 115200bps
+`ifdef BOARD_TANG_PRIMER_25K
+// Tang Primer 25K : clk depends on the PLL preset (fpga_config.vh TANG_PLL_*)
+//   0 / 1 : 921600bps, 2 / 3 : 115200bps
+//`define TERM_0 `FT_UART_TERM_921600
+//`define TERM_1 `FT_UART_TERM_921600
+//`define TERM_2 `FT_UART_TERM_115200
+//`define TERM_3 `FT_UART_TERM_115200
+`define TERM_0 `FT_UART_TERM_115200
+`define TERM_1 `FT_UART_TERM_115200
+`define TERM_2 `FT_UART_TERM_115200
+`define TERM_3 `FT_UART_TERM_115200
+`else
 `define TERM_0 16'd54
 `define TERM_1 16'd52
 `define TERM_2 16'd434
 `define TERM_3 16'd417
+`endif
 // clk 50MHz, 115200bps
 //`define TERM_0 16'd434
 // clk 48MHz, 115200bps

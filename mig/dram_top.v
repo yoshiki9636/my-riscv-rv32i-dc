@@ -1,6 +1,6 @@
 /*
  * My RISC-V RV32I CPU
- *   dram interface top (MEM_MIG : MIG / MEM_QSPI : qspi_if)
+ *   dram interface top (MEM_MIG : MIG / MEM_QSPI : qspi_if / MEM_SDRAM : sdram_if)
  *    Verilog code
  * @auther		Yoshiki Kurokawa <yoshiki.k963@gmail.com>
  * @copylight	2024 Yoshiki Kurokawa
@@ -28,6 +28,22 @@ module dram_top (
 	input write_finish,
 	output [31:0] write_adr,
 	output [31:0] write_data,
+`elsif MEM_SDRAM
+	// memory side clock (SDRAM version : sdram_if runs on mclk only)
+	input mclk,
+	input mrst_n,
+	output sdram_init_done, // mclk domain
+	// SDRAM pins
+	output sdram_cs,
+	output sdram_ras,
+	output sdram_cas,
+	output sdram_we,
+	output [1:0] sdram_ba,
+	output [12:0] sdram_adr,
+	output [1:0] sdram_dqm,
+	input [15:0] sdram_dq_i,
+	output [15:0] sdram_dq_o,
+	output sdram_dq_en,
 `else // MEM_MIG
 	// mig ingerface
 	input mclk,
@@ -302,6 +318,37 @@ qspi_line_if qspi_line_if (
 	.write_finish(write_finish),
 	.write_adr(write_adr),
 	.write_data(write_data)
+	);
+`elsif MEM_SDRAM
+// SDR SDRAM interface (replacement of mig_if + MIG, single clock : mclk)
+sdram_if #(
+	.MCLK_MHZ(`FT_MCLK_MHZ),
+	.CAS_LAT(`FT_SDRAM_CAS_LAT),
+	.RD_LAT(`FT_SDRAM_RD_LAT),
+	.OUT_NEGEDGE(`FT_SDRAM_OUT_NEGEDGE)
+	) sdram_if (
+	.mclk(mclk),
+	.mrst_n(mrst_n),
+	.req_rnext(req_rnext),
+	.req_rqempty(req_rqempty),
+	.req_qraddr(req_qraddr),
+	.req_rd_bwt(req_rd_bwt),
+	.wdq_rnext(wdq_rnext),
+	.wdq_rqempty(wdq_rqempty),
+	.wdq_mask_rdata(wdq_mask_rdata),
+	.rdq_wen(rdq_wen),
+	.rdq_wdata(rdq_wdata),
+	.init_done(sdram_init_done),
+	.sdram_cs(sdram_cs),
+	.sdram_ras(sdram_ras),
+	.sdram_cas(sdram_cas),
+	.sdram_we(sdram_we),
+	.sdram_ba(sdram_ba),
+	.sdram_adr(sdram_adr),
+	.sdram_dqm(sdram_dqm),
+	.sdram_dq_i(sdram_dq_i),
+	.sdram_dq_o(sdram_dq_o),
+	.sdram_dq_en(sdram_dq_en)
 	);
 `else // MEM_MIG
 // MIG interface
