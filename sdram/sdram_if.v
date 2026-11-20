@@ -15,7 +15,9 @@
 //   rdq : 128bit read line (no back pressure, same as mig_if)
 //
 // SDRAM : 16bit SDR SDRAM x 2 chips (Tang Primer 25K SDRAM module)
-//   sdram_cs selects the chip in the same way as sdram_sample (0 : chip0, 1 : chip1)
+//   sdram_cs[1:0] : chip select per chip, active low (cs[0] : chip0, cs[1] : chip1)
+//     cs[0] is the same signal as the former 1bit sdram_cs (sdram_sample style :
+//     0 : chip0, 1 : chip1), cs[1] = ~cs[0]. Both are output registers.
 //   byte address mapping (64MB) :
 //     [25] cs, [24:12] row(13bit), [11:10] bank, [9:1] column, [0] byte
 //   one 128bit line = 8 x 16bit = one BL8 burst (column [2:0] = 0)
@@ -75,7 +77,7 @@ module sdram_if
 	output init_done,
 
 	// SDRAM pins (tri-state buffer of dq is in fpga_top)
-	output sdram_cs,
+	output [1:0] sdram_cs,
 	output sdram_ras,
 	output sdram_cas,
 	output sdram_we,
@@ -419,17 +421,18 @@ assign rdq_wdata = rd_line;
 assign init_done = init_done_r;
 
 // ---- SDRAM output stage ----
-//   { cs, ras, cas, we, ba[1:0], adr[12:0], dqm[1:0], dq[15:0], dq_en } = 38bit
-wire [37:0] out_pos = { o_cs, o_ras, o_cas, o_we, o_ba, o_adr, o_dqm, o_dq, o_dq_en };
-wire [37:0] out_pin;
+//   { cs[1:0], ras, cas, we, ba[1:0], adr[12:0], dqm[1:0], dq[15:0], dq_en } = 39bit
+//   cs[1] = ~cs[0] is made before the output register (no logic after the register)
+wire [38:0] out_pos = { ~o_cs, o_cs, o_ras, o_cas, o_we, o_ba, o_adr, o_dqm, o_dq, o_dq_en };
+wire [38:0] out_pin;
 
 generate
 if (OUT_NEGEDGE != 0) begin : g_out_neg
 	// falling edge output registers (should be packed into IOB)
-	reg [37:0] out_neg;
+	reg [38:0] out_neg;
 	always @ (negedge mclk or negedge mrst_n) begin
-		if (~mrst_n) // NOP, cs 0, dqm 11, dq_en 0 (same as o_* reset values)
-			out_neg <= { 1'b0, 1'b1, 1'b1, 1'b1, 2'd0, 13'd0, 2'b11, 16'd0, 1'b0 };
+		if (~mrst_n) // NOP, cs 2'b10 (chip0), dqm 11, dq_en 0 (same as o_* reset values)
+			out_neg <= { 2'b10, 1'b1, 1'b1, 1'b1, 2'd0, 13'd0, 2'b11, 16'd0, 1'b0 };
 		else
 			out_neg <= out_pos;
 	end

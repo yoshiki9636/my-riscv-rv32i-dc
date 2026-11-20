@@ -94,12 +94,9 @@ end
 `ifdef BOARD_TANG_PRIMER_25K
 // Tang Primer 25K : clk depends on the PLL preset (fpga_config.vh TANG_PLL_*)
 //   0 / 1 : 921600bps, 2 / 3 : 115200bps
-//`define TERM_0 `FT_UART_TERM_921600
-//`define TERM_1 `FT_UART_TERM_921600
-//`define TERM_2 `FT_UART_TERM_115200
-//`define TERM_3 `FT_UART_TERM_115200
-`define TERM_0 `FT_UART_TERM_115200
-`define TERM_1 `FT_UART_TERM_115200
+//   init_uart_pin (G10, pull-down : open = 0) -> init_uart[1], init_uart[0] = 0
+`define TERM_0 `FT_UART_TERM_921600
+`define TERM_1 `FT_UART_TERM_921600
 `define TERM_2 `FT_UART_TERM_115200
 `define TERM_3 `FT_UART_TERM_115200
 `else

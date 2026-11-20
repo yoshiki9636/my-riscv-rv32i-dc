@@ -34,7 +34,7 @@ module dram_top (
 	input mrst_n,
 	output sdram_init_done, // mclk domain
 	// SDRAM pins
-	output sdram_cs,
+	output [1:0] sdram_cs,
 	output sdram_ras,
 	output sdram_cas,
 	output sdram_we,

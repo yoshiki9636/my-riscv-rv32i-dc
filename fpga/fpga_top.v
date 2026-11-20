@@ -57,8 +57,9 @@
 //                         (syn/lab4_arty_qspi_io_pins.xdc)
 //   Arty A7 + MEM_MIG   : gpio[5:0], rx2/tx2, SPI pins
 //                         (syn/lab4_arty_mig_io_pins.xdc)
-//   Tang Primer 25K + MEM_SDRAM : gpio[5:0], SPI pins, no rx2/tx2 pins,
-//                         no init_uart / init_cpu_start pins (fpga_config.vh FT_TANG_INIT_*)
+//   Tang Primer 25K + MEM_SDRAM : gpio[2:0], SPI pins, init_uart (1 pin = init_uart[1]),
+//                         sdram_cs[1:0], no rx2/tx2 pins,
+//                         no init_cpu_start pin (fpga_config.vh FT_TANG_INIT_CPU_START)
 //                         (syn/lab6_tang_sdram_io_pins.cst)
 // reset button : CMOD A7 / Tang Primer 25K (H11, pressed = high, PULL_MODE=DOWN) : rst_p (active high)
 `ifdef BOARD_CMOD_A7
@@ -73,13 +74,19 @@
   `define FT_GPIO_W 4
 `elsif BOARD_TANG_PRIMER_25K
   `define FT_NO_UART2_PINS
-  `define FT_NO_INIT_PINS
-  `define FT_GPIO_W 6
+  `define FT_NO_INIT_CPU_START_PIN
+  `define FT_INIT_UART_1PIN // init_uart pin = init_uart[1] (0 : 921600bps, 1 : 115200bps), init_uart[0] = 0
+  `define FT_GPIO_W 3
 `elsif MEM_QSPI
   `define FT_NO_SPI_PINS
   `define FT_GPIO_W 6
 `else
   `define FT_GPIO_W 6
+`endif
+`ifdef BOARD_CMOD_A7
+  `define FT_GPIO_NC // gpio[5:FT_GPIO_W] are not connected to pins
+`elsif BOARD_TANG_PRIMER_25K
+  `define FT_GPIO_NC
 `endif
 
 module fpga_top
@@ -107,8 +114,12 @@ module fpga_top
 	output [`FT_GPIO_W-1:0] gpio_o,
 	output [`FT_GPIO_W-1:0] gpio_en,
 `endif // FPGA_MODE
-`ifndef FT_NO_INIT_PINS
+`ifdef FT_INIT_UART_1PIN
+	input init_uart_pin, // init_uart[1] : uart_term reset value select (see io_uart_out.v)
+`else
 	input [1:0] init_uart, // uart_term reset value select (see io_uart_out.v)
+`endif
+`ifndef FT_NO_INIT_CPU_START_PIN
 	input init_cpu_start, // 1 at reset release : auto start cpu from FT_INIT_START_ADR
 `endif
 `ifndef FT_NO_UART2_PINS
@@ -147,7 +158,7 @@ module fpga_top
 `elsif MEM_SDRAM
 // sdram signal (Tang Primer 25K SDRAM module)
 	output sdram_clk,
-	output sdram_cs,
+	output [1:0] sdram_cs, // active low, cs[0] : chip0, cs[1] : chip1
 	output sdram_ras,
 	output sdram_cas,
 	output sdram_we,
@@ -612,8 +623,8 @@ wire tx2_o; // not used
 wire tx2_en; // not used
   `endif // FPGA_MODE
 `endif
-`ifdef BOARD_CMOD_A7
-// gpio[5:FT_GPIO_W] are not connected to pins
+`ifdef FT_GPIO_NC
+// gpio[5:FT_GPIO_W] are not connected to pins (CMOD A7 / Tang Primer 25K)
   `ifdef FPGA_MODE
 wire [5:`FT_GPIO_W] gpio_nc; // not used
   `else // FPGA_MODE
@@ -623,9 +634,12 @@ wire [5:`FT_GPIO_W] gpio_en_nc; // not used
   `endif // FPGA_MODE
 `endif
 
-`ifdef FT_NO_INIT_PINS
-// Tang Primer 25K : init_uart / init_cpu_start are fixed values (fpga_config.vh)
-wire [1:0] init_uart = `FT_TANG_INIT_UART;
+`ifdef FT_INIT_UART_1PIN
+// Tang Primer 25K : 1 pin init_uart -> init_uart[1], init_uart[0] = 0
+wire [1:0] init_uart = { init_uart_pin, 1'b0 };
+`endif
+`ifdef FT_NO_INIT_CPU_START_PIN
+// Tang Primer 25K : init_cpu_start is a fixed value (fpga_config.vh)
 wire init_cpu_start = `FT_TANG_INIT_CPU_START;
 `endif
 
@@ -1181,13 +1195,13 @@ io_led io_led (
 	.init_cpu_start(gpi_init_cpu_start),
 	.gpi_in(gpi_in),
 `ifdef FPGA_MODE
-  `ifdef BOARD_CMOD_A7
+  `ifdef FT_GPIO_NC
 	.gpio({ gpio_nc, gpio })
   `else
 	.gpio(gpio)
   `endif
 `else // FPGA_MODE
-  `ifdef BOARD_CMOD_A7
+  `ifdef FT_GPIO_NC
 	.gpio_i({ gpio_i_nc, gpio_i }),
 	.gpio_o({ gpio_o_nc, gpio_o }),
 	.gpio_en({ gpio_en_nc, gpio_en })
