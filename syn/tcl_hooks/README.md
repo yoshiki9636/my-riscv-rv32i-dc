@@ -96,3 +96,53 @@ foreach r {impl_1 impl_2 impl_3 impl_4} {
 ```
 
 GUI では、Implementation Settings の各ステップにある `tcl.pre` / `tcl.post` の欄を空にしても外せます。
+
+---
+
+# synth_sweep_arty.tcl : Arty A7 (lab6) を合成設定だけで 50MHz に収める
+
+対象は `syn/project_lab6_arty_t100_1`（xc7a100t, CPU クロック `clk_out2_clk_wiz_0` = 50MHz/20ns）です。
+**RTL と配置配線の戦略は変えず**、合成設定だけを変えた run を並列に回して、一番よいものを採用します。
+
+```tcl
+source D:/riscv/jasa/my-riscv-rv32i-dc/syn/tcl_hooks/synth_sweep_arty.tcl
+```
+```bat
+vivado -mode batch -source D:/riscv/jasa/my-riscv-rv32i-dc/syn/tcl_hooks/synth_sweep_arty.tcl
+```
+
+## やっていること
+
+1. 合成の自動インクリメンタル（前回の合成 dcp を参照する機能）を無効にします。前回の結果に引きずられて揺れるのを防ぎます。
+2. 合成専用の制約セット `constrs_synth_oc` を作ります。中身は constrs_1 の XDC と、自動生成される
+   `synth_only_overconstrain.xdc`（CPU クロックに `set_clock_uncertainty -setup <synth_oc_ns>`）です。
+   このファイルは `USED_IN_IMPLEMENTATION=false` なので、配置配線と最終判定は本来の 20ns のままです。
+3. 下の 4 通りの合成 run と子 impl を作り、並列に実行します（impl の戦略は全部 impl_1 と同じ）。
+
+| 合成 run | impl | 合成戦略 | 合成時の過制約 | 追加 |
+|---|---|---|---|---|
+| synth_1 | impl_1 | Vivado Synthesis Defaults | なし | （ベースライン） |
+| synth_2 | impl_2 | Flow_PerfOptimized_high | あり | |
+| synth_3 | impl_3 | Flow_PerfOptimized_high | あり | `-retiming` |
+| synth_4 | impl_4 | Flow_AlternateRoutability | あり | |
+
+4. hold 違反なしで WNS が一番よい組を Active（`current_run -synthesis/-implementation`）にして bitstream を作ります。
+   Active はプロジェクトに保存されるので、以後 GUI から Run Synthesis しても採用された設定で動きます。
+
+## 設定（スクリプト先頭）
+
+| 変数 | 既定 | 意味 |
+|---|---|---|
+| `synth_oc_ns` | 1.5 | 合成時だけ足す uncertainty [ns]。0 で過制約なし。目安 1.0〜3.0 |
+| `variants` | 上表 | 合成バリエーション。`{合成run impl 戦略 過制約 {ARGS名 値 ...}}` |
+| `jobs` | 8 | 並列ジョブ数。100T+MIG は 1 run 3〜4GB 程度 |
+| `setup_only` | 0 | 1 で run の設定だけして実行しない |
+| `do_bitstream` / `force_bit` | 1 / 0 | build_all.tcl と同じ |
+
+## 注意
+
+- 合成ログ（`synth_N/runme.log`）で `synth_only_overconstrain.xdc` が警告なしに読まれているか確認してください。
+  ブラックボックス（MIG）の影響で評価に失敗した場合、その制約は捨てられるだけで impl には影響しません。
+- 現状のクリティカルパスは data_ram(BRAM 出力レジスタなし) → forwarding → id/ex → stall 生成 → `if_stage/inst_roll` の CE で
+  23 段・遅延の 7 割が配線です。合成設定だけで稼げるのは数百 ps 程度なので、全バリエーションで負になるなら
+  impl 側の `build_all.tcl` 系フック（過制約配置 + post-route phys_opt）との併用か RTL 側の対策が必要です。
