@@ -1,0 +1,50 @@
+# RTL files for the simulation (paths from the repository top)
+#   fpga_top.v / sdram_if.v / UART monitor are not used (tb_mmu.v instantiates
+#   cpu_top, axi_bus_top, dram_top, io_frc directly; sdram_if_sim.v replaces
+#   sdram_if.v).  fpga_config.vh is included from fpga/ (-I).
+#   A file that does not exist in the compared git revision (e.g. cpu/dtlb.v
+#   on master) is skipped by cmp.sh / cmp_arch.sh.
+cpu/cpu_status.v
+cpu/cpu_top.v
+cpu/csr_array.v
+cpu/data_1r1w.v
+cpu/data_ram.v
+cpu/dma.v
+cpu/dtlb.v
+cpu/ex_stage.v
+cpu/exception.v
+cpu/forwarding.v
+cpu/ic_tag_1r1w.v
+cpu/id_stage.v
+cpu/if_stage.v
+cpu/ilu_stage.v
+cpu/inst_1r1w.v
+cpu/inst_ram.v
+cpu/lsu_stage.v
+cpu/ma_stage.v
+cpu/rf_2r1w.v
+cpu/tag_1r1w.v
+cpu/wb_stage.v
+cpu_m/mex_stage.v
+io/io_frc.v
+buslogics/arbiter4.v
+buslogics/axi_bus_top.v
+buslogics/rdata_chan_mngr.v
+buslogics/rdata_chan_subo.v
+buslogics/read_channels_mngr.v
+buslogics/read_channels_subo.v
+buslogics/req_chan_mngr.v
+buslogics/req_chan_subo.v
+buslogics/wdata_chan_mngr.v
+buslogics/wdata_chan_subo.v
+buslogics/wresp_chan_mngr.v
+buslogics/wresp_chan_subo.v
+buslogics/write_channels_mngr.v
+buslogics/write_channels_subo.v
+mig/afifo.v
+mig/afifo_1r1w.v
+mig/dram_top.v
+mig/mig_if.v
+mig/req_queue.v
+mig/sfifo.v
+mig/sfifo_1r1w.v
