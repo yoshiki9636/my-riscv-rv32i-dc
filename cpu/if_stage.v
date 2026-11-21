@@ -400,10 +400,22 @@ end
 // inst_collision for that same cycle (nonblocking assignment: this
 // clear takes effect for the FOLLOWING cycle), so exactly one correct
 // post-mask delivery is guaranteed before use_collision finally clears.
+// FIX (2026-11-22): a D$ flush (fence.i) that starts while the I$ is
+// missing sets use_collision (inst_collision_smpl1 on the flush's
+// stall_1shot), but the flush ends FLSH -> IDLE without dc_stall_fin2, so
+// use_collision was never cleared: after the fence.i retry jump, ID kept
+// delivering the stale pc_collision / inst_collision and EX executed it
+// every cycle while IF prefetched forever.  Seen with a D$ miss on the
+// instruction right before fence.i while the I$ is cold after an earlier
+// fence.i (sim_mmu/tests/t05_fencei_dmiss.S, NOFS=2/3).  The retry jump
+// (fencei_cond) discards the ID instruction, so the collision state is
+// cleared there.
 always @ (posedge clk or negedge rst_n) begin
 	if (~rst_n)
         use_collision <= 1'b0;
 	else if (rst_pipe)
+        use_collision <= 1'b0;
+	else if (fencei_cond)
         use_collision <= 1'b0;
 	else if (dc_stall_fin2 & ~jump_under_ic_stall)
         use_collision <= 1'b0;
@@ -418,6 +430,8 @@ always @ (posedge clk or negedge rst_n) begin
 	if (~rst_n)
         use_collision_clear_pending <= 1'b0;
 	else if (rst_pipe)
+        use_collision_clear_pending <= 1'b0;
+	else if (fencei_cond)
         use_collision_clear_pending <= 1'b0;
 	else if (use_collision_clear_pending & ~jump_under_ic_stall)
         use_collision_clear_pending <= 1'b0; // consumed this cycle, see use_collision above

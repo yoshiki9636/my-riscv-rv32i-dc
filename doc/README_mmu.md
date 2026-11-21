@@ -100,7 +100,7 @@ dc_stall の経路に乗る判定は、エントリごとに並列に計算し�
 - MMU を使うときは `FT_DWIDTH` を 10 以下にすること（11 以上では MMU が無効になる）
 - valid / dirty は FF で、`FT_DWAYS` × 256 × 2 個（4ウェイで 2048 個、8ウェイで 4096 個）。Tang は `FT_DWAYS 1` のまま
 - 8ウェイでもウェイ選択はラウンドロビン（擬似 LRU は未実装）
-- **既存のバグ（MMU とは無関係、改造前の RTL でも起きる）**：fence.i の後で I$ が空のとき、fence.i の直前の命令が D$ ミスすると、IF がプリフェッチを続けて ID が進まなくなる（例：`fence.i; li; li; lw(ミス); fence.i`）。テストでは load/store と fence.i の間に nop を2つ入れて避けている
+- **修正済みの既存バグ（MMU とは無関係、master の RTL でも起きる）**：D$ ミスのストール中に I$ ミスが重なり、その直後の fence.i の D$ フラッシュが I$ ストール中に始まると、if_stage の `use_collision` が 1 のまま残った（フラッシュは `dc_stall_fin2` を出さずに終わるため）。fence.i のリトライ後に ID が古い命令を出し続け、IF がプリフェッチを続けて止まる。`cpu/if_stage.v` で、fence.i のリトライジャンプ（`fencei_cond`）で `use_collision` を解除するように修正した。再現テストは `sim_mmu/tests/t05_fencei_dmiss.S`
 - タイミング（Gowin の Fmax）は未確認。DTLB の CAM が dc_stall → stall の経路に加わっている
 - DMA は変換しない（物理アドレスのまま）
 - PMP は未実装
@@ -126,6 +126,7 @@ VDEFS="-DTB_DWAYS=1" ./cmp.sh <test.S> [master] [maxcyc]  # MMU なしで master
 | t01_mmu_mprv | 4KiB / メガページの変換、各種ページフォルト（V=0、W&~R、A=0、D=0、W なし、SUM、U/S、MXR、メガページの位置ずれ、L0 の非リーフ）、フォルトした load が rd を書かないこと、後続命令が1回だけ実行されること、エイリアス、メガページ経由の I/O、TLB 置き換え（24ページ）、sfence.vma、AMO / LR / SC、AMO のフォルト、mret での MPRV クリア |
 | t02_mmu_irq | 32ページで TLB を溢れさせ、PTE と データの D$ 競合、タイマ割り込み、ページフォルトを混ぜたストレス |
 | t04_mmu_disabled | `FT_DWIDTH` > 10 で MMU が無効になること（`VDEFS="-DTB_DWIDTH=12 -DTB_DWAYS=1"` で実行。MMU 有効の構成では FAIL code 2 になるのが正しい） |
+| t05_fencei_dmiss | D$ ミスの直後の fence.i（I$ が空の状態）。`ASFLAGS=-DNOFS=0..3` で I$ ライン内の位置を変える |
 | t03_dcache_4way | 同じセットに 12 ライン（dirty の追い出し）、byte / half ストア、fence.i で全ウェイをフラッシュして DRAM から読み直し、MMU 有効時に PTE とデータを同じセットに集中 |
 
 - `cmp_arch.sh <test.S> [master]`：サイクル番号を除いた命令レベルのトレース（レジスタ書き戻し・MMIO）を改造前 RTL と比べる。キャッシュ構成が違う場合に使う（タイマ割り込みのテストは、割り込みの入る位置が変わるので一致しないことがある）

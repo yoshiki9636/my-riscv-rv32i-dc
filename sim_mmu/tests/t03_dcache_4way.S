@@ -4,11 +4,6 @@
 #   3. fence.i flush of all ways, then re-read from DRAM
 #   4. flush / refill / evict / flush again sequence on one address (X must be B)
 #   5. same with MMU (MPRV) : 8 VA pages -> PAs in the same set + PTE lines in the same set
-#
-# NOTE : `nop` x2 is placed between a load/store and fence.i.  A D$ miss on the
-#   instruction right before fence.i, while the I$ is cold after an earlier
-#   fence.i, hangs the front end (IF keeps prefetching, ID never advances).
-#   This is a pre-existing bug (also in the pre-MMU RTL : master).
 #include "common.inc"
 #include "mmu.inc"
 
@@ -96,8 +91,6 @@ _start:
     li   a1, BASE + 0x40     # set 4
     li   a0, 0xAAAA
     sw   a0, 0(a1)           # X = A (dirty)
-    nop
-    nop
     fence.i                  # write back + invalidate
     li   t0, BASE + 0x1040   # fill the set so that X goes to another way
     lw   t1, 0(t0)
@@ -109,8 +102,6 @@ _start:
     add  a4, a4, t3
     addi t2, t2, -1
     bnez t2, 9b
-    nop
-    nop
     fence.i                  # a stale dirty copy of A must not be written back
     lw   a0, 0(a1)
     CHECK a0, 0xBBBB, 0x40
@@ -152,8 +143,6 @@ _start:
     li   t0, 8
     bne  a2, t0, 12b
     MPRV_OFF
-    nop
-    nop
     fence.i
     li   a1, 0x30000 + 7*0x1000
     lw   a0, 0(a1)
