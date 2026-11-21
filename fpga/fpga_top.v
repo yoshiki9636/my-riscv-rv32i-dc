@@ -33,19 +33,30 @@
 `endif
 
 // cache / scratch size per board
+//   D$ (lab7_mmu, 2026-11-22) : FT_DWAYS ways (1 / 2 / 4 / 8) of 2^(FT_DWIDTH+2)
+//   bytes each.  D$ size = FT_DWAYS * 2^(FT_DWIDTH+2).
+//   The MMU needs FT_DWIDTH <= 10 (1 way <= 4KB, VIPT without aliases).  With
+//   FT_DWIDTH > 10 the MMU is disabled (satp.MODE reads 0) : e.g. the original
+//   Arty setting FT_DWIDTH 12 / FT_DWAYS 1 (16KB direct mapped, no MMU).
+//   FT_DWAYS 1 is the original direct mapped D$.
 `ifdef BOARD_CMOD_A7
   `define FT_IWIDTH 10
   `define FT_DWIDTH 10
+  `define FT_DWAYS 1
   `define FT_SWIDTH 4
 `elsif BOARD_TANG_PRIMER_25K
   // GW5A-25 (23K LUT4) : I$ / D$ 4KB. the entry valid / dirty bits are flip-flops
   //   (2**(WIDTH-2) entries each) : 12 does not fit (LUT 92%, CLS 98%, PnR fails)
+  //   (FT_DWAYS 4 has the same number of valid / dirty flip-flops as 12)
   `define FT_IWIDTH 10
   `define FT_DWIDTH 10
+  `define FT_DWAYS 1
   `define FT_SWIDTH 13
 `else // BOARD_ARTY_A7
+  // D$ 16KB : 4KB x 4 way (VIPT with the MMU)
   `define FT_IWIDTH 12
-  `define FT_DWIDTH 12
+  `define FT_DWIDTH 10
+  `define FT_DWAYS 4
   `define FT_SWIDTH 13
 `endif
 
@@ -727,7 +738,7 @@ wire g_interrupt;
 //wire ic_stall;
 wire stall;
 
-cpu_top #(.DWIDTH(DWIDTH), .IWIDTH(IWIDTH), .SWIDTH(SWIDTH)) cpu_top (
+cpu_top #(.DWIDTH(DWIDTH), .IWIDTH(IWIDTH), .SWIDTH(SWIDTH), .DWAYS(`FT_DWAYS)) cpu_top (
 	.clk(clk),
 	.rst_n(rst_n),
 	.init_calib_complete(init_calib_complete),

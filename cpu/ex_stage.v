@@ -11,7 +11,9 @@
 `define SUPPORT_M
 `define SUPPORT_A
 
-module ex_stage(
+module ex_stage
+	#(parameter MMU_EN = 1)  // 0 : satp.MODE is fixed to 0 (2026-11-22)
+	(
 	input clk,
 	input rst_n,
 
@@ -171,6 +173,19 @@ module ex_stage(
 	output success_scw_ma,
 	output reg cmd_scw_purge_ma,
 `endif // SUPPORT_A
+
+	// MMU (2026-11-22)
+	input pf_exc,               // page fault of the MA access (lsu_stage PFX state)
+	input pf_store,
+	output pf_trap,             // page fault trap is taken in this cycle (part of g_exception)
+	output csr_satp_mode,
+	output [19:0] csr_satp_ppn,
+	output csr_mprv,
+	output csr_sum,
+	output csr_mxr,
+	output [1:0] csr_mpp,
+	output tlb_flush,           // sfence.vma
+	output reg cmd_amold_ma,    // MA access is the load phase of an AMO
 
 	// to ID
 	output reg jmp_purge_ma,
@@ -354,6 +369,46 @@ always @ (posedge clk or negedge rst_n) begin
 end
 
 wire amo_term = (amo_current != `AMO_IDLE);
+
+// ---------------------------------------------------------------------------
+// MMU page fault trap (2026-11-22)
+//   pf_exc (lsu_stage PFX) is a ~stall cycle with the faulting load/store in
+//   MA.  For a normal load/store the trap is taken right there (pf_now).
+//   For the load phase of an AMO the AMO state machine is already running and
+//   the front end is held by amo_stall (ic_stall); aborting it there leaves
+//   if_stage without amo_stall_fin.  So the AMO runs to the end with its store
+//   masked (amo_pf_pend) and the trap is taken in the first ~stall cycle after
+//   it (pf_late, same timing as an interrupt held by amo_busy), with the
+//   saved PC / VA of the AMO.  (The AMO store phase can not fault : its load
+//   phase was checked as a store and the TLB entry is still there.)
+// ---------------------------------------------------------------------------
+reg amo_pf_pend;
+reg [31:2] amo_pf_pc;
+reg [31:0] amo_pf_va;
+wire pf_amo = pf_exc & cmd_amold_ma;
+wire pf_now = pf_exc & ~cmd_amold_ma;
+wire pf_late = amo_pf_pend & ~stall & ~amo_term;
+assign pf_trap = pf_now | pf_late;
+
+always @ (posedge clk or negedge rst_n) begin
+	if (~rst_n) begin
+		amo_pf_pend <= 1'b0;
+		amo_pf_pc <= 30'd0;
+		amo_pf_va <= 32'd0;
+	end
+	else if (pf_amo) begin
+		amo_pf_pend <= 1'b1;
+		amo_pf_pc <= pc_ma;
+		amo_pf_va <= rd_data_ma;
+	end
+	else if (pf_late) begin
+		amo_pf_pend <= 1'b0;
+	end
+end
+
+wire pf_csr_store = pf_late | pf_store;
+wire [31:0] pf_csr_va = pf_late ? amo_pf_va : rd_data_ma;
+wire [31:2] pf_csr_pc = pf_late ? amo_pf_pc : pc_ma;
 wire amo_wb_term = (amo_current == `AMO_LDWB);
 wire amo_ex_term = (amo_current == `AMO_EXEC);
 wire amo_st_term = (amo_current == `AMO_STOR);
@@ -502,7 +557,7 @@ wire [31:0] br_ofs = {{ 19{ br_ofs_ex[12] }}, br_ofs_ex, 1'b0 };
 
 `ifdef SUPPORT_A
 assign cmd_ld_pur = (cmd_ld_ex | cmd_lrw_ex | amo_ld_cmd) & ~intexp_purge_ex & ~jmp_purge_ma & ~jmp_purge_ma2;
-assign cmd_st_pur = (cmd_st_ex | amo_st_cmd) & ~intexp_purge_ex & ~jmp_purge_ma & ~jmp_purge_ma2;
+assign cmd_st_pur = (cmd_st_ex | (amo_st_cmd & ~amo_pf_pend)) & ~intexp_purge_ex & ~jmp_purge_ma & ~jmp_purge_ma2;
 `else // SUPPORT_A
 wire cmd_ld_pur = cmd_ld_ex & ~intexp_purge_ex & ~jmp_purge_ma & ~jmp_purge_ma2;
 wire cmd_st_pur = cmd_st_ex & ~intexp_purge_ex & ~jmp_purge_ma & ~jmp_purge_ma2;
@@ -675,7 +730,7 @@ wire misal_st_ex = misal_ok_ex & cmd_st_ex;
 // TIMER_INTERVAL=13001).  Only a mul/div that really executes may latch.
 wire div_stall_start_pur = div_stall_start & ~jmp_purge_ma & ~jmp_purge_ma2;
 
-csr_array csr_array(
+csr_array #(.MMU_EN(MMU_EN)) csr_array(
 	.clk(clk),
 	.rst_n(rst_n),
 	.cmd_csr_ex(cmd_csr_pur),
@@ -725,6 +780,16 @@ csr_array csr_array(
 	.div_stall_dly(div_stall_dly),
 `endif // SUPPORT_M
 	.stall(stall),
+	.pf_exc(pf_trap),
+	.pf_store(pf_csr_store),
+	.pf_va(pf_csr_va),
+	.pc_ma(pf_csr_pc),
+	.csr_satp_mode(csr_satp_mode),
+	.csr_satp_ppn(csr_satp_ppn),
+	.csr_mprv(csr_mprv),
+	.csr_sum(csr_sum),
+	.csr_mxr(csr_mxr),
+	.csr_mpp_o(csr_mpp),
 	.csr_radr_en_mon(csr_radr_en_mon), // new
 	.csr_radr_mon(csr_radr_mon), // new
 	.csr_wadr_mon(csr_wadr_mon), // new
@@ -741,6 +806,7 @@ exception exception (
 	.illegal_ops_ex(illegal_ops_ex),
 	.misal_ld_ex(misal_ld_ex),
 	.misal_st_ex(misal_st_ex),
+	.pf_exc(pf_trap),
 	.g_exception(g_exception)
 	);
 
@@ -1023,6 +1089,9 @@ assign btb_upd_pc     = pc_ex;
 assign btb_upd_target = jump_adr[31:2];
 assign btb_flush      = (~stall & cmd_fencei_ex) | fencei_cond;
 
+// sfence.vma (2026-11-22) : flush the whole DTLB (no ASID / address compare)
+assign tlb_flush = ~stall & cmd_sfence_ex & ~intexp_purge_ex & ~jmp_purge_ma & ~jmp_purge_ma2 & ~fencei_wb_purge;
+
 // ecall
 //wire ecall_condition_ex_pre = ~jmp_purge_ma & ((cmd_ecall_ex & csr_rmie) | illegal_ops_ex);
 // EBREAK (2026-07-23): cmd_ebreak_ex folded in here so ebreak drives the
@@ -1072,7 +1141,9 @@ wire muldiv_busy = div_stall_start | div_stall_dly;
 `else // SUPPORT_M
 wire muldiv_busy = 1'b0;
 `endif // SUPPORT_M
-wire irq_hold = amo_busy | fencei_wb_purge | muldiv_busy;
+// MMU (2026-11-22): also hold in the page fault trap cycle (the page fault of
+// the older MA instruction wins, the interrupt is taken after it)
+wire irq_hold = amo_busy | fencei_wb_purge | muldiv_busy | pf_exc | amo_pf_pend;
 reg g_int_amo_pend;
 reg frc_amo_pend;
 
@@ -1195,6 +1266,7 @@ always @ ( posedge clk or negedge rst_n) begin
 		ldst_code_ma <= 3'd0;
 		pc_ma <= 30'd0;
         cmd_ld_ma <= 1'b0;
+        cmd_amold_ma <= 1'b0;
 `ifdef SUPPORT_A
         cmd_st_ma_pre <= 1'b0;
 `else // SUPPORT_A
@@ -1227,6 +1299,9 @@ always @ ( posedge clk or negedge rst_n) begin
 		ldst_code_ma <= ldst_code_ex;
 		pc_ma <= pc_ex;
 	    cmd_ld_ma <= cmd_ld_ex_post & ~wb_mask_with_exception_interrupt;
+`ifdef SUPPORT_A
+	    cmd_amold_ma <= amo_ld_cmd & ~wb_mask_with_exception_interrupt;
+`endif // SUPPORT_A
 `ifdef SUPPORT_A
         cmd_st_ma_pre <= cmd_st_ex_post & ~wb_mask_with_exception_interrupt;
 `else // SUPPORT_A

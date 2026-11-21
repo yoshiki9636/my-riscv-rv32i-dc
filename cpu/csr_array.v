@@ -10,7 +10,9 @@
 
 `define SUPPORT_M
 
-module csr_array(
+module csr_array
+	#(parameter MMU_EN = 1)  // 0 : satp.MODE is fixed to 0 (Bare, no MMU) (2026-11-22)
+	(
 	input clk,
 	input rst_n,
 
@@ -61,6 +63,17 @@ module csr_array(
 	input div_stall_dly,
 `endif // SUPPORT_M
 	input stall,
+	// MMU (2026-11-22)
+	input pf_exc,             // page fault of the MA access (part of g_exception)
+	input pf_store,           // 1 : store/AMO page fault, 0 : load page fault
+	input [31:0] pf_va,       // faulting virtual address (mtval)
+	input [31:2] pc_ma,       // faulting instruction (mepc)
+	output csr_satp_mode,     // satp.MODE (1 : Sv32)
+	output [19:0] csr_satp_ppn,
+	output csr_mprv,
+	output csr_sum,
+	output csr_mxr,
+	output [1:0] csr_mpp_o,
     input csr_radr_en_mon, // new
     input [11:0] csr_radr_mon, // new
     input [11:0] csr_wadr_mon, // new
@@ -83,6 +96,7 @@ module csr_array(
 `define CSR_SEPC_ADR 12'h141
 `define CSR_MIE_ADR 12'h304
 `define CSR_MIP_ADR 12'h344
+`define CSR_SATP_ADR 12'h180
 
 `define M_MODE 2'b11
 `define S_MODE 2'b01
@@ -116,6 +130,7 @@ wire adr_mtval = (csr_ofs_ex_pm == `CSR_MTVAL_ADR);
 wire adr_mstatush = (csr_ofs_ex_pm == `CSR_MSTATUSH_ADR);
 wire adr_mip = (csr_ofs_ex_pm == `CSR_MIP_ADR);
 wire adr_mie = (csr_ofs_ex_pm == `CSR_MIE_ADR);
+wire adr_satp = (csr_ofs_ex_pm == `CSR_SATP_ADR);
 
 // read data selector
 wire [31:0] csr_mstatus;
@@ -131,6 +146,11 @@ wire [31:0] csr_mip;
 wire [31:0] csr_mie;
 reg [31:0] csr_mscrach;
 reg [31:0] csr_sscrach;
+// satp (2026-11-22) : MODE[31] / ASID[30:22] (not implemented : read 0) / PPN[21:0]
+//   PA is 32bit : only PPN[19:0] is used for the page table walk
+reg csr_satp_mode_r;
+reg [21:0] csr_satp_ppn_r;
+wire [31:0] csr_satp = { csr_satp_mode_r, 9'd0, csr_satp_ppn_r };
 
 wire [31:0] csr_rsel = adr_mstatus ? csr_mstatus :
                        adr_misa ? csr_misa :
@@ -144,6 +164,7 @@ wire [31:0] csr_rsel = adr_mstatus ? csr_mstatus :
                        adr_mie ? csr_mie :
                        adr_mscrach ? csr_mscrach :
                        adr_sscrach ? csr_sscrach :
+                       adr_satp ? csr_satp :
                        32'd0;
 
 assign csr_rd_data = csr_rsel;
@@ -321,10 +342,43 @@ always @ ( posedge clk or negedge rst_n) begin
     end
 end
 
-assign csr_mstatus = { 19'd0, csr_mpp, 2'b00, csr_spp, csr_mpie,
+// MPRV[17] / SUM[18] / MXR[19] (2026-11-22, MMU)
+//   MPRV = 1 : loads / stores are translated and checked with the privilege in
+//              MPP (translation is active when MPP != M and satp.MODE = 1)
+//   mret clears MPRV when it returns to a mode other than M (MPP != M)
+reg csr_mprv_r;
+reg csr_sum_r;
+reg csr_mxr_r;
+
+always @ ( posedge clk or negedge rst_n) begin
+	if (~rst_n) begin
+		csr_mprv_r <= 1'b0;
+		csr_sum_r <= 1'b0;
+		csr_mxr_r <= 1'b0;
+	end
+	else if (mret_condition_ex) begin
+		if (csr_mpp != `M_MODE)
+			csr_mprv_r <= 1'b0;
+	end
+	else if (mstatus_wr) begin
+		csr_mprv_r <= wdata_all[17];
+		csr_sum_r <= wdata_all[18];
+		csr_mxr_r <= wdata_all[19];
+	end
+    else if (csr_we_mon & adr_mstatus) begin
+		csr_mprv_r <= csr_wdata_mon[17];
+		csr_sum_r <= csr_wdata_mon[18];
+		csr_mxr_r <= csr_wdata_mon[19];
+    end
+end
+
+assign csr_mprv = csr_mprv_r;
+assign csr_sum = csr_sum_r;
+assign csr_mxr = csr_mxr_r;
+assign csr_mpp_o = csr_mpp;
+
+assign csr_mstatus = { 12'd0, csr_mxr_r, csr_sum_r, csr_mprv_r, 4'd0, csr_mpp, 2'b00, csr_spp, csr_mpie,
                        1'b0, csr_spie, 1'b0, csr_rmie, 1'b0, csr_sie, 1'b0 };
-// MPRV, MXR : is not implemented becase no U-MODE now
-// SUM : is not implemented becase no S-MODE and virturalzation now
 // FS,VS,XS, SD is not implemented because none of extentions are implemented
 // TVM is not implemented because no virtualization implemented
 // TW  is not implemented because ecurrently WFI instruction is not implemented
@@ -347,6 +401,26 @@ always @ ( posedge clk or negedge rst_n) begin
     end
 end
 
+// satp (2026-11-22)
+//   writing satp does not flush the DTLB : sfence.vma is needed (as the spec)
+always @ ( posedge clk or negedge rst_n) begin
+	if (~rst_n) begin
+		csr_satp_mode_r <= 1'b0;
+		csr_satp_ppn_r <= 22'd0;
+	end
+	else if ((~stall)&(cmd_csr_ex)&(adr_satp)) begin
+		csr_satp_mode_r <= wdata_all[31] & (MMU_EN != 0);
+		csr_satp_ppn_r <= wdata_all[21:0];
+	end
+    else if (csr_we_mon & adr_satp) begin
+		csr_satp_mode_r <= csr_wdata_mon[31] & (MMU_EN != 0);
+		csr_satp_ppn_r <= csr_wdata_mon[21:0];
+    end
+end
+
+assign csr_satp_mode = csr_satp_mode_r;
+assign csr_satp_ppn = csr_satp_ppn_r[19:0];
+
 //assign csr_mtvec_ex = csr_mtvec[31:2];
 assign csr_mtvec_ex = (csr_mtvec[1:0] == 2'd0) ? csr_mtvec[31:2] : csr_mtvec[31:2] + { 24'd0, mcause_code[5:0] };
 
@@ -357,7 +431,11 @@ assign csr_mtvec_ex = (csr_mtvec[1:0] == 2'd0) ? csr_mtvec[31:2] : csr_mtvec[31:
 always @ ( posedge clk or negedge rst_n) begin
     if (~rst_n)
         csr_mscrach <= 32'd0;
-    else if ((cmd_csr_ex)&(adr_mscrach))
+    // MMU (2026-11-22): written only in the ~stall (commit) cycle like mtvec.
+    // Before, the CSR in EX was written in every stalled cycle; with a page
+    // fault of the older load/store in MA the CSR instruction is purged after
+    // the stall, so the early write must not happen.
+    else if ((~stall)&(cmd_csr_ex)&(adr_mscrach))
         csr_mscrach <= wdata_all;
     else if (csr_we_mon & adr_mscrach)
         csr_mscrach <= csr_wdata_mon;
@@ -368,7 +446,7 @@ end
 always @ ( posedge clk or negedge rst_n) begin
     if (~rst_n)
         csr_sscrach <= 32'd0;
-    else if ((cmd_csr_ex)&(adr_sscrach))
+    else if ((~stall)&(cmd_csr_ex)&(adr_sscrach))
         csr_sscrach <= wdata_all;
     else if (csr_we_mon & adr_sscrach)
         csr_sscrach <= csr_wdata_mon;
@@ -388,6 +466,10 @@ always @ ( posedge clk or negedge rst_n) begin
 	//else if ( ecall_condition_ex | g_exception ) begin
 		//csr_mepc <= sel_pc_ex_2;
 	//end
+	else if ( pf_exc ) begin
+		// page fault (2026-11-22) : the faulting load/store is in MA
+		csr_mepc <= pc_ma;
+	end
 	else if ( m_interrupt ) begin
 		csr_mepc <= sel_pc_ex;
 	end
@@ -428,7 +510,7 @@ assign csr_mepc_ex = csr_mepc[31:2];
 // g_exception suppresses ecall_condition_ex for illegal ops, but the
 // explicit priority keeps this correct even if that coupling changes).
 //wire interrupt_bit = interrupt_condition_ex;
-wire interrupt_bit = interrupt_condition_ex | timer_condition_ex;
+wire interrupt_bit = (interrupt_condition_ex | timer_condition_ex) & ~pf_exc;
 
 // EBREAK (2026-07-23): cmd_ebreak_ex is decoded/purge-tracked in id_stage
 // exactly like illegal_ops_ex (same reset/purge conditions) and folded into
@@ -436,7 +518,10 @@ wire interrupt_bit = interrupt_condition_ex | timer_condition_ex;
 // checked ahead of the generic ecall_condition_ex fallback below - giving
 // ebreak its own mcause=3 (breakpoint) instead of being reported as an
 // ecall (mcause=11).
-assign mcause_code = interrupt_condition_ex ? 6'd11 :
+// MMU (2026-11-22): a page fault belongs to the OLDER instruction (MA), so it
+// has the highest priority (ex_stage holds interrupts in the pf_exc cycle).
+assign mcause_code = pf_exc ? (pf_store ? 6'd15 : 6'd13) :
+                     interrupt_condition_ex ? 6'd11 :
                      timer_condition_ex ? 6'd7 :
                      illegal_ops_ex ? 6'd2 :
                      cmd_ebreak_ex ? 6'd3 :
@@ -452,7 +537,8 @@ assign mcause_code = interrupt_condition_ex ? 6'd11 :
 // EBREAK (2026-07-23): mtval for a breakpoint trap carries the ebreak
 // instruction's own PC (spec-permitted; either 0 or the faulting address
 // is valid, and Linux's do_trap_break() doesn't inspect it either way).
-wire [31:0] sel_tval = (interrupt_condition_ex | timer_condition_ex) ? 32'd0 :
+wire [31:0] sel_tval = pf_exc ? pf_va :
+                       (interrupt_condition_ex | timer_condition_ex) ? 32'd0 :
                        illegal_ops_ex ? illegal_ops_inst :
                        (misal_ld_ex | misal_st_ex) ? misal_adr :
                        cmd_ebreak_ex ? { pc_ex, 2'd0 } : 32'd0;
@@ -489,7 +575,7 @@ always @ ( posedge clk or negedge rst_n) begin
     else if (mcause_write) begin
         csr_mtval <= sel_tval;
     end
-    else if ((cmd_csr_ex)&(adr_mtval)) begin
+    else if ((~stall)&(cmd_csr_ex)&(adr_mtval)) begin
         csr_mtval <= wdata_all;
     end
     else if (csr_we_mon & adr_mtval) begin
@@ -528,7 +614,7 @@ always @ ( posedge clk or negedge rst_n) begin
     if (~rst_n) begin
         csr_mie_bits <= 3'd0;
     end
-    else if ((cmd_csr_ex)&(adr_mie)) begin
+    else if ((~stall)&(cmd_csr_ex)&(adr_mie)) begin
         csr_mie_bits <= { wdata_all[11], wdata_all[7], wdata_all[3] };
     end
     else if (csr_we_mon & adr_mie) begin

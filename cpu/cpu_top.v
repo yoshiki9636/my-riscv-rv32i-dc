@@ -14,7 +14,8 @@
 module cpu_top
     #(parameter IWIDTH = 12,
       parameter DWIDTH = 12,
-      parameter SWIDTH = 13)
+      parameter SWIDTH = 13,
+      parameter DWAYS = 1)   // D$ ways : 1 / 2 / 4 / 8 (2026-11-22)
 	(
 
 	input clk,
@@ -263,6 +264,39 @@ wire btb_flush;
 wire btb_spec_fetch;
 //wire csr_meie;
 wire csr_msie; // declared 2026-11-05 (was implicit; default_nettype none error in yosys)
+
+// MMU (Sv32 DTLB + PTW, 2026-11-22)
+//   Data accesses are translated when satp.MODE = 1, mstatus.MPRV = 1 and
+//   mstatus.MPP != M (the CPU runs only in M-mode now : instruction fetch is
+//   not translated).  The DTLB / PTW are in lsu_stage, see the comment there.
+wire pf_exc;
+wire pf_store;
+wire pf_trap;
+wire csr_satp_mode;
+wire [19:0] csr_satp_ppn;
+wire csr_mprv;
+wire csr_sum;
+wire csr_mxr;
+wire [1:0] csr_mpp;
+wire tlb_flush;
+wire cmd_amold_ma;
+wire ptw_rd_sel;
+wire [31:0] ptw_pa;
+wire [31:0] pa_ma;
+wire mmu_ok_ma;
+wire io_ok_ma;
+wire [31:0] dc_rdata_raw;
+// D$ ways (2026-11-22)
+wire [7:0] dc_way_hit_ma;
+wire [7:0] dc_way_rd;
+wire [7:0] dc_fill_way;
+wire [2:0] dc_rdall_way;
+// MMU_EN : the VIPT D$ needs 1 way <= 4KB (DWIDTH <= 10).  With a bigger
+// way (e.g. DWIDTH = 12 direct mapped) the MMU is disabled : satp.MODE reads 0
+// (Bare) and nothing is translated.
+localparam MMU_EN = (DWIDTH <= 10) ? 1 : 0;
+wire mmu_trans_on = csr_satp_mode & csr_mprv & (csr_mpp != `M_MODE);
+wire mmu_priv_u = (csr_mpp == `U_MODE);
 
 
 // io bus for cpu
@@ -597,7 +631,7 @@ id_stage id_stage (
 	.jmp_regs_flush(jmp_regs_flush)
 	);
 
-ex_stage ex_stage (
+ex_stage #(.MMU_EN(MMU_EN)) ex_stage (
 	.clk(clk),
 	.rst_n(rst_n),
 	.rs1_data_ex(rs1_data_ex),
@@ -734,6 +768,17 @@ ex_stage ex_stage (
 	.success_scw_ma(success_scw_ma),
 	.cmd_scw_purge_ma(cmd_scw_purge_ma),
 `endif // SUPPORT_A
+	.pf_exc(pf_exc),
+	.pf_store(pf_store),
+	.pf_trap(pf_trap),
+	.csr_satp_mode(csr_satp_mode),
+	.csr_satp_ppn(csr_satp_ppn),
+	.csr_mprv(csr_mprv),
+	.csr_sum(csr_sum),
+	.csr_mxr(csr_mxr),
+	.csr_mpp(csr_mpp),
+	.tlb_flush(tlb_flush),
+	.cmd_amold_ma(cmd_amold_ma),
 	.jmp_purge_ma(jmp_purge_ma),
 	.jmp_purge_ex(jmp_purge_ex),
 	.fencei_wb_purge(fencei_wb_purge),
@@ -780,11 +825,11 @@ mex_stage mex_stage (
 	// execution, corrupting rd-in-rs forms like `mul a5,a5,a4`).
 	// Also cancel one started by the instruction in a fence.i
 	// shadow (fencei_wb_purge) - the retry jump re-executes it.
-	.intexp_cancel_mex(interrupt_condition_ex | timer_condition_ex | fencei_wb_purge)
+	.intexp_cancel_mex(interrupt_condition_ex | timer_condition_ex | fencei_wb_purge | pf_trap)
 	);
 `endif // SUPPORT_M
 
-ma_stage #(.DWIDTH(DWIDTH), .SWIDTH(SWIDTH)) ma_stage (
+ma_stage #(.DWIDTH(DWIDTH), .SWIDTH(SWIDTH), .DWAYS(DWAYS)) ma_stage (
 	.clk(clk),
 	.rst_n(rst_n),
 	.cmd_ld_ma(cmd_ld_ma),
@@ -812,6 +857,10 @@ ma_stage #(.DWIDTH(DWIDTH), .SWIDTH(SWIDTH)) ma_stage (
 	.dc_st_ok(dc_st_ok),
 	.dc_wb_mask(dc_wb_mask),
 	.dc_tag_hit_ma(dc_tag_hit_ma),
+	.dc_way_hit_ma(dc_way_hit_ma),
+	.dc_way_rd(dc_way_rd),
+	.dc_fill_way(dc_fill_way),
+	.dc_rdall_way(dc_rdall_way),
 	.dc_st_wt_ma(dc_st_wt_ma),
 	.dc_cache_wr_ma(dc_cache_wr_ma),
 	.scr_ram_radr(scr_ram_radr),
@@ -847,6 +896,13 @@ ma_stage #(.DWIDTH(DWIDTH), .SWIDTH(SWIDTH)) ma_stage (
 	.success_scw_wb(success_scw_wb),
 	.cmd_scw_purge_wb(cmd_scw_purge_wb),
 `endif // SUPPORT_A
+	.pa_ma(pa_ma),
+	.mmu_ok_ma(mmu_ok_ma),
+	.io_ok_ma(io_ok_ma),
+	.pf_exc(pf_exc),
+	.ptw_rd_sel(ptw_rd_sel),
+	.ptw_pa(ptw_pa),
+	.dc_rdata_raw(dc_rdata_raw),
 	.stall(stall),
 	.stall_1shot(stall_1shot),
 	.stall_1shot_dly(stall_1shot_dly),
@@ -927,7 +983,7 @@ forwarding forwarding (
 	//.g_interrupt(g_interrupt)
 	//);
 
-lsu_stage #(.DWIDTH(DWIDTH)) lsu_stage (
+lsu_stage #(.DWIDTH(DWIDTH), .DWAYS(DWAYS)) lsu_stage (
 	.clk(clk),
 	.rst_n(rst_n),
 	.rd_data_ex(rd_data_ex),
@@ -946,6 +1002,10 @@ lsu_stage #(.DWIDTH(DWIDTH)) lsu_stage (
 	.dc_st_ok(dc_st_ok),
 	.dc_wb_mask(dc_wb_mask),
 	.dc_tag_hit_ma(dc_tag_hit_ma),
+	.dc_way_hit_ma(dc_way_hit_ma),
+	.dc_way_rd(dc_way_rd),
+	.dc_fill_way(dc_fill_way),
+	.dc_rdall_way(dc_rdall_way),
 	.dc_st_wt_ma(dc_st_wt_ma),
 	.dc_cache_wr_ma(dc_cache_wr_ma),
 	.dc_cache_clr_bits(1'b0), // temp
@@ -966,6 +1026,21 @@ lsu_stage #(.DWIDTH(DWIDTH)) lsu_stage (
 	.start_dcflush(start_dcflush),
 	.dcflush_running(dcflush_running),
 	.dc_wbback_state(dc_wbback_state),
+	.trans_on(mmu_trans_on),
+	.satp_ppn(csr_satp_ppn),
+	.mmu_priv_u(mmu_priv_u),
+	.mmu_sum(csr_sum),
+	.mmu_mxr(csr_mxr),
+	.cmd_amold_ma(cmd_amold_ma),
+	.tlb_flush(tlb_flush),
+	.dc_rdata_raw(dc_rdata_raw),
+	.ptw_rd_sel(ptw_rd_sel),
+	.ptw_pa(ptw_pa),
+	.pa_ma(pa_ma),
+	.mmu_ok_ma(mmu_ok_ma),
+	.io_ok_ma(io_ok_ma),
+	.pf_exc(pf_exc),
+	.pf_store(pf_store),
 	.rst_pipe(rst_pipe)
 	);
 
