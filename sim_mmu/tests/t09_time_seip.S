@@ -6,6 +6,8 @@
 #   3. SEIP : external interrupt (tb EXTINT) with MEIE = 0, SEIE = 1,
 #      mideleg.SEI = 1 -> S-mode interrupt 0x80000009, sip.SEIP
 #   4. csrrc / csrrs on mip do not latch the external SEIP into the software bit
+#   5. unimplemented CSRs are illegal (stimecmp, cycle, pmpaddr0, menvcfg),
+#      mhartid / mvendorid / marchid / mimpid read 0
 #
 # register usage
 #   M handler : s9 count, s10 mcause
@@ -168,6 +170,24 @@ m_code4:
     csrr t2, mip
     and  t2, t2, t1
     CHECK t2, 0, 0x42
+
+    # ---------------- 5. unimplemented CSRs trap, mhartid & co read 0 ----------------
+    li   s9, 0
+    csrr t1, mhartid
+    CHECK t1, 0, 0x60
+    csrr t1, mvendorid
+    csrr t1, marchid
+    csrr t1, mimpid
+    CHECK s9, 0, 0x61
+    csrr t1, 0x14D                     # stimecmp (Sstc) : illegal
+    CHECK s9, 1, 0x62
+    CHECK s10, 2, 0x63
+    csrr t1, cycle                     # not implemented : illegal
+    CHECK s9, 2, 0x64
+    csrr t1, pmpaddr0                  # no PMP : illegal
+    CHECK s9, 3, 0x65
+    csrr t1, menvcfg                   # illegal
+    CHECK s9, 4, 0x66
 
     CHECK s4, 0, 0x50                  # no S exception
     PASS

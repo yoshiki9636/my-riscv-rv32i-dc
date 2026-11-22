@@ -530,7 +530,28 @@ wire csr_write_id = (inst_id[13:12] == 2'b01) | (inst_rs1 != 5'd0); // csrrw(i) 
 wire csr_time_id = (csr_adr_id == 12'hC01) | (csr_adr_id == 12'hC81);
 wire csr_time_ng = csr_time_id & ((csr_priv == 2'b01) ? ~csr_mcounteren_tm :
                                   (csr_priv == 2'b00) ? ~(csr_mcounteren_tm & csr_scounteren_tm) : 1'b0);
-wire csr_priv_ng = (csr_priv < csr_adr_id[9:8]) | ((csr_adr_id[11:10] == 2'b11) & csr_write_id) | csr_time_ng;
+// implemented CSRs (2026-11-22) : with S/U-mode an access to any other CSR is
+// an illegal instruction (OpenSBI / Linux detect features by trapping CSR
+// accesses).  mvendorid / marchid / mimpid / mhartid / mconfigptr read 0.
+//   keep this list in sync with csr_array.v
+function csr_impl;
+input [11:0] a;
+begin
+	case (a)
+		12'h300, 12'h301, 12'h302, 12'h303, 12'h304, 12'h305, 12'h306, 12'h310,   // mstatus misa medeleg mideleg mie mtvec mcounteren mstatush
+		12'h340, 12'h341, 12'h342, 12'h343, 12'h344,                              // mscratch mepc mcause mtval mip
+		12'h100, 12'h104, 12'h105, 12'h106,                                       // sstatus sie stvec scounteren
+		12'h140, 12'h141, 12'h142, 12'h143, 12'h144, 12'h180,                     // sscratch sepc scause stval sip satp
+		12'hC01, 12'hC81,                                                         // time timeh
+		12'hF11, 12'hF12, 12'hF13, 12'hF14, 12'hF15:                              // mvendorid marchid mimpid mhartid mconfigptr
+			csr_impl = 1'b1;
+		default:
+			csr_impl = 1'b0;
+	endcase
+end
+endfunction
+wire csr_priv_ng = (csr_priv < csr_adr_id[9:8]) | ((csr_adr_id[11:10] == 2'b11) & csr_write_id) | csr_time_ng |
+                   ~csr_impl(csr_adr_id);
 wire priv_illegal_id = (SMODE != 0) &
                        ((cmd_csr_id & csr_priv_ng) |
                         (cmd_mret_id & (csr_priv != 2'b11)) |

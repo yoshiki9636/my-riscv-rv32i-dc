@@ -23,6 +23,7 @@
  *
  * plusargs:
  *   +HEX=<file>      program image (objcopy -O verilog, 32bit words), default test.hex
+ *   TB_LINEBITS      memory size : 2^n 16-byte lines (default 16 = 1MB, MIG stub only)
  *   +MAXCYC=<n>      timeout cycles (default 200000)
  *   +TRACE           print every trap
  *   +COMMIT          print every register write back / MMIO write / D$ write back
@@ -426,8 +427,13 @@ dram_top dram_top_i (
 
 // MIG stub (in-order, random latency, app_rdy / app_wdf_rdy random stalls)
 //   app_addr[18:3] = byte address[19:4] (mig_if : {1'b0, addr[27:4], 3'b000})
-reg [127:0] mig_mem [0:65535];
-wire [15:0] app_line_idx = app_addr[18:3];
+//   TB_LINEBITS : log2 of the 16-byte lines (16 : 1MB, 20 : 16MB for OpenSBI / Linux)
+`ifndef TB_LINEBITS
+`define TB_LINEBITS 16
+`endif
+localparam LB = `TB_LINEBITS;
+reg [127:0] mig_mem [0:(1<<LB)-1];
+wire [LB-1:0] app_line_idx = app_addr[LB+2:3];
 localparam RQDEPTH = 4;
 localparam WQDEPTH = 4;
 
@@ -456,11 +462,11 @@ always @ (posedge mclk or negedge mrst_n) begin
 end
 assign app_wdf_rdy = app_wdf_rdy_r;
 
-reg [15:0] rdq_addr_fifo  [0:RQDEPTH-1];
+reg [LB-1:0] rdq_addr_fifo  [0:RQDEPTH-1];
 reg [5:0]  rdq_delay_fifo [0:RQDEPTH-1];
 reg [1:0]  rdq_head, rdq_tail;
 reg [2:0]  rdq_cnt;
-reg [15:0]  wrq_addr_fifo  [0:WQDEPTH-1];
+reg [LB-1:0] wrq_addr_fifo  [0:WQDEPTH-1];
 reg [127:0] wrq_data_fifo  [0:WQDEPTH-1];
 reg [15:0]  wrq_mask_fifo  [0:WQDEPTH-1];
 reg [5:0]   wrq_delay_fifo [0:WQDEPTH-1];
@@ -520,7 +526,10 @@ end
 `endif
 
 // ================= program load =================
-reg [31:0] prog [0:262143];   // 1MB as 32bit words
+`ifndef TB_LINEBITS
+`define TB_LINEBITS 16
+`endif
+reg [31:0] prog [0:(1<<(`TB_LINEBITS+2))-1];   // the memory as 32bit words
 integer i;
 reg [1023:0] hexfile;
 integer maxcyc;
@@ -535,10 +544,10 @@ initial begin
     trace = $test$plusargs("TRACE");
     commit = $test$plusargs("COMMIT");
 
-    for (i = 0; i < 262144; i = i + 1)
+    for (i = 0; i < (1<<(`TB_LINEBITS+2)); i = i + 1)
         prog[i] = 32'h0000_0000;
     $readmemh(hexfile, prog);
-    for (i = 0; i < 65536; i = i + 1)
+    for (i = 0; i < (1<<`TB_LINEBITS); i = i + 1)
 `ifdef MEM_SDRAM
         dram_top_i.sdram_if.mem[i] = { prog[i*4+3], prog[i*4+2], prog[i*4+1], prog[i*4+0] };
 `else
