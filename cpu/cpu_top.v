@@ -15,7 +15,8 @@ module cpu_top
     #(parameter IWIDTH = 12,
       parameter DWIDTH = 12,
       parameter SWIDTH = 13,
-      parameter DWAYS = 1)   // D$ ways : 1 / 2 / 4 / 8 (2026-11-22)
+      parameter DWAYS = 1,   // D$ ways : 1 / 2 / 4 / 8 (2026-11-22)
+      parameter SMODE = 0)   // 1 : S-mode / U-mode, trap delegation (2026-11-22)
 	(
 
 	input clk,
@@ -295,8 +296,16 @@ wire [2:0] dc_rdall_way;
 // way (e.g. DWIDTH = 12 direct mapped) the MMU is disabled : satp.MODE reads 0
 // (Bare) and nothing is translated.
 localparam MMU_EN = (DWIDTH <= 10) ? 1 : 0;
-wire mmu_trans_on = csr_satp_mode & csr_mprv & (csr_mpp != `M_MODE);
-wire mmu_priv_u = (csr_mpp == `U_MODE);
+// S/U-mode (2026-11-22) : effective privilege of the data access
+//   M-mode with MPRV = 1 : MPP, otherwise the current privilege level.
+//   Translation : satp.MODE = 1 and the effective privilege is S or U.
+//   (instruction fetch is not translated yet : ITLB is the next step)
+wire sret_condition_ex;
+wire sret_jump;
+wire [1:0] csr_priv;
+wire [1:0] mmu_eff_priv = (csr_mprv & (csr_priv == `M_MODE)) ? csr_mpp : csr_priv;
+wire mmu_trans_on = csr_satp_mode & (mmu_eff_priv != `M_MODE);
+wire mmu_priv_u = (mmu_eff_priv == `U_MODE);
 
 
 // io bus for cpu
@@ -482,7 +491,7 @@ if_stage #(.IWIDTH(IWIDTH)) if_stage (
 	.jump_between_stall(jump_between_stall),
 	//.cmd_mret_ex(cmd_mret_ex),
 	.csr_mepc_ex(csr_mepc_ex),
-	.cmd_sret_ex(cmd_sret_ex),
+	.cmd_sret_ex(sret_jump),
 	.csr_sepc_ex(csr_sepc_ex),
 	.cmd_uret_ex(cmd_uret_ex),
 	.csr_mtvec_ex(csr_mtvec_ex),
@@ -533,7 +542,8 @@ if_stage #(.IWIDTH(IWIDTH)) if_stage (
 	.pc_data(pc_data_dmy)
 	);
 
-id_stage id_stage (
+id_stage #(.SMODE(SMODE)) id_stage (
+	.csr_priv(csr_priv),
 	.clk(clk),
 	.rst_n(rst_n),
 	.inst_id(inst_id),
@@ -631,7 +641,10 @@ id_stage id_stage (
 	.jmp_regs_flush(jmp_regs_flush)
 	);
 
-ex_stage #(.MMU_EN(MMU_EN)) ex_stage (
+ex_stage #(.MMU_EN(MMU_EN), .SMODE(SMODE)) ex_stage (
+	.sret_condition_ex(sret_condition_ex),
+	.sret_jump(sret_jump),
+	.csr_priv(csr_priv),
 	.clk(clk),
 	.rst_n(rst_n),
 	.rs1_data_ex(rs1_data_ex),
