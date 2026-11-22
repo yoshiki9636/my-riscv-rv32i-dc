@@ -93,7 +93,7 @@ begin
 		8'h65 : data_decoder = 29'b0_0000_0000_0000_0100_0000_0000_0000; // e
 		8'h66 : data_decoder = 29'b0_0000_0000_0000_1000_0000_0000_0000; // f
 		8'h67 : data_decoder = 29'b0_0000_0000_0001_0000_0000_0000_0000; // g : go PC to address (run program)
-		8'h03 : data_decoder = 29'b0_0000_0000_0010_0000_0000_0000_0000; // Ctri-c : quit,stop,finish
+		8'h02 : data_decoder = 29'b0_0000_0000_0010_0000_0000_0000_0000; // Ctri-b : quit,stop,finish
 		8'h77 : data_decoder = 29'b0_0000_0000_0100_0000_0000_0000_0000; // w : write data memory
 		8'h72 : data_decoder = 29'b0_0000_0000_1000_0000_0000_0000_0000; // r : read data memory and dump
 		8'h74 : data_decoder = 29'b0_0000_0001_0000_0000_0000_0000_0000; // t : trushed memory and 0 clear
