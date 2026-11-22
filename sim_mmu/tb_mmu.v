@@ -50,6 +50,13 @@ localparam DWAYS = 4;
 `else
 localparam DWAYS = 1;
 `endif
+`ifdef TB_SMODE
+localparam SMODE = `TB_SMODE;     // iverilog -DTB_SMODE=n : S/U-mode override
+`elsif BOARD_ARTY_A7
+localparam SMODE = 1;
+`else
+localparam SMODE = 0;
+`endif
 localparam SWIDTH = 13;
 
 localparam [15:2] TOHOST_ADR = 14'h3FF0;
@@ -125,7 +132,7 @@ wire [31:0] frc_dma_io_rdata;
 // pre-MMU RTL (orig_rtl/) : no DWAYS parameter
 cpu_top #(.IWIDTH(IWIDTH), .DWIDTH(DWIDTH), .SWIDTH(SWIDTH)) dut (
 `else
-cpu_top #(.IWIDTH(IWIDTH), .DWIDTH(DWIDTH), .SWIDTH(SWIDTH), .DWAYS(DWAYS)) dut (
+cpu_top #(.IWIDTH(IWIDTH), .DWIDTH(DWIDTH), .SWIDTH(SWIDTH), .DWAYS(DWAYS), .SMODE(SMODE)) dut (
 `endif
     .clk(clk),
     .rst_n(rst_n),

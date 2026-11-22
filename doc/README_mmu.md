@@ -29,9 +29,31 @@ D$ の容量 = `FT_DWAYS` × 2^(`FT_DWIDTH`+2) バイト。
 | ステップ | 内容 | 状態 |
 |---|---|---|
 | 1 | DTLB + PTW（D$経由）+ satp / MPRV / SUM / MXR、M-mode + MPRV で動作確認 | **実装・シミュレーション済み**（実機は未確認） |
-| 2 | S/U-mode、trap の委譲（medeleg / mideleg）、S-mode CSR、sret | 未着手 |
+| 2 | S/U-mode、trap の委譲（medeleg / mideleg）、S-mode CSR、sret | **実装・シミュレーション済み**（`FT_SMODE`） |
 | 3 | ITLB + IF ステージ対応（命令フェッチの変換） | 未着手 |
 | 4 | SBI（OpenSBI か自作）+ MMU 版 Linux | 未着手 |
+
+## S/U-mode（ステップ2、`FT_SMODE`）
+
+`fpga/fpga_top.v` の `FT_SMODE`（Arty 1、Tang / CMOD 0）で切り替える。0 のときは元の M-mode だけの CPU と同じ動作（mret は常に M に戻る）。
+
+| 項目 | 内容 |
+|---|---|
+| 特権レベル | M / S / U。リセット後は M。trap で M か S へ、mret で MPP へ、sret で SPP（S / U）へ |
+| trap の委譲 | medeleg（例外 0〜15、ただし 10 / 11 / 14 を除く）、mideleg（SSI / STI / SEI）。priv < M で委譲されていれば S-mode へ（stvec / sepc / scause / stval、SPP / SPIE / SIE） |
+| S-mode CSR | sstatus / sie / stvec / scounteren（0）/ sscratch / sepc / scause / stval / sip / satp |
+| M-mode の追加 | medeleg / mideleg / mcounteren（0）、mip / mie の SSIP / STIP / SEIP（M のソフトウェアが書く）、misa = IMASU |
+| 割り込み | M レベル（外部・タイマ）は priv < M なら MIE に関係なく受け付ける（io_frc / interrupter に渡す `csr_rmie` も同じ条件）。S レベル（SSIP / STIP / SEIP）はレベル方式で、委譲先と SIE / MIE で受け付けを決める |
+| 特権チェック（不正命令） | CSR：priv < csr[9:8]、読み出し専用 CSR（csr[11:10] = 11）への書き込み。mret（M 以外）、sret / sfence.vma（U） |
+| ecall | 例外コードは U = 8、S = 9、M = 11 |
+| 変換 | satp.MODE = 1 のとき、S / U-mode のデータアクセスは常に変換（M-mode は MPRV = 1 で MPP が S / U のとき） |
+
+未対応（今後）：
+
+- **命令フェッチの変換**（ITLB、ステップ3）。それまで S / U-mode のコードは VA = PA に置く（テストは恒等マップのメガページを使用）
+- mstatus の TVM / TW / TSR（0 固定）、外部割り込みの SEIP（ハードウェア入力は未接続、M のソフトウェアが mip.SEIP を書く）
+- time / cycle CSR（未実装で 0 が読める。Linux の rdtime は SBI でのエミュレートか、今後の実装）
+- **nommu Linux（M-mode カーネル）**：`FT_SMODE 1` では、カーネルが MPP = U でユーザプロセスに mret すると、本当に U-mode で動く。今の nommu カーネルで問題が出る場合は `FT_SMODE 0` にする
 
 ## 変換の条件
 
@@ -131,6 +153,7 @@ VDEFS="-DTB_DWAYS=1" ./cmp.sh <test.S> [master] [maxcyc]  # MMU なしで master
 | t04_mmu_disabled | `FT_DWIDTH` > 10 で MMU が無効になること（`VDEFS="-DTB_DWIDTH=12 -DTB_DWAYS=1"` で実行。MMU 有効の構成では FAIL code 2 になるのが正しい） |
 | t05_fencei_dmiss | D$ ミスの直後の fence.i（I$ が空の状態）。`ASFLAGS=-DNOFS=0..3` で I$ ライン内の位置を変える |
 | t06_utlb | micro-TLB ミス・DTLB ヒットの経路（8ページを交互にアクセス）、その経路での権限フォルトと I/O |
+| t07_smode | S/U-mode（`VDEFS="-DTB_SMODE=1"`）：misa、M → S / U、特権チェック、ecall の例外コード、medeleg による委譲と sret、S-mode での変換（SUM / U ページ）、S レベル割り込み（委譲あり / なし） |
 | t03_dcache_4way | 同じセットに 12 ライン（dirty の追い出し）、byte / half ストア、fence.i で全ウェイをフラッシュして DRAM から読み直し、MMU 有効時に PTE とデータを同じセットに集中 |
 
 - `cmp_arch.sh <test.S> [master]`：サイクル番号を除いた命令レベルのトレース（レジスタ書き戻し・MMIO）を改造前 RTL と比べる。キャッシュ構成が違う場合に使う（タイマ割り込みのテストは、割り込みの入る位置が変わるので一致しないことがある）

@@ -8,7 +8,6 @@
 #   - alias (2 VAs -> 1 PA), I/O access through a megapage
 #   - TLB replacement (24 pages > 16 entries), sfence.vma
 #   - AMO / LR / SC through the MMU, AMO page fault
-#   - mret clears MPRV when MPP != M
 #include "common.inc"
 #include "mmu.inc"
 
@@ -267,16 +266,10 @@ _start:
     lw   a0, 0(a1)
     CHECK a0, 0x22222222, 0xd0
     EXPECT_NOPF 0xd1
+    MPRV_OFF
 
-    # ---------------- 14. mret clears MPRV (MPP != M) ----------------
-    MPRV_S
-    la   t0, 5f
-    csrw mepc, t0
-    mret
-5:  csrr t0, mstatus
-    li   t1, MSTATUS_MPRV
-    and  t0, t0, t1
-    CHECK t0, 0, 0xe0
+    # (mret clearing MPRV is tested in t07_smode.S : with S/U-mode, mret with
+    #  MPP != M really enters S/U-mode)
 
     CHECK s9, 12, 0xf0      # total page faults
     PASS

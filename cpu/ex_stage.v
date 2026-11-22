@@ -12,7 +12,8 @@
 `define SUPPORT_A
 
 module ex_stage
-	#(parameter MMU_EN = 1)  // 0 : satp.MODE is fixed to 0 (2026-11-22)
+	#(parameter MMU_EN = 1,  // 0 : satp.MODE is fixed to 0 (2026-11-22)
+	  parameter SMODE = 0)   // 1 : S-mode / U-mode (2026-11-22)
 	(
 	input clk,
 	input rst_n,
@@ -185,6 +186,10 @@ module ex_stage
 	output csr_mxr,
 	output [1:0] csr_mpp,
 	output tlb_flush,           // sfence.vma
+	// S/U-mode (2026-11-22)
+	output sret_condition_ex,   // sret executed
+	output sret_jump,           // to if_stage (SMODE=0 : raw cmd_sret_ex as before)
+	output [1:0] csr_priv,      // current privilege level
 	output reg cmd_amold_ma,    // MA access is the load phase of an AMO
 
 	// to ID
@@ -219,6 +224,14 @@ wire [31:0] rs2_sel;
 // for A instructions
 //assign jmp_purge_ex = jmp_condition_ex | ecall_condition_ex | mret_condition_ex | interrupt_condition_ex | timer_condition_ex | fencei_cond;
 
+// S/U-mode (2026-11-22) : interrupt_condition_ex (output) = M external interrupt
+// (ext_int_condition_ex) | S-level interrupt (sint_condition_ex)
+wire ext_int_condition_ex;
+wire sint_condition_ex;
+wire csr_sint_pend;
+wire csr_m_ie;
+wire csr_rmie_raw;
+assign csr_rmie = csr_m_ie;   // io_frc / interrupter : M interrupts are enabled below M-mode
 wire intexp_purge_ex = interrupt_condition_ex | timer_condition_ex | g_exception;
 // timing (2026-11-22) : intexp_purge_ex without the misaligned load/store
 // exception.  misal_ld_ex / misal_st_ex need cmd_ld_ex / cmd_st_ex, so they are
@@ -267,7 +280,7 @@ wire cmd_lrw_purge = cmd_lrw_ex  & ~intexp_purge_nomisal & ~jmp_purge_ma & ~jmp_
 // FIX (2026-10-28): drop the reservation on every trap entry and on mret,
 // so an sc.w can never succeed on a reservation taken in another context
 // (e.g. an lr.w left behind by an ISR or another task).
-wire resv_clr_trap = interrupt_condition_ex | timer_condition_ex | ecall_condition_ex | g_exception | mret_condition_ex;
+wire resv_clr_trap = interrupt_condition_ex | timer_condition_ex | ecall_condition_ex | g_exception | mret_condition_ex | sret_condition_ex;
 reg resv_flg;
 reg [31:0] resv_adr;
 wire reset_flg_cond;
@@ -750,7 +763,7 @@ wire misal_st_ex = misal_ok_ex & cmd_st_ex;
 // TIMER_INTERVAL=13001).  Only a mul/div that really executes may latch.
 wire div_stall_start_pur = div_stall_start & ~jmp_purge_ma & ~jmp_purge_ma2;
 
-csr_array #(.MMU_EN(MMU_EN)) csr_array(
+csr_array #(.MMU_EN(MMU_EN), .SMODE(SMODE)) csr_array(
 	.clk(clk),
 	.rst_n(rst_n),
 	.cmd_csr_ex(cmd_csr_pur),
@@ -763,7 +776,7 @@ csr_array #(.MMU_EN(MMU_EN)) csr_array(
 	.g_interrupt(g_interrupt),
 	.frc_cntr_val_leq(frc_cntr_val_leq),
 	//.g_interrupt_1shot(g_interrupt_1shot),
-	.interrupt_condition_ex(interrupt_condition_ex),
+	.interrupt_condition_ex(ext_int_condition_ex),
 	.timer_condition_ex(timer_condition_ex),
 	.post_jump_cmd_cond(post_jump_cmd_cond),
 	.illegal_ops_ex(illegal_ops_ex),
@@ -780,7 +793,7 @@ csr_array #(.MMU_EN(MMU_EN)) csr_array(
 	.cmd_mret_ex(mret_condition_ex),
 	.cmd_sret_ex(cmd_sret_ex),
 	.cmd_uret_ex(cmd_uret_ex),
-	.csr_rmie(csr_rmie), // new
+	.csr_rmie(csr_rmie_raw), // new
 	.csr_meie(csr_meie),
 	.csr_mtie(csr_mtie),
 	.csr_msie(csr_msie),
@@ -810,6 +823,11 @@ csr_array #(.MMU_EN(MMU_EN)) csr_array(
 	.csr_sum(csr_sum),
 	.csr_mxr(csr_mxr),
 	.csr_mpp_o(csr_mpp),
+	.sret_condition_ex(sret_condition_ex),
+	.sint_condition_ex(sint_condition_ex),
+	.csr_sint_pend(csr_sint_pend),
+	.csr_m_ie(csr_m_ie),
+	.csr_priv(csr_priv),
 	.csr_radr_en_mon(csr_radr_en_mon), // new
 	.csr_radr_mon(csr_radr_mon), // new
 	.csr_wadr_mon(csr_wadr_mon), // new
@@ -1125,6 +1143,10 @@ assign ecall_condition_ex = ~stall & ecall_condition_ex_pre;
 // mret
 wire mret_condition_ex_pre = ~intexp_purge_ex & ~jmp_purge_ma & ~jmp_purge_ma2 & ~fencei_wb_purge & cmd_mret_ex;
 assign mret_condition_ex = ~stall & mret_condition_ex_pre;
+// sret (S/U-mode, 2026-11-22)
+wire sret_condition_ex_pre = (SMODE != 0) & ~intexp_purge_ex & ~jmp_purge_ma & ~jmp_purge_ma2 & ~fencei_wb_purge & cmd_sret_ex;
+assign sret_condition_ex = ~stall & sret_condition_ex_pre;
+assign sret_jump = (SMODE != 0) ? sret_condition_ex : cmd_sret_ex;
 // FIX (2026-10-28): do not take an interrupt while the AMO state machine
 // is running (AMO_LOAD..AMO_STWT).  The AMO has already left EX, so an
 // interrupt there set mepc to the wrong PC and the FSM still finished the
@@ -1173,21 +1195,27 @@ always @ ( posedge clk or negedge rst_n) begin
 		frc_amo_pend <= 1'b0;
 	end
 	else begin
-		if (interrupt_condition_ex)
+		if (ext_int_condition_ex)
 			g_int_amo_pend <= 1'b0;
-		else if (~stall & irq_hold & g_interrupt_1shot & csr_rmie)
+		else if (~stall & irq_hold & g_interrupt_1shot & csr_m_ie)
 			g_int_amo_pend <= 1'b1;
 		if (timer_condition_ex)
 			frc_amo_pend <= 1'b0;
-		else if (~stall & irq_hold & frc_cntr_val_leq_1shot & csr_rmie)
+		else if (~stall & irq_hold & frc_cntr_val_leq_1shot & csr_m_ie)
 			frc_amo_pend <= 1'b1;
 	end
 end
 
 // interrupt
-assign interrupt_condition_ex = ~stall & ~irq_hold & (g_interrupt_1shot | g_int_amo_pend) & csr_rmie;
+assign ext_int_condition_ex = ~stall & ~irq_hold & (g_interrupt_1shot | g_int_amo_pend) & csr_m_ie;
+// S-level interrupt (level, enabled / delegated in csr_array).  When it comes
+// together with an M external / timer interrupt, csr_array takes the M one
+// first (mcause priority : external > timer > S-level), the S-level one stays
+// pending (level).  No masking here : timing (stall -> interrupt_condition_ex).
+assign sint_condition_ex = ~stall & ~irq_hold & csr_sint_pend;
+assign interrupt_condition_ex = ~stall & ~irq_hold & (((g_interrupt_1shot | g_int_amo_pend) & csr_m_ie) | csr_sint_pend);
 // timer interrupt
-assign timer_condition_ex = ~stall & ~irq_hold & (frc_cntr_val_leq_1shot | frc_amo_pend) & csr_rmie;
+assign timer_condition_ex = ~stall & ~irq_hold & (frc_cntr_val_leq_1shot | frc_amo_pend) & csr_m_ie;
 
 // purge signal
 // FIX (2026-10-27): illegal-instruction exceptions (g_exception) must purge
@@ -1195,9 +1223,9 @@ assign timer_condition_ex = ~stall & ~irq_hold & (frc_cntr_val_leq_1shot | frc_a
 // instructions kept executing after the trap, and a second illegal op among
 // them (e.g. glibc's lr.w.aq; bnez; sc.w) trapped again and overwrote mepc.
 // Reproduced in rtl_atomic_test/lrw_illegal_tb.v.
-assign jmp_purge_ex = jmp_condition_ex | ecall_condition_ex | mret_condition_ex | interrupt_condition_ex | timer_condition_ex | fencei_cond | (~stall & g_exception);
+assign jmp_purge_ex = jmp_condition_ex | ecall_condition_ex | mret_condition_ex | sret_condition_ex | interrupt_condition_ex | timer_condition_ex | fencei_cond | (~stall & g_exception);
 
-wire no_wbk_cmds = cmd_st_ex | cmd_br_ex | ecall_condition_ex | mret_condition_ex | cmd_fencei_ex;
+wire no_wbk_cmds = cmd_st_ex | cmd_br_ex | ecall_condition_ex | mret_condition_ex | sret_condition_ex | cmd_fencei_ex;
 
 assign wbk_rd_reg_tmp = wbk_rd_reg_ex & ~no_wbk_cmds & ~intexp_purge_ex & ~jmp_purge_ma & ~jmp_purge_ma2 & ~illegal_ops_ex;
 //assign wbk_rd_reg_tmp = wbk_rd_reg_ex & ~jmp_purge_ma & ~illegal_ops_ex;
@@ -1220,7 +1248,7 @@ always @ ( posedge clk or negedge rst_n) begin
 	end
 end
 
-assign jump_between_stall = dc_stall_fin3 & (jmp_condition_ex_pre | ecall_condition_ex_pre | mret_condition_ex_pre | fencei_cond);
+assign jump_between_stall = dc_stall_fin3 & (jmp_condition_ex_pre | ecall_condition_ex_pre | mret_condition_ex_pre | sret_condition_ex_pre | fencei_cond);
 
 
 // FF to MA

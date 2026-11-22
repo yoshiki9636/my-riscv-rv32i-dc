@@ -14,9 +14,12 @@
 `define SUPPORT_M
 `define SUPPORT_A
 
-module id_stage(
+module id_stage
+	#(parameter SMODE = 0)   // 1 : S-mode / U-mode privilege checks (2026-11-22)
+	(
 	input clk,
 	input rst_n,
+	input [1:0] csr_priv,    // current privilege level (S/U-mode, 2026-11-22)
 	// from IF stage
 	input [31:0] inst_id,
 	input [31:2] pc_id,
@@ -514,7 +517,18 @@ wire cmd_all_except_nop =
 `endif // SUPPORT_M
 `endif // SUPPORT_A
 
-wire illegal_ops_id = ~(cmd_nop | cmd_all_except_nop) & ~jmp_purge_ma & ~jmp_purge_ex & ~stall;
+// S/U-mode (2026-11-22) : privilege checks (illegal instruction)
+//   CSR : priv < csr[9:8], or a write to a read-only CSR (csr[11:10] == 2'b11)
+//   mret below M, sret / sfence.vma in U
+//   (priv only changes on a trap / xRET, which purge the instruction in ID)
+wire [11:0] csr_adr_id = inst_id[31:20];
+wire csr_write_id = (inst_id[13:12] == 2'b01) | (inst_rs1 != 5'd0); // csrrw(i) / csrrs(c)(i) with rs1/uimm != 0
+wire csr_priv_ng = (csr_priv < csr_adr_id[9:8]) | ((csr_adr_id[11:10] == 2'b11) & csr_write_id);
+wire priv_illegal_id = (SMODE != 0) &
+                       ((cmd_csr_id & csr_priv_ng) |
+                        (cmd_mret_id & (csr_priv != 2'b11)) |
+                        ((cmd_sret_id | cmd_sfence_id) & (csr_priv == 2'b00)));
+wire illegal_ops_id = (~(cmd_nop | cmd_all_except_nop) | priv_illegal_id) & ~jmp_purge_ma & ~jmp_purge_ex & ~stall;
 
 // destination register number
 wire [4:0] rd_adr_id = inst_rd;

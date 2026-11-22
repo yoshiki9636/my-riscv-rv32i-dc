@@ -551,7 +551,8 @@ end
 // pred_hit_ex : a jump predicted in ID is confirmed in EX.  The next EX slot
 // is the killed fall-through NOP, so mepc must be the target (post_pc_ex)
 // for an interrupt taken there, same as after a taken jump.
-wire jump_only = jmp_condition_ex | mret_condition_ex | fencei_cond | pred_hit_ex;
+// S/U-mode (2026-11-22) : cmd_sret_ex is ex_stage's sret_jump (qualified sret)
+wire jump_only = jmp_condition_ex | mret_condition_ex | cmd_sret_ex | fencei_cond | pred_hit_ex;
 
 always @ (posedge clk or negedge rst_n) begin   
 	if (~rst_n) begin
