@@ -29,142 +29,142 @@
 #include <sbi/sbi_platform.h>
 #include <sbi/sbi_timer.h>
 
-#define JASA_UART_ADDR		0xC000FC00UL
-#define JASA_UART_OUTC		0x00
-#define JASA_UART_FULL		0x04
-#define JASA_UART_RXCH		0x0C
-#define JASA_UART_RX_VALID	(1U << 8)
+#define STAGE5_UART_ADDR		0xC000FC00UL
+#define STAGE5_UART_OUTC		0x00
+#define STAGE5_UART_FULL		0x04
+#define STAGE5_UART_RXCH		0x0C
+#define STAGE5_UART_RX_VALID	(1U << 8)
 
-#define JASA_FRC_ADDR		0xC000F800UL
-#define JASA_FRC_VALLO		0x00
-#define JASA_FRC_VALHI		0x04
-#define JASA_FRC_CMPLO		0x08
-#define JASA_FRC_CMPHI		0x0C
-#define JASA_FRC_CNTRL		0x10
-#define JASA_FRC_RUN		0x1	/* run, bit2 = 0 : clear MTIP */
+#define STAGE5_FRC_ADDR		0xC000F800UL
+#define STAGE5_FRC_VALLO		0x00
+#define STAGE5_FRC_VALHI		0x04
+#define STAGE5_FRC_CMPLO		0x08
+#define STAGE5_FRC_CMPHI		0x0C
+#define STAGE5_FRC_CNTRL		0x10
+#define STAGE5_FRC_RUN		0x1	/* run, bit2 = 0 : clear MTIP */
 
 /* clk of the CPU / io_frc (Arty A7 : 50MHz).  Keep in sync with the DTS
  * timebase-frequency. */
-#ifndef JASA_TIMER_FREQ
-#define JASA_TIMER_FREQ		50000000
+#ifndef STAGE5_TIMER_FREQ
+#define STAGE5_TIMER_FREQ		50000000
 #endif
 
 /* ---------------- console ---------------- */
 
-static volatile void *uart_base = (volatile void *)JASA_UART_ADDR;
+static volatile void *uart_base = (volatile void *)STAGE5_UART_ADDR;
 
-static void jasa_uart_putc(char ch)
+static void stage5_uart_putc(char ch)
 {
-	while (readl(uart_base + JASA_UART_FULL) & 0x1)
+	while (readl(uart_base + STAGE5_UART_FULL) & 0x1)
 		;
-	writel((u32)(unsigned char)ch, uart_base + JASA_UART_OUTC);
+	writel((u32)(unsigned char)ch, uart_base + STAGE5_UART_OUTC);
 }
 
-static int jasa_uart_getc(void)
+static int stage5_uart_getc(void)
 {
-	u32 v = readl(uart_base + JASA_UART_RXCH);
+	u32 v = readl(uart_base + STAGE5_UART_RXCH);
 
-	if (v & JASA_UART_RX_VALID)
+	if (v & STAGE5_UART_RX_VALID)
 		return v & 0xff;
 	return -1;
 }
 
-static struct sbi_console_device jasa_console = {
-	.name		= "jasa-uart",
-	.console_putc	= jasa_uart_putc,
-	.console_getc	= jasa_uart_getc,
+static struct sbi_console_device stage5_console = {
+	.name		= "5stage-uart",
+	.console_putc	= stage5_uart_putc,
+	.console_getc	= stage5_uart_getc,
 };
 
 /* ---------------- timer ---------------- */
 
-static volatile void *frc_base = (volatile void *)JASA_FRC_ADDR;
+static volatile void *frc_base = (volatile void *)STAGE5_FRC_ADDR;
 
-static u64 jasa_timer_value(void)
+static u64 stage5_timer_value(void)
 {
 	u32 hi, lo;
 
 	do {
-		hi = readl(frc_base + JASA_FRC_VALHI);
-		lo = readl(frc_base + JASA_FRC_VALLO);
-	} while (hi != readl(frc_base + JASA_FRC_VALHI));
+		hi = readl(frc_base + STAGE5_FRC_VALHI);
+		lo = readl(frc_base + STAGE5_FRC_VALLO);
+	} while (hi != readl(frc_base + STAGE5_FRC_VALHI));
 
 	return ((u64)hi << 32) | lo;
 }
 
-static void jasa_set_cmp(u64 v)
+static void stage5_set_cmp(u64 v)
 {
 	/* the high word first to max : no false match in between */
-	writel(0xFFFFFFFFU, frc_base + JASA_FRC_CMPHI);
-	writel((u32)v, frc_base + JASA_FRC_CMPLO);
-	writel((u32)(v >> 32), frc_base + JASA_FRC_CMPHI);
+	writel(0xFFFFFFFFU, frc_base + STAGE5_FRC_CMPHI);
+	writel((u32)v, frc_base + STAGE5_FRC_CMPLO);
+	writel((u32)(v >> 32), frc_base + STAGE5_FRC_CMPHI);
 	/* clear the status : it is set again (a new edge) if counter >= v */
-	writel(JASA_FRC_RUN, frc_base + JASA_FRC_CNTRL);
+	writel(STAGE5_FRC_RUN, frc_base + STAGE5_FRC_CNTRL);
 }
 
-static void jasa_timer_event_start(u64 next_event)
+static void stage5_timer_event_start(u64 next_event)
 {
-	jasa_set_cmp(next_event);
+	stage5_set_cmp(next_event);
 }
 
-static void jasa_timer_event_stop(void)
+static void stage5_timer_event_stop(void)
 {
-	jasa_set_cmp(~0ULL);
+	stage5_set_cmp(~0ULL);
 }
 
-static int jasa_timer_warm_init(void)
+static int stage5_timer_warm_init(void)
 {
-	jasa_timer_event_stop();
+	stage5_timer_event_stop();
 	return 0;
 }
 
-static struct sbi_timer_device jasa_timer = {
-	.name			= "jasa-frc",
-	.timer_freq		= JASA_TIMER_FREQ,
-	.timer_value		= jasa_timer_value,
-	.timer_event_start	= jasa_timer_event_start,
-	.timer_event_stop	= jasa_timer_event_stop,
-	.warm_init		= jasa_timer_warm_init,
+static struct sbi_timer_device stage5_timer = {
+	.name			= "5stage-frc",
+	.timer_freq		= STAGE5_TIMER_FREQ,
+	.timer_value		= stage5_timer_value,
+	.timer_event_start	= stage5_timer_event_start,
+	.timer_event_stop	= stage5_timer_event_stop,
+	.warm_init		= stage5_timer_warm_init,
 };
 
 /* ---------------- platform ---------------- */
 
-static int jasa_early_init(bool cold_boot)
+static int stage5_early_init(bool cold_boot)
 {
 	if (cold_boot)
-		sbi_console_set_device(&jasa_console);
+		sbi_console_set_device(&stage5_console);
 	return 0;
 }
 
-static int jasa_final_init(bool cold_boot)
+static int stage5_final_init(bool cold_boot)
 {
 	return 0;
 }
 
-static int jasa_timer_init(void)
+static int stage5_timer_init(void)
 {
 	/* start the counter (keep its value : the time CSR counts on) */
-	writel(JASA_FRC_RUN, frc_base + JASA_FRC_CNTRL);
-	sbi_timer_set_device(&jasa_timer);
+	writel(STAGE5_FRC_RUN, frc_base + STAGE5_FRC_CNTRL);
+	sbi_timer_set_device(&stage5_timer);
 	return 0;
 }
 
 /* 16-entry TLBs : a full flush is cheaper than many sfence.vma */
-static u64 jasa_get_tlbr_flush_limit(void)
+static u64 stage5_get_tlbr_flush_limit(void)
 {
 	return 16 * 4096;
 }
 
-static u32 jasa_get_tlb_num_entries(void)
+static u32 stage5_get_tlb_num_entries(void)
 {
 	return 16;
 }
 
 const struct sbi_platform_operations platform_ops = {
-	.early_init		= jasa_early_init,
-	.final_init		= jasa_final_init,
-	.timer_init		= jasa_timer_init,
-	.get_tlbr_flush_limit	= jasa_get_tlbr_flush_limit,
-	.get_tlb_num_entries	= jasa_get_tlb_num_entries,
+	.early_init		= stage5_early_init,
+	.final_init		= stage5_final_init,
+	.timer_init		= stage5_timer_init,
+	.get_tlbr_flush_limit	= stage5_get_tlbr_flush_limit,
+	.get_tlb_num_entries	= stage5_get_tlb_num_entries,
 };
 
 const struct sbi_platform platform = {

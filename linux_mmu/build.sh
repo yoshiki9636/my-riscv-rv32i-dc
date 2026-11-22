@@ -7,7 +7,7 @@
 #   ./build.sh            config (first time) + Image + dtb + fw_payload
 #   ./build.sh config     redo the config from BASE + mmu.config
 #   output : $KOUT/arch/riscv/boot/Image, $KOUT/my_fpga_mmu.dtb,
-#            ../sbi/opensbi/build/platform/jasa/firmware/fw_payload.{elf,bin,hex}
+#            ../sbi/opensbi/build/platform/5stage/firmware/fw_payload.{elf,bin,hex}
 set -e
 cd "$(dirname "$0")"
 HERE=$PWD

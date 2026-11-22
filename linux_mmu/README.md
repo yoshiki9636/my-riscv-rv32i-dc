@@ -30,7 +30,7 @@ git -C ~/linux/linux archive HEAD -- . ':!lab3_dram' ':!rtl_atomic_test' | tar -
 | `CPIO` | `~/linux/linux/initramfs.cpio`（static-pie の busybox、MMU でもそのまま動く） |
 | `BASE` | `~/linux/linux/.config`（nommu の設定） |
 
-出力：`../sbi/opensbi/build/platform/jasa/firmware/fw_payload.hex`（OpenSBI + カーネル + DTB、`Image.hex` と同じ形式でアドレス 0 から）。
+出力：`../sbi/opensbi/build/platform/5stage/firmware/fw_payload.hex`（OpenSBI + カーネル + DTB、`Image.hex` と同じ形式でアドレス 0 から）。
 
 ## メモリ配置
 | アドレス | 内容 |

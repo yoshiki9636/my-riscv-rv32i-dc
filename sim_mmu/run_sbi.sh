@@ -7,7 +7,7 @@ cd "$(dirname "$0")"
 source ./common.sh
 #   ./run_sbi.sh <fw_jump.elf> tests/sbi_payload.S [plusargs] : with an S-mode
 #   payload (linked at 0x0040_0000 by tests/link_payload.ld)
-ELF=${1:-$ROOT/sbi/opensbi/build/platform/jasa/firmware/fw_payload.elf}; shift || true
+ELF=${1:-$ROOT/sbi/opensbi/build/platform/5stage/firmware/fw_payload.elf}; shift || true
 NAME=$(basename "$ELF" .elf)
 $TC-objcopy -O verilog --verilog-data-width=4 "$ELF" $OUT/sbi_$NAME.hex
 if [ -n "$1" ] && [ "${1#+}" = "$1" ]; then

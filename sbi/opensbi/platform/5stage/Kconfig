@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: BSD-2-Clause
 #
 # my-riscv-rv32i-dc (Arty A7) : own UART / timer drivers in platform.c
-config PLATFORM_JASA
+config PLATFORM_5STAGE
 	bool
 	default y

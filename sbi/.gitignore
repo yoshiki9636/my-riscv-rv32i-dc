@@ -1,1 +1,2 @@
-opensbi/build/
+opensbi/build*/
+opensbi/build*.log
