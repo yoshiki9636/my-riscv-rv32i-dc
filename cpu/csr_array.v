@@ -283,8 +283,15 @@ reg csr_spp;
 //   trap_any : a trap is taken in this cycle (interrupt / exception / ecall)
 //   target_s : it goes to S-mode (delegated by medeleg / mideleg, priv < M)
 //   m_interrupt is the M-mode trap (the name is kept from the M-only CPU)
+// 2026-11-23 : g_exception is qualified with ~stall (as jmp_purge_ex).
+//   illegal_ops_ex (incl. the instruction page fault marker) stays asserted
+//   while an older load in MA stalls (micro-TLB miss / PTW); without ~stall
+//   priv / SPP / SPIE / sepc ... were written every stall cycle, so the load
+//   was checked with priv = S (Linux Oops "access to user memory without
+//   uaccess routines", SPP = 1, epc = U load in the last word of a page).
+//   pf_exc is taken in PFX (no stall), so it is not affected.
 wire trap_any = ((interrupt_condition_ex | timer_condition_ex) & (g_interrupt_priv == `M_MODE)) & csr_m_ie
-              | sint_condition_ex | ecall_condition_ex | g_exception;
+              | sint_condition_ex | ecall_condition_ex | (~stall & g_exception);
 wire target_s;
 wire m_interrupt = trap_any & ~target_s;
 wire s_interrupt_t = trap_any & target_s;   // S-mode trap
