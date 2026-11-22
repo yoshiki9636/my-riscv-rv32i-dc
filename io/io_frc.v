@@ -26,6 +26,7 @@ module io_frc(
 	input csr_rmie,
 	output reg frc_cntr_val_leq,
 	output frc_cntr_val_leq_1shot,
+	output [63:0] frc_time,     // the counter : time CSR (2026-11-22)
 	input stall
 	//output interrupt_clear
 
@@ -74,6 +75,7 @@ always @ (posedge clk or negedge rst_n) begin
 		frc_cntr_val <= frc_cntr_val + 64'd1;
 end
 
+assign frc_time = frc_cntr_val;
 reg [63:0] frc_cmp_val;
 
 always @ (posedge clk or negedge rst_n) begin

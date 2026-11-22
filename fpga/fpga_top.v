@@ -616,6 +616,8 @@ wire csr_rmie;
 wire csr_meie;
 wire frc_cntr_val_leq;
 wire frc_cntr_val_leq_1shot;
+wire [63:0] frc_time;   // time CSR (2026-11-22)
+wire csr_seie;          // mie.SEIE -> interrupter (2026-11-22)
 
 // spi select signal : SPI output is muxed to rgb_led[2:0] in io_led
 wire spi_select_io;
@@ -851,6 +853,8 @@ cpu_top #(.DWIDTH(DWIDTH), .IWIDTH(IWIDTH), .SWIDTH(SWIDTH), .DWAYS(`FT_DWAYS), 
 	.csr_mtie(csr_mtie),
 	.frc_cntr_val_leq(frc_cntr_val_leq),
     .frc_cntr_val_leq_1shot(frc_cntr_val_leq_1shot),
+    .frc_time(frc_time),
+    .csr_seie(csr_seie),
     .csr_rmie(csr_rmie),
     .csr_meie(csr_meie),
     .g_interrupt_1shot(g_interrupt_1shot),
@@ -1270,6 +1274,7 @@ io_frc io_frc (
     .csr_rmie(csr_rmie),
     .frc_cntr_val_leq(frc_cntr_val_leq),
     .frc_cntr_val_leq_1shot(frc_cntr_val_leq_1shot),
+    .frc_time(frc_time),
     .stall(stall)
     );
 
@@ -1281,6 +1286,7 @@ interrupter interrupter (
     .ext_uart2_interrpt_1shot(ext_uart2_interrpt_1shot),
     .csr_rmie(csr_rmie),
     .csr_meie(csr_meie),
+    .csr_seie(csr_seie),
     .g_interrupt_1shot(g_interrupt_1shot),
     .g_interrupt(g_interrupt),
     //.ic_stall(ic_stall),

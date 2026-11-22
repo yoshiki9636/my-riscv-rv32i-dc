@@ -118,6 +118,8 @@ module cpu_top
 	output csr_mtie,
 	input frc_cntr_val_leq,
 	input frc_cntr_val_leq_1shot,
+	input [63:0] frc_time,          // io_frc counter : time CSR (2026-11-22)
+	output csr_seie,                // mie.SEIE : to interrupter (SEIP, 2026-11-22)
 	output csr_meie,
 	output csr_rmie,
 	input g_interrupt_1shot,
@@ -322,6 +324,9 @@ wire i_walk_fault;
 wire ifill;
 wire [31:12] ifill_vpn;
 wire ifill_mega;
+// time CSR (2026-11-22)
+wire csr_mcounteren_tm;
+wire csr_scounteren_tm;
 wire [31:12] ifill_ppn;
 wire [4:0] ifill_flags;
 
@@ -565,6 +570,8 @@ if_stage #(.IWIDTH(IWIDTH), .IWAYS(IWAYS)) if_stage (
 
 id_stage #(.SMODE(SMODE)) id_stage (
 	.csr_priv(csr_priv),
+	.csr_mcounteren_tm(csr_mcounteren_tm),
+	.csr_scounteren_tm(csr_scounteren_tm),
 	.clk(clk),
 	.rst_n(rst_n),
 	.inst_id(inst_id),
@@ -667,6 +674,10 @@ ex_stage #(.MMU_EN(MMU_EN), .SMODE(SMODE)) ex_stage (
 	.sret_condition_ex(sret_condition_ex),
 	.sret_jump(sret_jump),
 	.csr_priv(csr_priv),
+	.frc_time(frc_time),
+	.csr_seie(csr_seie),
+	.csr_mcounteren_tm(csr_mcounteren_tm),
+	.csr_scounteren_tm(csr_scounteren_tm),
 	.clk(clk),
 	.rst_n(rst_n),
 	.rs1_data_ex(rs1_data_ex),

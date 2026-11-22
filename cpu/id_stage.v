@@ -20,6 +20,8 @@ module id_stage
 	input clk,
 	input rst_n,
 	input [1:0] csr_priv,    // current privilege level (S/U-mode, 2026-11-22)
+	input csr_mcounteren_tm, // time CSR access (2026-11-22)
+	input csr_scounteren_tm,
 	// from IF stage
 	input [31:0] inst_id,
 	input [31:2] pc_id,
@@ -524,7 +526,11 @@ wire cmd_all_except_nop =
 //   (priv only changes on a trap / xRET, which purge the instruction in ID)
 wire [11:0] csr_adr_id = inst_id[31:20];
 wire csr_write_id = (inst_id[13:12] == 2'b01) | (inst_rs1 != 5'd0); // csrrw(i) / csrrs(c)(i) with rs1/uimm != 0
-wire csr_priv_ng = (csr_priv < csr_adr_id[9:8]) | ((csr_adr_id[11:10] == 2'b11) & csr_write_id);
+// time / timeh (0xC01 / 0xC81) : S needs mcounteren.TM, U needs mcounteren.TM & scounteren.TM
+wire csr_time_id = (csr_adr_id == 12'hC01) | (csr_adr_id == 12'hC81);
+wire csr_time_ng = csr_time_id & ((csr_priv == 2'b01) ? ~csr_mcounteren_tm :
+                                  (csr_priv == 2'b00) ? ~(csr_mcounteren_tm & csr_scounteren_tm) : 1'b0);
+wire csr_priv_ng = (csr_priv < csr_adr_id[9:8]) | ((csr_adr_id[11:10] == 2'b11) & csr_write_id) | csr_time_ng;
 wire priv_illegal_id = (SMODE != 0) &
                        ((cmd_csr_id & csr_priv_ng) |
                         (cmd_mret_id & (csr_priv != 2'b11)) |

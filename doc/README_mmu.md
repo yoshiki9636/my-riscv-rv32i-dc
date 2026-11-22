@@ -50,9 +50,19 @@ D$ の容量 = `FT_DWAYS` × 2^(`FT_DWIDTH`+2) バイト。
 
 未対応（今後）：
 
-- mstatus の TVM / TW / TSR（0 固定）、外部割り込みの SEIP（ハードウェア入力は未接続、M のソフトウェアが mip.SEIP を書く）
-- time / cycle CSR（未実装で 0 が読める。Linux の rdtime は SBI でのエミュレートか、今後の実装）
+- mstatus の TVM / TW / TSR（0 固定）、cycle / instret CSR（未実装で 0 が読める）
 - **nommu Linux（M-mode カーネル）**：`FT_SMODE 1` では、カーネルが MPP = U でユーザプロセスに mret すると、本当に U-mode で動く。今の nommu カーネルで問題が出る場合は `FT_SMODE 0` にする
+
+## time CSR と SEIP（ステップ4の準備）
+
+| 項目 | 内容 |
+|---|---|
+| time / timeh（0xC01 / 0xC81） | io_frc の 64 ビットカウンタ（MTIME と同じ値、clk で動作）。読み出し専用（書き込みは不正命令）。S-mode は mcounteren.TM = 1、U-mode は mcounteren.TM と scounteren.TM の両方が 1 のときだけ読める（それ以外は不正命令） |
+| mcounteren / scounteren | 3 ビット（CY / TM / IR）、TM だけが意味を持つ |
+| SEIP | 外部割り込み（interrupter の `g_interrupt`、レベル）を mip.SEIP のハードウェア入力につないだ。interrupter は MEIE か mie.SEIE のどちらかが 1 なら割り込みのステータスを立てる。S-mode の Linux に渡すときは MEIE = 0、SEIE = 1、mideleg.SEI = 1 にする（M 側のエッジ割り込みは MEIE = 1 のときだけ） |
+| mip の書き込み | csrrs / csrrc で mip を書き換えるとき、SEIP はソフトウェアのビットだけを対象にする（外部入力の値を取り込まない） |
+
+いずれも `FT_SMODE 0` のときは無効（今までと同じ動作）。
 
 ## ITLB と I$（ステップ3）
 
@@ -168,6 +178,7 @@ VDEFS="-DTB_DWAYS=1" ./cmp.sh <test.S> [master] [maxcyc]  # MMU なしで master
 | t06_utlb | micro-TLB ミス・DTLB ヒットの経路（8ページを交互にアクセス）、その経路での権限フォルトと I/O |
 | t07_smode | S/U-mode（`VDEFS="-DTB_SMODE=1"`）：misa、M → S / U、特権チェック、ecall の例外コード、medeleg による委譲と sret、S-mode での変換（SUM / U ページ）、S レベル割り込み（委譲あり / なし） |
 | t08_itlb | 命令フェッチの変換（`VDEFS="-DTB_SMODE=1"`）：S-mode のコードを VA ≠ PA で実行、命令ページフォルト（X なし・無効・U ページ）、20 ページで ITLB を溢れさせる、D 側 / I 側の PTW の混在、sfence.vma + fence.i でコードページを付け替え |
+| t09_time_seip | time CSR（MTIME と一致して増える、書き込みは不正命令、mcounteren / scounteren によるアクセス権）、外部割り込みから S-mode への SEIP（tb の EXTINT、0xC000_FFC8）、mip の読み書きで SEIP の外部入力を取り込まないこと |
 | t03_dcache_4way | 同じセットに 12 ライン（dirty の追い出し）、byte / half ストア、fence.i で全ウェイをフラッシュして DRAM から読み直し、MMU 有効時に PTE とデータを同じセットに集中 |
 
 - `cmp_arch.sh <test.S> [master]`：サイクル番号を除いた命令レベルのトレース（レジスタ書き戻し・MMIO）を改造前 RTL と比べる。キャッシュ構成が違う場合に使う（タイマ割り込みのテストは、割り込みの入る位置が変わるので一致しないことがある）

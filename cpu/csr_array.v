@@ -82,6 +82,11 @@ module csr_array
 	output csr_sint_pend,     // an S-level interrupt is pending and enabled
 	output csr_m_ie,          // M-level interrupts are enabled (MIE | priv < M)
 	output [1:0] csr_priv,    // current privilege level
+	// time CSR / SEIP (2026-11-22)
+	input [63:0] frc_time,    // io_frc free running counter (time / timeh)
+	output csr_seie,          // mie.SEIE : interrupter latches external interrupts for S too
+	output csr_mcounteren_tm, // mcounteren.TM : S-mode may read time
+	output csr_scounteren_tm, // scounteren.TM : U-mode may read time (with mcounteren.TM)
     input csr_radr_en_mon, // new
     input [11:0] csr_radr_mon, // new
     input [11:0] csr_wadr_mon, // new
@@ -116,6 +121,8 @@ module csr_array
 `define CSR_MEDELEG_ADR 12'h302
 `define CSR_MIDELEG_ADR 12'h303
 `define CSR_MCOUNTEREN_ADR 12'h306
+`define CSR_TIME_ADR 12'hC01
+`define CSR_TIMEH_ADR 12'hC81
 
 `define M_MODE 2'b11
 `define S_MODE 2'b01
@@ -163,6 +170,10 @@ wire adr_sip = smode_en & (csr_ofs_ex_pm == `CSR_SIP_ADR);
 wire adr_medeleg = smode_en & (csr_ofs_ex_pm == `CSR_MEDELEG_ADR);
 wire adr_mideleg = smode_en & (csr_ofs_ex_pm == `CSR_MIDELEG_ADR);
 wire adr_sepc_s = smode_en & adr_sepc;
+wire adr_scounteren = smode_en & (csr_ofs_ex_pm == `CSR_SCOUNTEREN_ADR);
+wire adr_mcounteren = smode_en & (csr_ofs_ex_pm == `CSR_MCOUNTEREN_ADR);
+wire adr_time = smode_en & (csr_ofs_ex_pm == `CSR_TIME_ADR);
+wire adr_timeh = smode_en & (csr_ofs_ex_pm == `CSR_TIMEH_ADR);
 
 // read data selector
 wire [31:0] csr_mstatus;
@@ -184,6 +195,8 @@ reg [15:0] csr_medeleg;
 reg [2:0] csr_mideleg;     // { SEI(9), STI(5), SSI(1) }
 reg [2:0] csr_mip_sw;      // { SEIP(9), STIP(5), SSIP(1) } : written by M-mode software
 reg [2:0] csr_mie_s;       // { SEIE(9), STIE(5), SSIE(1) }
+reg [2:0] csr_mcounteren;  // { IR, TM, CY } (only TM is used : time)
+reg [2:0] csr_scounteren;
 wire [31:0] csr_sstatus;
 wire [31:0] csr_sie_r;
 wire [31:0] csr_sip_r;
@@ -222,6 +235,10 @@ wire [31:0] csr_rsel = adr_mstatus ? csr_mstatus :
                        adr_sip ? csr_sip_r :
                        adr_medeleg ? csr_medeleg_r :
                        adr_mideleg ? csr_mideleg_r :
+                       adr_mcounteren ? { 29'd0, csr_mcounteren } :
+                       adr_scounteren ? { 29'd0, csr_scounteren } :
+                       adr_time ? frc_time[31:0] :
+                       adr_timeh ? frc_time[63:32] :
                        32'd0;
 
 assign csr_rd_data = csr_rsel;
@@ -630,8 +647,10 @@ wire deleg_exc = (mcause_code[5:4] == 2'b00) & medeleg_hit[0];
 assign target_s = smode_en & (priv != `M_MODE) & (interrupt_bit ? deleg_int : deleg_exc);
 
 // S-level interrupts (level) : SSIP / STIP / SEIP are set by M-mode software
-//   (SBI) in mip.  The hardware SEIP input is not connected yet.
-wire [2:0] s_ip = csr_mip_sw;
+//   (SBI) in mip.  SEIP is also set by the external interrupt (interrupter's
+//   g_interrupt level : it latches a request when MEIE or SEIE is set).
+wire seip_hw = smode_en & g_interrupt;
+wire [2:0] s_ip = csr_mip_sw | { seip_hw, 2'b00 };
 wire [2:0] s_pend = s_ip & csr_mie_s;
 wire s_enable = (priv == `U_MODE) | ((priv == `S_MODE) & csr_sie);
 wire m_enable = (priv != `M_MODE) | csr_rmie;
@@ -702,7 +721,10 @@ always @ ( posedge clk or negedge rst_n) begin
 	end
 	else begin
 		if (mip_wr)
-			csr_mip_sw <= { wdata_all[9], wdata_all[5], wdata_all[1] };
+			// csrrs / csrrc on SEIP use only the software bit (not the
+			// external input), as the spec
+			csr_mip_sw <= { cmd_rw ? wdata_rw[9] : cmd_rs ? (wdata_rw[9] | csr_mip_sw[2]) : (~wdata_rw[9] & csr_mip_sw[2]),
+			                wdata_all[5], wdata_all[1] };
 		else if (sip_wr & csr_mideleg[0])
 			csr_mip_sw[0] <= wdata_all[1];
 		if (mie_wr_s)
@@ -712,10 +734,25 @@ always @ ( posedge clk or negedge rst_n) begin
 	end
 end
 
-wire [2:0] sip_bits = csr_mip_sw & csr_mideleg;
+wire [2:0] sip_bits = s_ip & csr_mideleg;
 wire [2:0] sie_bits = csr_mie_s & csr_mideleg;
 assign csr_sip_r = { 22'd0, sip_bits[2], 3'd0, sip_bits[1], 3'd0, sip_bits[0], 1'b0 };
 assign csr_sie_r = { 22'd0, sie_bits[2], 3'd0, sie_bits[1], 3'd0, sie_bits[0], 1'b0 };
+assign csr_seie = smode_en & csr_mie_s[2];
+
+// mcounteren / scounteren (time CSR access, 2026-11-22)
+always @ ( posedge clk or negedge rst_n) begin
+	if (~rst_n) begin
+		csr_mcounteren <= 3'd0;
+		csr_scounteren <= 3'd0;
+	end
+	else if ((~stall)&(cmd_csr_ex)) begin
+		if (adr_mcounteren) csr_mcounteren <= wdata_all[2:0];
+		if (adr_scounteren) csr_scounteren <= wdata_all[2:0];
+	end
+end
+assign csr_mcounteren_tm = csr_mcounteren[1];
+assign csr_scounteren_tm = csr_scounteren[1];
 
 // FIX (2026-07-16): same level-vs-condition fix as mcause_code above -
 // an illegal-instruction trap taken while a timer compare was pending
@@ -793,7 +830,7 @@ end
 //assign csr_mip = { 20'd0, g_interrupt, 3'd0, frc_cntr_val_leq, 3'd0, g_exception, 3'd0 };
 //assign csr_mip = { 20'd0, g_interrupt, 3'd0, 1'b0, 3'd0, g_exception, 3'd0 };
 assign csr_mip = { 20'd0, g_interrupt, 3'd0, frc_cntr_val_leq, 3'd0, g_exception, 3'd0 } |
-                 (smode_en ? { 22'd0, csr_mip_sw[2], 3'd0, csr_mip_sw[1], 3'd0, csr_mip_sw[0], 1'b0 } : 32'd0);
+                 (smode_en ? { 22'd0, csr_mip_sw[2] | seip_hw, 3'd0, csr_mip_sw[1], 3'd0, csr_mip_sw[0], 1'b0 } : 32'd0);
 
 // mie register
 reg [2:0] csr_mie_bits;

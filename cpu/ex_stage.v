@@ -191,6 +191,11 @@ module ex_stage
 	output sret_condition_ex,   // sret executed
 	output sret_jump,           // to if_stage (SMODE=0 : raw cmd_sret_ex as before)
 	output [1:0] csr_priv,      // current privilege level
+	// time CSR / SEIP (2026-11-22)
+	input [63:0] frc_time,
+	output csr_seie,
+	output csr_mcounteren_tm,
+	output csr_scounteren_tm,
 	output reg cmd_amold_ma,    // MA access is the load phase of an AMO
 
 	// to ID
@@ -830,6 +835,10 @@ csr_array #(.MMU_EN(MMU_EN), .SMODE(SMODE)) csr_array(
 	.csr_sint_pend(csr_sint_pend),
 	.csr_m_ie(csr_m_ie),
 	.csr_priv(csr_priv),
+	.frc_time(frc_time),
+	.csr_seie(csr_seie),
+	.csr_mcounteren_tm(csr_mcounteren_tm),
+	.csr_scounteren_tm(csr_scounteren_tm),
 	.csr_radr_en_mon(csr_radr_en_mon), // new
 	.csr_radr_mon(csr_radr_mon), // new
 	.csr_wadr_mon(csr_wadr_mon), // new

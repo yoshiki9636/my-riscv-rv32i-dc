@@ -19,6 +19,7 @@ module interrupter(
 	input ext_uart2_interrpt_1shot,
 	// from csr
 	input csr_meie,
+	input csr_seie,             // mie.SEIE (S/U-mode, 2026-11-22) : 0 when FT_SMODE = 0
 	input csr_rmie,
 	output g_interrupt_1shot,
 	output g_interrupt,
@@ -116,7 +117,7 @@ always @ (posedge clk or negedge rst_n) begin
 		int_status_rx <= 1'b0;
 	else if (interrupt_clear_rx)
 		int_status_rx <= 1'b0;
-	else if (csr_meie & int_enable_rx & ext_uart_interrpt_1shot)
+	else if ((csr_meie | csr_seie) & int_enable_rx & ext_uart_interrpt_1shot)
 		int_status_rx <= 1'b1;
 end
 
@@ -129,7 +130,7 @@ always @ (posedge clk or negedge rst_n) begin
 		int_status_int0 <= 1'b0;
 	else if (interrupt_clear_int0)
 		int_status_int0 <= 1'b0;
-	else if (csr_meie & int_enable_int0 & ext_interrupt_0_1shot)
+	else if ((csr_meie | csr_seie) & int_enable_int0 & ext_interrupt_0_1shot)
 		int_status_int0 <= 1'b1;
 end
 
@@ -142,7 +143,7 @@ always @ (posedge clk or negedge rst_n) begin
 		int_status_rx2 <= 1'b0;
 	else if (interrupt_clear_rx2)
 		int_status_rx2 <= 1'b0;
-	else if (csr_meie & int_enable_rx2 & ext_uart2_interrpt_1shot)
+	else if ((csr_meie | csr_seie) & int_enable_rx2 & ext_uart2_interrpt_1shot)
 		int_status_rx2 <= 1'b1;
 end
 

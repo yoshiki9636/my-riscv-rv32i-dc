@@ -17,6 +17,9 @@
  * Test program interface (MMIO, cpu_top dma_io_* bus):
  *   0xC000_FFC0 (TOHOST) : write 1 = PASS, other value = FAIL (code)
  *   0xC000_FFC4 (PUTC)   : write a character (shown on the console)
+ *   0xC000_FFC8 (EXTINT) : external interrupt line (1 = assert, 0 = clear), modeled
+ *                          like interrupter : g_interrupt (level) when MEIE | SEIE,
+ *                          g_interrupt_1shot (M edge) when MEIE & MIE
  *
  * plusargs:
  *   +HEX=<file>      program image (objcopy -O verilog, 32bit words), default test.hex
@@ -67,6 +70,7 @@ localparam SWIDTH = 13;
 localparam [15:2] TOHOST_ADR = 14'h3FF0;
 localparam [15:2] PUTC_ADR   = 14'h3FF1;
 localparam [15:2] UART_TX_ADR = 14'h3F00; // io_uart_out SYS_UART_OUTC (0xC000_FC00)
+localparam [15:2] EXTINT_ADR  = 14'h3FF2; // 0xC000_FFC8 : external interrupt line (write 1 / 0)
 
 // ---------------- clocks / resets ----------------
 reg clk  = 0;
@@ -131,6 +135,13 @@ wire dma_rdat_m_valid_u;
 wire dma_finish_mrd_u;
 
 wire frc_cntr_val_leq, frc_cntr_val_leq_1shot;
+// external interrupt model (EXTINT MMIO)
+reg tb_extint = 1'b0;
+reg tb_extint_dly = 1'b0;
+wire tb_int_level;
+wire tb_int_1shot;
+wire [63:0] frc_time;
+wire csr_seie_u;
 wire [31:0] frc_dma_io_rdata;
 
 `ifdef TB_ORIG
@@ -231,10 +242,14 @@ cpu_top #(.IWIDTH(IWIDTH), .DWIDTH(DWIDTH), .SWIDTH(SWIDTH), .DWAYS(DWAYS), .SMO
     .csr_mtie(csr_mtie_u),
     .frc_cntr_val_leq(frc_cntr_val_leq),
     .frc_cntr_val_leq_1shot(frc_cntr_val_leq_1shot),
+`ifndef TB_ORIG
+    .frc_time(frc_time),
+    .csr_seie(csr_seie_u),
+`endif
     .csr_meie(csr_meie_u),
     .csr_rmie(csr_rmie_u),
-    .g_interrupt_1shot(1'b0),
-    .g_interrupt(1'b0),
+    .g_interrupt_1shot(tb_int_1shot),
+    .g_interrupt(tb_int_level),
     .stall(stall_u)
     );
 
@@ -253,6 +268,9 @@ io_frc io_frc_i (
     .csr_rmie(csr_rmie_u),
     .frc_cntr_val_leq(frc_cntr_val_leq),
     .frc_cntr_val_leq_1shot(frc_cntr_val_leq_1shot),
+`ifndef TB_ORIG
+    .frc_time(frc_time),
+`endif
     .stall(stall_u)
     );
 
@@ -558,6 +576,19 @@ always @ (posedge clk) begin
         end
     end
 end
+
+// ================= external interrupt model =================
+always @ (posedge clk) begin
+    if (rst_n & dma_io_we & (dma_io_wadr == EXTINT_ADR))
+        tb_extint <= dma_io_wdata[0];
+    tb_extint_dly <= tb_extint;
+end
+`ifdef TB_ORIG
+assign tb_int_level = tb_extint & csr_meie_u;
+`else
+assign tb_int_level = tb_extint & (csr_meie_u | csr_seie_u);
+`endif
+assign tb_int_1shot = tb_extint & ~tb_extint_dly & csr_meie_u & csr_rmie_u & ~stall_u;
 
 // ================= MMIO monitor =================
 always @ (posedge clk) begin
