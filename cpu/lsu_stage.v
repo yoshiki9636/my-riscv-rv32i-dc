@@ -78,6 +78,17 @@ module lsu_stage
 	output io_ok_ma,            // MA I/O access may be issued in this cycle
 	output pf_exc,              // page fault : take the trap in this cycle (~stall)
 	output pf_store,            // page fault type 1 : store/AMO (15) 0 : load (13)
+	// ITLB walk (2026-11-22) : the PTW is shared, D side first.  An I side walk
+	// starts only in IDLE while the MA instruction does not access memory.
+	input i_walk_req,
+	input [31:12] i_walk_va,
+	output i_walk_done,         // = ifill
+	output i_walk_fault,
+	output ifill,
+	output [31:12] ifill_vpn,
+	output ifill_mega,
+	output [31:12] ifill_ppn,
+	output [4:0] ifill_flags,
 	// reset pipeline
 	input rst_pipe
 
@@ -136,6 +147,8 @@ reg [31:0] current_radr_keeper;
 // ---------------------------------------------------------------------------
 reg ptw_act;
 reg ptw_lvl;
+reg walk_i;                 // the PTW runs for the ITLB (ilu_stage)
+reg [31:12] walk_va;        // VA of the walk
 reg [31:0] ptw_pa_r;
 wire [4:0] dc_miss_current_m; // = dc_miss_current (state macros are defined below)
 
@@ -148,6 +161,7 @@ wire st_tlbl_m = (dc_miss_current_m == 5'b10000); // DCMS_TLBL
 wire st_ptdt_m = (dc_miss_current_m == 5'b01011); // DCMS_PTDT
 
 wire cmd_ldst_raw = cmd_ld_ma | cmd_st_ma;
+wire iwalk_go = i_walk_req & ~cmd_ldst_raw;
 wire is_store_ma = cmd_st_ma | cmd_amold_ma;
 wire mmu_need = trans_on & cmd_ldst_raw;
 wire [31:0] pte = dc_rdata_raw;
@@ -493,22 +507,25 @@ input ptw_bad_adr;
 input pte_fill;
 input pte_next;
 input m_hit_r;
+input iwalk_go;
+input walk_i;
 begin
     case(dc_miss_current)
 		`DCMS_IDLE: begin
-    		casex({dcflush_start, mmu_fault, mmu_miss, dc_tag_empty_ma, dc_tag_miss_ma, dc_cache_dirty_ma})
-				6'b1xxxxx: dc_miss_decode = `DCMS_FLSH; // for fencei D$ flush function
-				6'b01xxxx: dc_miss_decode = `DCMS_FALT;
-				6'b001xxx: dc_miss_decode = `DCMS_TLBL;   // micro-TLB miss
-				6'b0001xx: dc_miss_decode = `DCMS_MEMR;
-				6'b00000x: dc_miss_decode = `DCMS_IDLE;
-				6'b000011: dc_miss_decode = `DCMS_MEMW;
-				6'b000010: dc_miss_decode = `DCMS_MEMR;
+    		casex({dcflush_start, mmu_fault, mmu_miss, iwalk_go, dc_tag_empty_ma, dc_tag_miss_ma, dc_cache_dirty_ma})
+				7'b1xxxxxx: dc_miss_decode = `DCMS_FLSH; // for fencei D$ flush function
+				7'b01xxxxx: dc_miss_decode = `DCMS_FALT;
+				7'b001xxxx: dc_miss_decode = `DCMS_TLBL;   // micro-TLB miss
+				7'b0001xxx: dc_miss_decode = `DCMS_PTRD;   // ITLB walk (MA has no memory access)
+				7'b00001xx: dc_miss_decode = `DCMS_MEMR;
+				7'b000000x: dc_miss_decode = `DCMS_IDLE;
+				7'b0000011: dc_miss_decode = `DCMS_MEMW;
+				7'b0000010: dc_miss_decode = `DCMS_MEMR;
 				default: dc_miss_decode = `DCMS_DEFO;
     		endcase
 		end
 		`DCMS_TLBL: dc_miss_decode = m_hit_r ? `DCMS_RPCK : `DCMS_PTRD;  // DTLB hit : replay / miss : PTW
-		`DCMS_PTRD: dc_miss_decode = ptw_bad_adr ? `DCMS_FALT : `DCMS_PTCK;
+		`DCMS_PTRD: dc_miss_decode = ptw_bad_adr ? (walk_i ? `DCMS_RPRD : `DCMS_FALT) : `DCMS_PTCK;
 		`DCMS_PTCK: begin
     		casex({ptw_hit, dc_tag_empty_ma, dc_tag_miss_ma, dc_cache_dirty_ma})
 				4'b1xxx: dc_miss_decode = `DCMS_PTDT;
@@ -519,7 +536,7 @@ begin
     		endcase
 		end
 		`DCMS_PTDT: dc_miss_decode = pte_next ? `DCMS_PTRD :
-		                             pte_fill ? `DCMS_RPRD : `DCMS_FALT;
+		                             (pte_fill | walk_i) ? `DCMS_RPRD : `DCMS_FALT;   // I walk : the fault goes to ilu
 		`DCMS_RPRD: dc_miss_decode = `DCMS_RPCK;
 		`DCMS_RPCK: begin
     		casex({mmu_fault, mmu_miss, dc_tag_empty_ma, dc_tag_miss_ma, dc_cache_dirty_ma})
@@ -569,7 +586,8 @@ end
 endfunction
 
 wire [4:0] dc_miss_next = dc_miss_decode( dc_miss_current, dc_tag_empty_ma, dc_tag_miss_ma, dc_cache_dirty_ma, dcw_finish_wresp, rdat_m_valid, dcflush_start, dcflush_running,
-                                          mmu_miss, mmu_fault, ptw_act, ptw_hit, ptw_bad_adr, pte_fill, pte_next, m_hit_r );
+                                          mmu_miss, mmu_fault, ptw_act, ptw_hit, ptw_bad_adr, pte_fill, pte_next, m_hit_r,
+                                          iwalk_go, walk_i );
 
 // timing (2026-11-22) : the same next state without fence.i's flush start, for
 // the outputs that drive the RAM / bus (ram_ren_all, dcr_start_rq).  fence.i
@@ -579,40 +597,58 @@ wire [4:0] dc_miss_next = dc_miss_decode( dc_miss_current, dc_tag_empty_ma, dc_t
 // RAM address is cut.
 wire dcflush_start_nf = start_dcflush | (dcflush_pend & (dc_miss_current == `DCMS_IDLE));
 wire [4:0] dc_miss_next_nf = dc_miss_decode( dc_miss_current, dc_tag_empty_ma, dc_tag_miss_ma, dc_cache_dirty_ma, dcw_finish_wresp, rdat_m_valid, dcflush_start_nf, dcflush_running,
-                                          mmu_miss, mmu_fault, ptw_act, ptw_hit, ptw_bad_adr, pte_fill, pte_next, m_hit_r );
+                                          mmu_miss, mmu_fault, ptw_act, ptw_hit, ptw_bad_adr, pte_fill, pte_next, m_hit_r,
+                                          iwalk_go, walk_i );
 
 // MMU (2026-11-22) : PTW registers / TLB fill
 wire st_ptrd = (dc_miss_current == `DCMS_PTRD);
 wire st_ptdt = (dc_miss_current == `DCMS_PTDT);
-wire ptw_start = (dc_miss_next == `DCMS_PTRD) & (dc_miss_current == `DCMS_TLBL);
+wire ptw_start_d = (dc_miss_next == `DCMS_PTRD) & (dc_miss_current == `DCMS_TLBL);
+wire ptw_start_i = (dc_miss_next == `DCMS_PTRD) & (dc_miss_current == `DCMS_IDLE);
+wire ptw_start = ptw_start_d | ptw_start_i;
+wire [31:12] walk_va_start = ptw_start_i ? i_walk_va : rd_data_ma[31:12];
 
 always @ (posedge clk or negedge rst_n) begin
     if (~rst_n) begin
         ptw_act <= 1'b0;
         ptw_lvl <= 1'b0;
         ptw_pa_r <= 32'd0;
+        walk_i <= 1'b0;
+        walk_va <= 20'd0;
     end
 	else if (rst_pipe) begin
         ptw_act <= 1'b0;
         ptw_lvl <= 1'b0;
+        walk_i <= 1'b0;
     end
 	else if (ptw_start) begin
         // level 1 PTE : satp.PPN * 4096 + VPN1 * 4
         ptw_act <= 1'b1;
         ptw_lvl <= 1'b1;
-        ptw_pa_r <= { satp_ppn, rd_data_ma[31:22], 2'b00 };
+        ptw_pa_r <= { satp_ppn, walk_va_start[31:22], 2'b00 };
+        walk_i <= ptw_start_i;
+        walk_va <= walk_va_start;
     end
 	else if (st_ptdt & pte_next) begin
         // level 0 PTE : PTE.PPN * 4096 + VPN0 * 4
         ptw_lvl <= 1'b0;
-        ptw_pa_r <= { pte[29:10], rd_data_ma[21:12], 2'b00 };
+        ptw_pa_r <= { pte[29:10], walk_va[21:12], 2'b00 };
     end
 	else if ((st_ptdt & ~pte_next) | (st_ptrd & ptw_bad_adr)) begin
         ptw_act <= 1'b0;
+        walk_i <= 1'b0;
     end
 end
 
-assign tlb_fill = st_ptdt & pte_fill;
+assign tlb_fill = st_ptdt & pte_fill & ~walk_i;   // DTLB (D side walk)
+// ITLB (I side walk)
+assign ifill = st_ptdt & pte_fill & walk_i;
+assign ifill_vpn = walk_va;
+assign ifill_mega = ptw_lvl;
+assign ifill_ppn = pte[29:10];
+assign ifill_flags = { pte[7], pte[4], pte[3], pte[2], pte[1] }; // D U X W R
+assign i_walk_done = ifill;
+assign i_walk_fault = walk_i & ((st_ptdt & ~pte_next & ~pte_fill) | (st_ptrd & ptw_bad_adr));
 
 always @ (posedge clk or negedge rst_n) begin
     if (~rst_n)

@@ -33,10 +33,15 @@ module tb_mmu;
 
 `ifdef TB_IWIDTH
 localparam IWIDTH = `TB_IWIDTH;   // iverilog -DTB_IWIDTH=n : I$ size override (debug)
-`elsif BOARD_ARTY_A7
-localparam IWIDTH = 12;
 `else
 localparam IWIDTH = 10;
+`endif
+`ifdef TB_IWAYS
+localparam IWAYS = `TB_IWAYS;     // iverilog -DTB_IWAYS=n : I$ ways (1/2/4/8) override
+`elsif BOARD_ARTY_A7
+localparam IWAYS = 4;
+`else
+localparam IWAYS = 1;
 `endif
 `ifdef TB_DWIDTH
 localparam DWIDTH = `TB_DWIDTH;   // iverilog -DTB_DWIDTH=n : D$ way size override
@@ -132,7 +137,7 @@ wire [31:0] frc_dma_io_rdata;
 // pre-MMU RTL (orig_rtl/) : no DWAYS parameter
 cpu_top #(.IWIDTH(IWIDTH), .DWIDTH(DWIDTH), .SWIDTH(SWIDTH)) dut (
 `else
-cpu_top #(.IWIDTH(IWIDTH), .DWIDTH(DWIDTH), .SWIDTH(SWIDTH), .DWAYS(DWAYS), .SMODE(SMODE)) dut (
+cpu_top #(.IWIDTH(IWIDTH), .DWIDTH(DWIDTH), .SWIDTH(SWIDTH), .DWAYS(DWAYS), .SMODE(SMODE), .IWAYS(IWAYS)) dut (
 `endif
     .clk(clk),
     .rst_n(rst_n),

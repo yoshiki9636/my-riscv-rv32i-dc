@@ -62,6 +62,7 @@ module ex_stage
     input cmd_mret_ex,
     input cmd_wfi_ex,
     input illegal_ops_ex,
+    input ipf_ex,               // instruction page fault (2026-11-22)
 	input [4:0] rd_adr_ex,
 	input wbk_rd_reg_ex,
 	// from forwarding
@@ -780,6 +781,7 @@ csr_array #(.MMU_EN(MMU_EN), .SMODE(SMODE)) csr_array(
 	.timer_condition_ex(timer_condition_ex),
 	.post_jump_cmd_cond(post_jump_cmd_cond),
 	.illegal_ops_ex(illegal_ops_ex),
+	.ipf_ex(ipf_ex),
 	.illegal_ops_inst(illegal_ops_inst), // new
 	.misal_ld_ex(misal_ld_ex),
 	.misal_st_ex(misal_st_ex),

@@ -67,6 +67,7 @@ module id_stage
 	output reg [4:0] rd_adr_ex,
 	output reg wbk_rd_reg_ex,
     output reg illegal_ops_ex,
+    output reg ipf_ex,          // instruction page fault (with illegal_ops_ex, 2026-11-22)
     output reg [31:0] inst_ex,
 `ifdef SUPPORT_M
 	output reg cmd_mul_ex,
@@ -529,6 +530,9 @@ wire priv_illegal_id = (SMODE != 0) &
                         (cmd_mret_id & (csr_priv != 2'b11)) |
                         ((cmd_sret_id | cmd_sfence_id) & (csr_priv == 2'b00)));
 wire illegal_ops_id = (~(cmd_nop | cmd_all_except_nop) | priv_illegal_id) & ~jmp_purge_ma & ~jmp_purge_ex & ~stall;
+// ITLB (2026-11-22) : instruction page fault marker from if_stage (a reserved
+// encoding : it is not decoded as any instruction, so illegal_ops_id is set)
+wire cmd_ipf_id = (inst_id == 32'h0BAD_007F);
 
 // destination register number
 wire [4:0] rd_adr_id = inst_rd;
@@ -732,6 +736,7 @@ always @ (posedge clk or negedge rst_n) begin
         cmd_mret_ex <= 1'b0;
         cmd_wfi_ex <= 1'b0;
 		illegal_ops_ex <= 1'b0;
+		ipf_ex <= 1'b0;
 		rd_adr_ex <= 5'd0;
 		wbk_rd_reg_ex <= 1'b0;
 		pc_ex_pre <= 30'd0;
@@ -802,6 +807,7 @@ always @ (posedge clk or negedge rst_n) begin
         cmd_mret_ex <= 1'b0;
         cmd_wfi_ex <= 1'b0;
 		illegal_ops_ex <= 1'b0;
+		ipf_ex <= 1'b0;
 		rd_adr_ex <= 5'd0;
 		wbk_rd_reg_ex <= 1'b0;
 		pc_ex_pre <= 30'd0;
@@ -875,6 +881,7 @@ always @ (posedge clk or negedge rst_n) begin
         cmd_mret_ex <= cmd_mret_id & ~stall_ld;
         cmd_wfi_ex <= cmd_wfi_id & ~stall_ld;
 		illegal_ops_ex <= illegal_ops_id & ~stall_ld;
+		ipf_ex <= illegal_ops_id & cmd_ipf_id & ~stall_ld;
 		rd_adr_ex <= rd_adr_id;
 		wbk_rd_reg_ex <= wbk_rd_reg_id;
 		pc_ex_pre <= pc_id;

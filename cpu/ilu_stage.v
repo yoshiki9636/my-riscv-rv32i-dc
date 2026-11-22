@@ -12,7 +12,8 @@
 `define SUPPORT_A
 
 module ilu_stage
-	#(parameter IWIDTH = 14)
+	#(parameter IWIDTH = 14,
+	  parameter IWAYS = 1)   // I$ ways : 1 / 2 / 4 / 8 (2026-11-22)
 	(
 	input clk,
 	input rst_n,
@@ -62,6 +63,24 @@ module ilu_stage
 	input ic_finish_mrd, // not used
 	// IC flush
 	input start_icflush,
+	// I$ ways (2026-11-22)
+	output [7:0] ic_way_rd,       // way that hits for the ID fetch (instruction select)
+	output [7:0] ic_fill_way,     // refill write way (one hot, with ic_rdat_m_valid)
+	// ITLB (2026-11-22)
+	input itrans_on,              // instruction fetch translation (satp.MODE & priv != M)
+	input i_priv_u,               // current privilege is U (else S)
+	input tlb_flush,              // sfence.vma
+	input ipf_clr,                // a redirect : forget a cached fetch fault
+	output ipf_id,                // the ID fetch takes an instruction page fault
+	output i_walk_req,            // PTW request to lsu_stage
+	output [31:12] i_walk_va,
+	input i_walk_done,            // PTW : the ITLB is filled (ifill)
+	input i_walk_fault,           // PTW : page fault
+	input ifill,                  // ITLB fill (from the PTW)
+	input [31:12] ifill_vpn,
+	input ifill_mega,
+	input [31:12] ifill_ppn,
+	input [4:0] ifill_flags,      // { D, U, X, W, R }
 	//output icflush_running,
 	// reset pipeline
 	input rst_pipe
@@ -125,121 +144,262 @@ assign ic_stall_dly_add_div = ic_stall_dly | div_stall_dly;
 `endif // SUPPORT_M
 
 //
-// flush counter
-//reg [IWIDTH+1:4] icflush_cntr;
-//reg ic_stall_dly;
+// ---------------------------------------------------------------------------
+// I$ : IWAYS way set associative (2026-11-22)
+//   IWAYS = 1 is the original direct mapped I$ (same behavior).
+//   1 way = 2^(IWIDTH+2) bytes, index = VA[IWIDTH+1:4], tag = PA[27:IWIDTH+2]
+//   (IWIDTH <= 10 with the MMU : VIPT).  The ID fetch selects its way with
+//   ic_way_rd (if_stage).  Refill way : the first invalid way, else round robin.
+// ITLB (2026-11-22)
+//   1 entry micro-ITLB (flip-flops) : the ID tag compare / permission use it.
+//   micro-ITLB miss -> ITL1 (registered 16 entry ITLB result)
+//     ITLB hit  : refill the micro-ITLB -> ICRP
+//     ITLB miss : IWLK, the PTW runs in lsu_stage (i_walk_req), -> ICRP
+//   ICRP : re-check the fetch : I$ hit / fault -> ICW3 -> LDRD, miss -> MEMR
+//   A fault is kept in the micro-ITLB (iu_fault) until the next redirect.
+//   ipf_id : the ID fetch faults (if_stage puts the fault marker in its place)
+// ---------------------------------------------------------------------------
+localparam TW = 26 - IWIDTH;
+localparam NSET = 2**(IWIDTH-2);
+
 reg [31:0] ic_curric_ent_radr_keeper;
 // tag ram
 wire ic_sel_tag;
 reg [27:IWIDTH+2] ic_tag_adr_id;
+reg [31:12] va_id;                       // VA page of the ID fetch
 wire [27:IWIDTH+2] ic_tag_adr_if = ic_sel_tag ? ic_curric_ent_radr_keeper[27:IWIDTH+2] : pc_if[27:IWIDTH+2];
 wire [IWIDTH+1:4]  ic_index_adr = ic_sel_tag ? ic_curric_ent_radr_keeper[IWIDTH+1:4] : pc_if[IWIDTH+1:4];
 wire [27:IWIDTH+2] ic_tag_wadr;
 wire [IWIDTH+1:4] ic_index_wadr;
-wire [27:IWIDTH+2] ic_tag_radr;
-wire ic_cache_valid_id;
 wire ic_tag_wen;
+reg [2:0] ic_fill_way_r;
+wire [IWAYS*TW-1:0] ic_tag_flat;
 
+genvar gw;
+generate
+for (gw = 0; gw < IWAYS; gw = gw + 1) begin : itag
 ic_tag_1r1w #(.IRWIDTH(IWIDTH-2)) ic_tag_1r1w (
 	.clk(clk),
 	.ram_radr(ic_index_adr),
-	.ram_rdata(ic_tag_radr),
+	.ram_rdata(ic_tag_flat[gw*TW +: TW]),
 	.ram_wadr(ic_index_wadr),
 	.ram_wdata(ic_tag_wadr),
-	.ram_wen(ic_tag_wen)
+	.ram_wen(ic_tag_wen & (ic_fill_way_r == gw))
+	);
+end
+endgenerate
+
+always @ (posedge clk or negedge rst_n) begin
+    if (~rst_n) begin
+        ic_tag_adr_id <= { (27-IWIDTH-1){ 1'b0 }} ;
+        va_id <= 20'd0;
+    end
+	else if (rst_pipe) begin
+        ic_tag_adr_id <= { (27-IWIDTH-1){ 1'b0 }} ;
+        va_id <= 20'd0;
+    end
+	else if (~ic_stall & ~ic_stall_fin ) begin
+		ic_tag_adr_id <= ic_tag_adr_if;
+		va_id <= ic_sel_tag ? ic_curric_ent_radr_keeper[31:12] : pc_if[31:12];
+    end
+end
+
+// ---- micro-ITLB ----
+reg iu_valid;
+reg iu_fault;
+reg [31:12] iu_vpn;
+reg [31:12] iu_ppn;
+reg [4:0] iu_flags;                      // { D, U, X, W, R }
+wire iu_hit = iu_valid & (iu_vpn == va_id);
+wire iu_x_ok = ~iu_fault & iu_flags[2] & (i_priv_u ? iu_flags[3] : ~iu_flags[3]);
+wire i_need = itrans_on & pc_valid_id & ~btb_spec_fetch;
+wire imiss = i_need & ~iu_hit;
+assign ipf_id = i_need & iu_hit & ~iu_x_ok;
+wire iok = ~itrans_on | (iu_hit & iu_x_ok);
+
+// ---- 16 entry ITLB : looked up with the ID VA every cycle, registered ----
+wire m_hit;
+wire [31:12] m_pa;
+wire [4:0] m_flags;
+reg m_hit_r;
+reg [31:12] m_pa_r;
+reg [4:0] m_flags_r;
+
+dtlb #(.DWIDTH(IWIDTH)) itlb (
+	.clk(clk),
+	.rst_n(rst_n),
+	.va(va_id),
+	.hit(m_hit),
+	.pa(m_pa),
+	.flags(m_flags),
+	.fill(ifill),
+	.fill_vpn(ifill_vpn),
+	.fill_mega(ifill_mega),
+	.fill_ppn(ifill_ppn),
+	.fill_flags(ifill_flags),
+	.flush(tlb_flush)
 	);
 
 always @ (posedge clk or negedge rst_n) begin
-    if (~rst_n)
-        ic_tag_adr_id <= { (27-IWIDTH-1){ 1'b0 }} ;
-	else if (rst_pipe)
-        ic_tag_adr_id <= { (27-IWIDTH-1){ 1'b0 }} ;
-	else if (~ic_stall & ~ic_stall_fin )
-		ic_tag_adr_id <= ic_tag_adr_if;
+	if (~rst_n) begin
+		m_hit_r <= 1'b0;
+		m_pa_r <= 20'd0;
+		m_flags_r <= 5'd0;
+	end
+	else begin
+		m_hit_r <= m_hit & ~tlb_flush;
+		m_pa_r <= m_pa;
+		m_flags_r <= m_flags;
+	end
 end
 
+wire [3:0] ic_miss_current_w;
+wire st_itl1 = (ic_miss_current_w == 4'd8);
+wire st_iwlk = (ic_miss_current_w == 4'd9);
+// PTW result : the 4KB page of the fetch (a megapage is expanded)
+wire [31:12] ifill_ppn_4k = { ifill_ppn[31:22], ifill_mega ? va_id[21:12] : ifill_ppn[21:12] };
 
-//wire cmd_ldst_id = (cmd_ld_id | cmd_st_id) & (pc_if[31:30] != 2'b11) ;
+always @ (posedge clk or negedge rst_n) begin
+	if (~rst_n) begin
+		iu_valid <= 1'b0;
+		iu_fault <= 1'b0;
+		iu_vpn <= 20'd0;
+		iu_ppn <= 20'd0;
+		iu_flags <= 5'd0;
+	end
+	else if (tlb_flush) begin
+		iu_valid <= 1'b0;
+	end
+	else if (st_itl1 & m_hit_r) begin
+		iu_valid <= 1'b1;
+		iu_fault <= 1'b0;
+		iu_vpn <= va_id;
+		iu_ppn <= m_pa_r;
+		iu_flags <= m_flags_r;
+	end
+	else if (st_iwlk & ifill) begin
+		iu_valid <= 1'b1;
+		iu_fault <= 1'b0;
+		iu_vpn <= va_id;
+		iu_ppn <= ifill_ppn_4k;
+		iu_flags <= ifill_flags;
+	end
+	else if (st_iwlk & i_walk_fault) begin
+		iu_valid <= 1'b1;
+		iu_fault <= 1'b1;
+		iu_vpn <= va_id;
+	end
+	else if (ipf_clr & iu_fault) begin
+		iu_valid <= 1'b0;
+	end
+end
 
-wire ic_tag_equal = (ic_tag_adr_id == ic_tag_radr);
-assign ic_tag_hit_id = ic_tag_equal & ic_cache_valid_id & pc_valid_id;
-// btb_spec_fetch (2026-11-12): no refill for a BTB-target fetch whose result
-// is discarded (see if_stage)
-wire ic_tag_empty_id = ~ic_cache_valid_id & pc_valid_id & ~btb_spec_fetch;
-wire ic_tag_miss_id = ~ic_tag_equal & ic_cache_valid_id & pc_valid_id & ~btb_spec_fetch;
+assign i_walk_req = st_iwlk;
+assign i_walk_va = va_id;
+
+// ---- tag compare ----
+wire [27:IWIDTH+2] cmp_tag = itrans_on ? iu_ppn[27:IWIDTH+2] : ic_tag_adr_id;
 
 // dirty / valid bits
-//reg [(2**(IWIDTH-2))-1:0] ic_ent_dirty_bit_id;
-reg [(2**(IWIDTH-2))-1:0] ic_ent_valid_bit_id;
-
-//wire [IWIDTH+1:4] ic_cache_dirty_adr = pc_if[IWIDTH+1:4];
-
-/*
-always @ (posedge clk or negedge rst_n) begin
-    if (~rst_n)
-        ic_ent_dirty_bit_id <= { (2**(IWIDTH-2)){ 1'b0 }};
-    else if (dc_cache_clr_bits | rst_pipe)
-        ic_ent_dirty_bit_id <= { (2**(IWIDTH-2)){ 1'b0 }};
-    else if (dc_cache_wr_id)
-        ic_ent_dirty_bit_id[dc_cache_dirty_adr] <= 1'b1;
-    else if (ic_tag_wen)
-        ic_ent_dirty_bit_id[dc_index_wadr] <= 1'b0;
-end
-*/
-
+reg [IWAYS*NSET-1:0] ic_ent_valid;
 reg [IWIDTH+1:4] ic_index_adr_dly;
 
 always @ (posedge clk or negedge rst_n) begin
     if (~rst_n)
-        ic_ent_valid_bit_id <= { (2**(IWIDTH-2)){ 1'b0 }};
-    else if (fencei_cond | start_icflush | rst_pipe)
-        ic_ent_valid_bit_id <= { (2**(IWIDTH-2)){ 1'b0 }};
-    else if (ic_tag_wen)
-        //ic_ent_valid_bit_id[ic_index_wadr] <= 1'b1;
-        ic_ent_valid_bit_id[ic_index_adr_dly] <= 1'b1;
-end
-
-always @ (posedge clk or negedge rst_n) begin
-    if (~rst_n)
         ic_index_adr_dly <= { (IWIDTH-2){ 1'b0 }};
-	//else if (~ic_stall & ~ic_stall_fin )
 	else
         ic_index_adr_dly <= ic_index_adr;
 end
 
-//assign ic_cache_valid_id = ic_ent_valid_bit_id[dc_cache_dirty_adr];
-//wire ic_cache_dirty_id = ic_ent_dirty_bit_id[dc_cache_dirty_adr] & ic_tag_miss_id;
-assign ic_cache_valid_id = ic_ent_valid_bit_id[ic_index_adr_dly];
-//wire ic_cache_dirty_id = ic_ent_dirty_bit_id[dc_index_adr_dly] & ic_tag_miss_id;
+wire [7:0] way_valid;
+wire [7:0] way_eq;
+generate
+for (gw = 0; gw < 8; gw = gw + 1) begin : iwayv
+	if (gw < IWAYS) begin : used
+		assign way_valid[gw] = ic_ent_valid[gw*NSET + ic_index_adr_dly];
+		assign way_eq[gw] = (cmp_tag == ic_tag_flat[gw*TW +: TW]);
+	end
+	else begin : unused
+		assign way_valid[gw] = 1'b1;
+		assign way_eq[gw] = 1'b0;
+	end
+end
+endgenerate
+wire [7:0] way_hit = way_eq & way_valid;
+wire ic_hit_any = |way_hit;
+assign ic_way_rd = way_hit;
+
+reg [2:0] ic_rr_way;
+function [2:0] first_inv;
+input [7:0] v;
+integer k;
+begin
+	first_inv = 3'd0;
+	for (k = 7; k >= 0; k = k - 1)
+		if (~v[k]) first_inv = k;
+end
+endfunction
+wire [2:0] ic_vict_way = (&way_valid) ? ic_rr_way : first_inv(way_valid);
+wire ic_vict_valid = way_valid[ic_vict_way];
+
+assign ic_tag_hit_id = ic_hit_any & pc_valid_id & iok;
+// btb_spec_fetch (2026-11-12): no refill for a BTB-target fetch whose result
+// is discarded (see if_stage)
+wire ic_tag_empty_id = ~ic_hit_any & ~ic_vict_valid & pc_valid_id & ~btb_spec_fetch & iok;
+wire ic_tag_miss_id = ~ic_hit_any & ic_vict_valid & pc_valid_id & ~btb_spec_fetch & iok;
+
+always @ (posedge clk or negedge rst_n) begin
+    if (~rst_n)
+        ic_ent_valid <= { (IWAYS*NSET){ 1'b0 }};
+    else if (fencei_cond | start_icflush | rst_pipe)
+        ic_ent_valid <= { (IWAYS*NSET){ 1'b0 }};
+    else if (ic_tag_wen)
+        ic_ent_valid[ic_fill_way_r*NSET + ic_index_adr_dly] <= 1'b1;
+end
+
+always @ (posedge clk or negedge rst_n) begin
+    if (~rst_n)
+        ic_rr_way <= 3'd0;
+    else if (ic_tag_wen)
+        ic_rr_way <= (ic_rr_way == IWAYS-1) ? 3'd0 : ic_rr_way + 3'd1;
+end
+
+assign ic_fill_way = 8'd1 << ic_fill_way_r;
 
 // ic state machine
 
-`define ICMS_IDLE 3'b000
-`define ICMS_MEMR 3'b001
-`define ICMS_ICWT 3'b010
-`define ICMS_ICW2 3'b011
-`define ICMS_ICW3 3'b100
-//`define ICMS_ICW4 3'b101
-`define ICMS_LDRD 3'b110
-`define ICMS_DEFO 3'b111
+`define ICMS_IDLE 4'b0000
+`define ICMS_MEMR 4'b0001
+`define ICMS_ICWT 4'b0010
+`define ICMS_ICW2 4'b0011
+`define ICMS_ICW3 4'b0100
+`define ICMS_LDRD 4'b0110
+`define ICMS_DEFO 4'b0111
+`define ICMS_ITL1 4'b1000 // micro-ITLB miss : registered ITLB result
+`define ICMS_IWLK 4'b1001 // ITLB miss : PTW in lsu_stage
+`define ICMS_ICRP 4'b1010 // re-check the fetch after the ITLB refill
 
 // Request channel manager state machine
-reg [2:0] ic_miss_current;
+reg [3:0] ic_miss_current;
+assign ic_miss_current_w = ic_miss_current;
 
-function [2:0] ic_miss_decode;
-input [2:0] ic_miss_current;
+function [3:0] ic_miss_decode;
+input [3:0] ic_miss_current;
 input ic_tag_empty_id;
 input ic_tag_miss_id;
-//input ic_cache_dirty_id;
-//input icw_finish_wresp;
 input ic_rdat_m_valid;
+input imiss;
+input m_hit_r;
+input walk_end;
+input ic_hit_ok;     // ICRP : I$ hit or fetch fault (no refill)
 begin
     case(ic_miss_current)
 		`ICMS_IDLE: begin
-    		casex({ic_tag_empty_id, ic_tag_miss_id})
-				2'b1x: ic_miss_decode = `ICMS_MEMR;
-				2'b01: ic_miss_decode = `ICMS_MEMR;
-				2'b00: ic_miss_decode = `ICMS_IDLE;
+    		casex({imiss, ic_tag_empty_id, ic_tag_miss_id})
+				3'b1xx: ic_miss_decode = `ICMS_ITL1;
+				3'b01x: ic_miss_decode = `ICMS_MEMR;
+				3'b001: ic_miss_decode = `ICMS_MEMR;
+				3'b000: ic_miss_decode = `ICMS_IDLE;
 				default: ic_miss_decode = `ICMS_DEFO;
     		endcase
 		end
@@ -252,16 +412,21 @@ begin
 		end
 		`ICMS_ICWT: ic_miss_decode = `ICMS_ICW2;
 		`ICMS_ICW2: ic_miss_decode = `ICMS_ICW3;
-		//`ICMS_ICW3: ic_miss_decode = `ICMS_ICW4;
 		`ICMS_ICW3: ic_miss_decode = `ICMS_LDRD;
 		`ICMS_LDRD: ic_miss_decode = `ICMS_IDLE;
+		`ICMS_ITL1: ic_miss_decode = m_hit_r ? `ICMS_ICRP : `ICMS_IWLK;
+		`ICMS_IWLK: ic_miss_decode = walk_end ? `ICMS_ICRP : `ICMS_IWLK;
+		`ICMS_ICRP: ic_miss_decode = ic_hit_ok ? `ICMS_ICW3 : `ICMS_MEMR;
 		`ICMS_DEFO: ic_miss_decode = `ICMS_DEFO;
 		default:     ic_miss_decode = `ICMS_DEFO;
    	endcase
 end
 endfunction
 
-wire [2:0] ic_miss_next = ic_miss_decode( ic_miss_current, ic_tag_empty_id, ic_tag_miss_id, ic_rdat_m_valid );
+// ICRP : the fetch hits, faults, or is not needed any more -> end the stall
+wire icrp_ok = ~(ic_tag_empty_id | ic_tag_miss_id) | imiss;
+wire [3:0] ic_miss_next = ic_miss_decode( ic_miss_current, ic_tag_empty_id, ic_tag_miss_id, ic_rdat_m_valid,
+                                          imiss, m_hit_r, i_walk_done | i_walk_fault, icrp_ok );
 
 always @ (posedge clk or negedge rst_n) begin
     if (~rst_n)
@@ -281,7 +446,8 @@ always @ (posedge clk or negedge rst_n) begin
         pc_if_dly <= pc_if;
 end
 
-// current read address keeper
+// current read address keeper (refill : physical address)
+wire [31:12] fetch_pa_page = itrans_on ? iu_ppn : pc_if_dly[31:12];
 always @ (posedge clk or negedge rst_n) begin
     if (~rst_n)
         ic_curric_ent_radr_keeper <= 32'd0;
@@ -289,15 +455,27 @@ always @ (posedge clk or negedge rst_n) begin
         ic_curric_ent_radr_keeper <= 32'd0;
 	else if ((ic_miss_current == `ICMS_IDLE) & (ic_tag_miss_id | ic_tag_empty_id))
 		//ic_curric_ent_radr_keeper <= {pc_if, 2'd0};
+		ic_curric_ent_radr_keeper <= {fetch_pa_page, pc_if_dly[11:2], 2'd0};
+	else if ((ic_miss_current == `ICMS_IDLE) & imiss)
+		// ITLB miss : the index (VA = PA in the page) is used while waiting
 		ic_curric_ent_radr_keeper <= {pc_if_dly, 2'd0};
+	else if ((ic_miss_current == `ICMS_ICRP) & (ic_tag_miss_id | ic_tag_empty_id))
+		ic_curric_ent_radr_keeper <= {iu_ppn, ic_curric_ent_radr_keeper[11:0]};
+end
+
+always @ (posedge clk or negedge rst_n) begin
+    if (~rst_n)
+        ic_fill_way_r <= 3'd0;
+	else if (((ic_miss_current == `ICMS_IDLE) | (ic_miss_current == `ICMS_ICRP)) & (ic_tag_miss_id | ic_tag_empty_id))
+        ic_fill_way_r <= ic_vict_way;
 end
 
 // core stall singal
 
 `ifdef SUPPORT_A
-assign ic_stall = ((ic_miss_current != `ICMS_LDRD)&(ic_miss_current != `ICMS_IDLE)) | ((ic_tag_miss_id | ic_tag_empty_id)&(ic_miss_current != `ICMS_LDRD)) | fencei_stall | amo_stall;
+assign ic_stall = ((ic_miss_current != `ICMS_LDRD)&(ic_miss_current != `ICMS_IDLE)) | ((ic_tag_miss_id | ic_tag_empty_id | imiss)&(ic_miss_current == `ICMS_IDLE)) | fencei_stall | amo_stall;
 `else // SUPPORT_A
-assign ic_stall = ((ic_miss_current != `ICMS_LDRD)&(ic_miss_current != `ICMS_IDLE)) | ((ic_tag_miss_id | ic_tag_empty_id)&(ic_miss_current != `ICMS_LDRD)) | fencei_stall;
+assign ic_stall = ((ic_miss_current != `ICMS_LDRD)&(ic_miss_current != `ICMS_IDLE)) | ((ic_tag_miss_id | ic_tag_empty_id | imiss)&(ic_miss_current == `ICMS_IDLE)) | fencei_stall;
 `endif // SUPPORT_A
 //assign ic_stall = (ic_miss_current != `ICMS_IDLE);
 assign ic_sel_tag = ((ic_miss_current != `ICMS_LDRD)&(ic_miss_current != `ICMS_IDLE)) ;

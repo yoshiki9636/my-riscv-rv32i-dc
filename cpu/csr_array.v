@@ -31,6 +31,7 @@ module csr_array
 	input timer_condition_ex,
 	input post_jump_cmd_cond, // old?
 	input illegal_ops_ex,
+	input ipf_ex,             // instruction page fault (with illegal_ops_ex, 2026-11-22)
     input [31:0] illegal_ops_inst, // new
 	input misal_ld_ex,
 	input misal_st_ex,
@@ -610,7 +611,7 @@ assign mcause_code = pf_exc ? (pf_store ? 6'd15 : 6'd13) :
                      interrupt_condition_ex ? 6'd11 :
                      timer_condition_ex ? 6'd7 :
                      sint_condition_ex ? sint_code :
-                     illegal_ops_ex ? 6'd2 :
+                     illegal_ops_ex ? (ipf_ex ? 6'd12 : 6'd2) :
                      cmd_ebreak_ex ? 6'd3 :
                      misal_ld_ex ? 6'd4 :
                      misal_st_ex ? 6'd6 :
@@ -725,7 +726,7 @@ assign csr_sie_r = { 22'd0, sie_bits[2], 3'd0, sie_bits[1], 3'd0, sie_bits[0], 1
 // is valid, and Linux's do_trap_break() doesn't inspect it either way).
 wire [31:0] sel_tval = pf_exc ? pf_va :
                        (interrupt_condition_ex | timer_condition_ex | sint_condition_ex) ? 32'd0 :
-                       illegal_ops_ex ? illegal_ops_inst :
+                       illegal_ops_ex ? (ipf_ex ? { pc_ex, 2'd0 } : illegal_ops_inst) :
                        (misal_ld_ex | misal_st_ex) ? misal_adr :
                        cmd_ebreak_ex ? { pc_ex, 2'd0 } : 32'd0;
 

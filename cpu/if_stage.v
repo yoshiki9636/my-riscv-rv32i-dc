@@ -29,7 +29,8 @@
 `endif
 
 module if_stage
-	#(parameter IWIDTH = 14)
+	#(parameter IWIDTH = 14,
+	  parameter IWAYS = 1)   // I$ ways : 1 / 2 / 4 / 8 (2026-11-22)
 	(
 	input clk,
 	input rst_n,
@@ -84,6 +85,10 @@ module if_stage
 
 	// from/to ilu
 	input [IWIDTH-3:0] ic_ram_wadr_all,
+	// I$ ways / ITLB (2026-11-22)
+	input [7:0] ic_way_rd,        // way that hits for the ID fetch
+	input [7:0] ic_fill_way,      // refill write way (one hot)
+	input ipf_id,                 // the ID fetch takes an instruction page fault
 
 	output [31:2] pc_if,
 	output reg [31:2] pc_id_pre,
@@ -288,19 +293,48 @@ inst_1r1w #(.IWIDTH(IWIDTH)) inst_1r1w (
 	.ram_wen(i_ram_wen)
 	);
 */
+// I$ ways (2026-11-22) : one instruction RAM per way, the ID fetch selects
+// its way with ic_way_rd (way 0 when no way hits : IWAYS = 1 is the original).
+// ITLB (2026-11-22) : a faulting fetch delivers the instruction page fault
+// marker (IPF_MARKER : a reserved encoding, bits[6:0] = 1111111 is not a
+// 32 bit instruction).  It travels with its PC through inst_roll /
+// inst_collision; id_stage turns it into an illegal instruction with cause 12.
+`define IPF_MARKER 32'h0BAD_007F
+wire [IWAYS*32-1:0] inst_rdata_w;
+
+genvar gw;
+generate
+for (gw = 0; gw < IWAYS; gw = gw + 1) begin : iway
 inst_ram #(.IWIDTH(IWIDTH)) inst_ram (
 	.clk(clk),
 	.rst_n(rst_n),
 	.ram_radr_part(iram_radr),
-	.ram_rdata(inst_rdata_id),
-	// direct write from monitor unsupported
-	//.ram_wadr(i_ram_wadr),
-	//.ram_wdata(i_ram_wdata),
-	//.ram_wen(i_ram_wen),
+	.ram_rdata(inst_rdata_w[gw*32 +: 32]),
 	.ram_wadr_all(ic_ram_wadr_all),
 	.ram_wdata_all(ic_rdat_m_data),
-	.ram_wen_all(ic_rdat_m_valid)
+	.ram_wen_all(ic_rdat_m_valid & ic_fill_way[gw])
 	);
+end
+endgenerate
+
+function [31:0] sel_inst;
+input [7:0] hit;
+input [IWAYS*32-1:0] d;
+integer k;
+reg any;
+begin
+	sel_inst = 32'd0;
+	any = 1'b0;
+	for (k = 1; k < IWAYS; k = k + 1) begin
+		sel_inst = sel_inst | ({ 32{ hit[k] }} & d[k*32 +: 32]);
+		any = any | hit[k];
+	end
+	sel_inst = sel_inst | ({ 32{ ~any }} & d[31:0]);   // way 0 (or no hit)
+end
+endfunction
+
+wire [31:0] inst_rdata_way = sel_inst(ic_way_rd, inst_rdata_w);
+assign inst_rdata_id = ipf_id ? `IPF_MARKER : inst_rdata_way;
 
 reg [31:0] inst_roll;
 reg [31:0] inst_collision;

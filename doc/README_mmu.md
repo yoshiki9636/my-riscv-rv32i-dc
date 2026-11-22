@@ -30,7 +30,7 @@ D$ の容量 = `FT_DWAYS` × 2^(`FT_DWIDTH`+2) バイト。
 |---|---|---|
 | 1 | DTLB + PTW（D$経由）+ satp / MPRV / SUM / MXR、M-mode + MPRV で動作確認 | **実装・シミュレーション済み**（実機は未確認） |
 | 2 | S/U-mode、trap の委譲（medeleg / mideleg）、S-mode CSR、sret | **実装・シミュレーション済み**（`FT_SMODE`） |
-| 3 | ITLB + IF ステージ対応（命令フェッチの変換） | 未着手 |
+| 3 | ITLB + IF ステージ対応（命令フェッチの変換）、I$ 4ウェイ（`FT_IWAYS`） | **実装・シミュレーション済み** |
 | 4 | SBI（OpenSBI か自作）+ MMU 版 Linux | 未着手 |
 
 ## S/U-mode（ステップ2、`FT_SMODE`）
@@ -50,10 +50,23 @@ D$ の容量 = `FT_DWAYS` × 2^(`FT_DWIDTH`+2) バイト。
 
 未対応（今後）：
 
-- **命令フェッチの変換**（ITLB、ステップ3）。それまで S / U-mode のコードは VA = PA に置く（テストは恒等マップのメガページを使用）
 - mstatus の TVM / TW / TSR（0 固定）、外部割り込みの SEIP（ハードウェア入力は未接続、M のソフトウェアが mip.SEIP を書く）
 - time / cycle CSR（未実装で 0 が読める。Linux の rdtime は SBI でのエミュレートか、今後の実装）
 - **nommu Linux（M-mode カーネル）**：`FT_SMODE 1` では、カーネルが MPP = U でユーザプロセスに mret すると、本当に U-mode で動く。今の nommu カーネルで問題が出る場合は `FT_SMODE 0` にする
+
+## ITLB と I$（ステップ3）
+
+| 項目 | 内容 |
+|---|---|
+| I$ | `FT_IWAYS`（1 / 2 / 4 / 8）× 2^(`FT_IWIDTH`+2) バイト。Arty は 4KB × 4ウェイ = 16KB。`FT_IWAYS 1` は元の direct-map と同じ動作。MMU には `FT_IWIDTH` ≦ 10 が必要（超えると MMU 無効） |
+| 命令の選択 | 全ウェイを IF で読み、ID のタグ比較結果（`ic_way_rd`）でウェイを選ぶ |
+| 命令フェッチの変換 | satp.MODE = 1 かつ priv が S / U のとき（MPRV は関係しない） |
+| micro-ITLB | 1エントリ（FF）。ID のタグ比較と権限判定（X、U ページは U-mode だけ・S ページは S-mode だけ実行可）に使う |
+| ITLB | 16エントリ（`dtlb.v` を流用）。毎サイクルの検索結果を FF に取り込む。micro-ITLB ミス → ITL1 → ヒットなら ICRP、ミスなら IWLK |
+| PTW | lsu_stage の PTW を共有（D 側を優先。I 側は D$ の状態機械が IDLE で、MA にメモリアクセスがないときに開始し、RPRD / RPCK → DCW3 → LDRD で戻る） |
+| 命令ページフォルト | cause 12、mtval = PC。フォルトした取り込みは予約エンコーディング `0x0BAD007F` を ID に渡し（if_stage の命令の一時保存を経ても PC と対応したまま運ばれる）、id_stage が不正命令として扱い、EX で cause 12 にする。フォルトは micro-ITLB に保持し、次のリダイレクトで捨てる |
+| sfence.vma | DTLB / ITLB / micro-TLB をすべてフラッシュ |
+| ITLB の状態（ilu_stage） | ITL1：ITLB の結果を見る、IWLK：PTW を待つ、ICRP：取り込みを再判定（ヒット / フォルト → ICW3 → LDRD、ミス → MEMR） |
 
 ## 変換の条件
 
@@ -154,6 +167,7 @@ VDEFS="-DTB_DWAYS=1" ./cmp.sh <test.S> [master] [maxcyc]  # MMU なしで master
 | t05_fencei_dmiss | D$ ミスの直後の fence.i（I$ が空の状態）。`ASFLAGS=-DNOFS=0..3` で I$ ライン内の位置を変える |
 | t06_utlb | micro-TLB ミス・DTLB ヒットの経路（8ページを交互にアクセス）、その経路での権限フォルトと I/O |
 | t07_smode | S/U-mode（`VDEFS="-DTB_SMODE=1"`）：misa、M → S / U、特権チェック、ecall の例外コード、medeleg による委譲と sret、S-mode での変換（SUM / U ページ）、S レベル割り込み（委譲あり / なし） |
+| t08_itlb | 命令フェッチの変換（`VDEFS="-DTB_SMODE=1"`）：S-mode のコードを VA ≠ PA で実行、命令ページフォルト（X なし・無効・U ページ）、20 ページで ITLB を溢れさせる、D 側 / I 側の PTW の混在、sfence.vma + fence.i でコードページを付け替え |
 | t03_dcache_4way | 同じセットに 12 ライン（dirty の追い出し）、byte / half ストア、fence.i で全ウェイをフラッシュして DRAM から読み直し、MMU 有効時に PTE とデータを同じセットに集中 |
 
 - `cmp_arch.sh <test.S> [master]`：サイクル番号を除いた命令レベルのトレース（レジスタ書き戻し・MMIO）を改造前 RTL と比べる。キャッシュ構成が違う場合に使う（タイマ割り込みのテストは、割り込みの入る位置が変わるので一致しないことがある）

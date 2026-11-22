@@ -39,10 +39,13 @@
 //   FT_DWIDTH > 10 the MMU is disabled (satp.MODE reads 0) : e.g. the original
 //   Arty setting FT_DWIDTH 12 / FT_DWAYS 1 (16KB direct mapped, no MMU).
 //   FT_DWAYS 1 is the original direct mapped D$.
+//   I$ (2026-11-22) : FT_IWAYS ways (1 / 2 / 4 / 8) of 2^(FT_IWIDTH+2) bytes each.
+//   The MMU (ITLB) needs FT_IWIDTH <= 10 too (otherwise the MMU is disabled).
 //   FT_SMODE (2026-11-22) : 1 = S-mode / U-mode, trap delegation (MMU Linux),
 //   0 = M-mode only (the original behavior : mret always returns to M)
 `ifdef BOARD_CMOD_A7
   `define FT_IWIDTH 10
+  `define FT_IWAYS 1
   `define FT_DWIDTH 10
   `define FT_DWAYS 1
   `define FT_SMODE 0
@@ -52,13 +55,15 @@
   //   (2**(WIDTH-2) entries each) : 12 does not fit (LUT 92%, CLS 98%, PnR fails)
   //   (FT_DWAYS 4 has the same number of valid / dirty flip-flops as 12)
   `define FT_IWIDTH 10
+  `define FT_IWAYS 1
   `define FT_DWIDTH 10
   `define FT_DWAYS 1
   `define FT_SMODE 0
   `define FT_SWIDTH 13
 `else // BOARD_ARTY_A7
-  // D$ 16KB : 4KB x 4 way (VIPT with the MMU)
-  `define FT_IWIDTH 12
+  // I$ / D$ 16KB : 4KB x 4 way (VIPT with the MMU)
+  `define FT_IWIDTH 10
+  `define FT_IWAYS 4
   `define FT_DWIDTH 10
   `define FT_DWAYS 4
   `define FT_SMODE 1
@@ -743,7 +748,7 @@ wire g_interrupt;
 //wire ic_stall;
 wire stall;
 
-cpu_top #(.DWIDTH(DWIDTH), .IWIDTH(IWIDTH), .SWIDTH(SWIDTH), .DWAYS(`FT_DWAYS), .SMODE(`FT_SMODE)) cpu_top (
+cpu_top #(.DWIDTH(DWIDTH), .IWIDTH(IWIDTH), .SWIDTH(SWIDTH), .DWAYS(`FT_DWAYS), .SMODE(`FT_SMODE), .IWAYS(`FT_IWAYS)) cpu_top (
 	.clk(clk),
 	.rst_n(rst_n),
 	.init_calib_complete(init_calib_complete),

@@ -7,8 +7,9 @@
 #   6. S-level interrupts : delegated SSIP -> S, not delegated STIP -> M
 #      (taken in S-mode even with mstatus.MIE = 0)
 #
-# instruction fetch is not translated yet (ITLB : next step), so the code is
-# identity mapped (VA = PA megapage) when paging is on.
+# When paging is on, the S-mode code runs from an identity megapage (U=0) and
+# the U-mode code from a U=1 alias of the same memory (VA 0x0040_0000 + PA) :
+# instruction fetch is translated (ITLB) and U can not execute U=0 pages.
 #
 # register usage
 #   M handler : s9 count, s10 mcause, s11 mtval, s8 mepc
@@ -24,8 +25,10 @@
 .equ MIP_STIP,     0x20
 
 # go to M-mode at label (from S or U : ecall with a7 = 1)
+# (absolute address : the U-mode code runs from the alias VA)
 .macro TO_M label
-    la   a0, \label
+    lui  a0, %hi(\label)
+    addi a0, a0, %lo(\label)
     li   a7, 1
     ecall
 .endm
@@ -124,9 +127,11 @@ fail_45:
 m_code4:
     # ---------------- 5. S-mode paging : U page / SUM / delegated page fault ----------------
     # root : VA 0x0000_0000 megapage -> PA 0 (RWX, code / data, U=0)
+    #        VA 0x0040_0000 megapage -> PA 0 (RX, U=1) : alias for the U-mode code
     #        VA 0xC000_0000 megapage -> PA 0xC000_0000 (I/O)
     #        VA 0x4000_0000 -> L0 @0x11000 : 0x4000_0000 -> 0x20000 (U page)
     PSTORE 0x10000, (PTE_V | PTE_R | PTE_W | PTE_X | PTE_A | PTE_D)
+    PSTORE 0x10004, (PTE_V | PTE_R | PTE_X | PTE_A | PTE_U)
     PSTORE 0x10C00, ((0xC0000 << 10) | PTE_V | PTE_R | PTE_W | PTE_A | PTE_D)
     PSTORE 0x10400, ((0x11 << 10) | PTE_V)
     PSTORE 0x11000, ((0x20 << 10) | PTE_V | PTE_R | PTE_W | PTE_A | PTE_D | PTE_U)
@@ -151,6 +156,8 @@ s_code5:
     li   t0, MSTATUS_SPP
     csrc sstatus, t0
     la   t0, u_code5
+    li   t1, 0x00400000             # U=1 alias
+    add  t0, t0, t1
     csrw sepc, t0
     sret
 u_code5:

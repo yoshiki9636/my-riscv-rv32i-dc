@@ -16,7 +16,8 @@ module cpu_top
       parameter DWIDTH = 12,
       parameter SWIDTH = 13,
       parameter DWAYS = 1,   // D$ ways : 1 / 2 / 4 / 8 (2026-11-22)
-      parameter SMODE = 0)   // 1 : S-mode / U-mode, trap delegation (2026-11-22)
+      parameter SMODE = 0,   // 1 : S-mode / U-mode, trap delegation (2026-11-22)
+      parameter IWAYS = 1)   // I$ ways : 1 / 2 / 4 / 8 (2026-11-22)
 	(
 
 	input clk,
@@ -295,7 +296,7 @@ wire [2:0] dc_rdall_way;
 // MMU_EN : the VIPT D$ needs 1 way <= 4KB (DWIDTH <= 10).  With a bigger
 // way (e.g. DWIDTH = 12 direct mapped) the MMU is disabled : satp.MODE reads 0
 // (Bare) and nothing is translated.
-localparam MMU_EN = (DWIDTH <= 10) ? 1 : 0;
+localparam MMU_EN = ((DWIDTH <= 10) && (IWIDTH <= 10)) ? 1 : 0;   // I$ is VIPT too (ITLB, 2026-11-22)
 // S/U-mode (2026-11-22) : effective privilege of the data access
 //   M-mode with MPRV = 1 : MPP, otherwise the current privilege level.
 //   Translation : satp.MODE = 1 and the effective privilege is S or U.
@@ -306,6 +307,23 @@ wire [1:0] csr_priv;
 wire [1:0] mmu_eff_priv = (csr_mprv & (csr_priv == `M_MODE)) ? csr_mpp : csr_priv;
 wire mmu_trans_on = csr_satp_mode & (mmu_eff_priv != `M_MODE);
 wire mmu_priv_u = (mmu_eff_priv == `U_MODE);
+
+// ITLB (2026-11-22) : instruction fetch translation (MPRV does not apply)
+wire itrans_on = csr_satp_mode & (csr_priv != `M_MODE);
+wire i_priv_u = (csr_priv == `U_MODE);
+wire [7:0] ic_way_rd;
+wire [7:0] ic_fill_way;
+wire ipf_id;
+wire ipf_ex;
+wire i_walk_req;
+wire [31:12] i_walk_va;
+wire i_walk_done;
+wire i_walk_fault;
+wire ifill;
+wire [31:12] ifill_vpn;
+wire ifill_mega;
+wire [31:12] ifill_ppn;
+wire [4:0] ifill_flags;
 
 
 // io bus for cpu
@@ -475,7 +493,10 @@ cpu_status cpu_status (
 	.rst_pipe_wb(rst_pipe_wb)
 	);
 
-if_stage #(.IWIDTH(IWIDTH)) if_stage (
+if_stage #(.IWIDTH(IWIDTH), .IWAYS(IWAYS)) if_stage (
+	.ic_way_rd(ic_way_rd),
+	.ic_fill_way(ic_fill_way),
+	.ipf_id(ipf_id),
 	.clk(clk),
 	.rst_n(rst_n),
 	.inst_id(inst_id),
@@ -587,6 +608,7 @@ id_stage #(.SMODE(SMODE)) id_stage (
 	.cmd_mret_ex(cmd_mret_ex),
 	.cmd_wfi_ex(cmd_wfi_ex),
 	.illegal_ops_ex(illegal_ops_ex),
+	.ipf_ex(ipf_ex),
 	.inst_ex(inst_ex),
 	.rd_adr_ex(rd_adr_ex),
 	.wbk_rd_reg_ex(wbk_rd_reg_ex),
@@ -688,6 +710,7 @@ ex_stage #(.MMU_EN(MMU_EN), .SMODE(SMODE)) ex_stage (
 	.cmd_mret_ex(cmd_mret_ex),
 	.cmd_wfi_ex(cmd_wfi_ex),
 	.illegal_ops_ex(illegal_ops_ex),
+	.ipf_ex(ipf_ex),
 	.rd_adr_ex(rd_adr_ex),
 	.wbk_rd_reg_ex(wbk_rd_reg_ex),
 	.hit_rs1_idex_ex(hit_rs1_idex_ex),
@@ -1054,10 +1077,35 @@ lsu_stage #(.DWIDTH(DWIDTH), .DWAYS(DWAYS)) lsu_stage (
 	.io_ok_ma(io_ok_ma),
 	.pf_exc(pf_exc),
 	.pf_store(pf_store),
+	.i_walk_req(i_walk_req),
+	.i_walk_va(i_walk_va),
+	.i_walk_done(i_walk_done),
+	.i_walk_fault(i_walk_fault),
+	.ifill(ifill),
+	.ifill_vpn(ifill_vpn),
+	.ifill_mega(ifill_mega),
+	.ifill_ppn(ifill_ppn),
+	.ifill_flags(ifill_flags),
 	.rst_pipe(rst_pipe)
 	);
 
-ilu_stage #(.IWIDTH(IWIDTH)) ilu_stage (
+ilu_stage #(.IWIDTH(IWIDTH), .IWAYS(IWAYS)) ilu_stage (
+	.ic_way_rd(ic_way_rd),
+	.ic_fill_way(ic_fill_way),
+	.itrans_on(itrans_on),
+	.i_priv_u(i_priv_u),
+	.tlb_flush(tlb_flush),
+	.ipf_clr(jmp_purge_ex),
+	.ipf_id(ipf_id),
+	.i_walk_req(i_walk_req),
+	.i_walk_va(i_walk_va),
+	.i_walk_done(i_walk_done),
+	.i_walk_fault(i_walk_fault),
+	.ifill(ifill),
+	.ifill_vpn(ifill_vpn),
+	.ifill_mega(ifill_mega),
+	.ifill_ppn(ifill_ppn),
+	.ifill_flags(ifill_flags),
 	.clk(clk),
 	.rst_n(rst_n),
 	.pc_if(pc_if),
