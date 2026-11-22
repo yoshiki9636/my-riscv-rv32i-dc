@@ -161,6 +161,20 @@ always @ (posedge clk or negedge rst_n) begin
 end
 
 reg use_collision;
+reg jump_under_ic_stall;   // (declared here : used by stall_ld_ex_smpl)
+reg [3:0] cache_miss_current;  // I/D stall sync state (declared here : used by stall_ld_ex_smpl)
+// MMU (2026-11-22) : a short D stall (micro-DTLB miss, 4 cycles) can start AND
+// end inside an I$ miss (I/D sync state ISWD, the D stall ends first : "not
+// occured" without the MMU).  The stalled ID instruction (captured for the
+// load/store replay) is NOT delivered there : it is handled like the existing
+// "D stall over, I stall goes on" case (ISAF) and delivered once from
+// inst_roll at the end of the I$ miss.  Delivering it inside the I$ miss ran
+// it twice (Linux vprintk_store : the stack canary "xor"), paired the next
+// instruction with the old PC (a branch to a wrong target, rnd seed 3) or used
+// a stale load result (load-use, rnd seed 44).  Registers only (timing) : the
+// I$ miss goes on = not its LDRD cycle (ic_stall_fin2).
+wire iswd_dfin_replay;
+wire ic_fin_after_dc;      // (declared here : used by inst_roll)
 reg [31:2] pc_if_pre;
 
 // FIX (2026-10-28): exception traps (g_exception: illegal instruction,
@@ -354,7 +368,12 @@ always @ (posedge clk or negedge rst_n) begin
         inst_roll <= 32'h0000_0013;	
 	else if (inst_roll_smpl_tim1|inst_roll_smpl_tim2|inst_roll_smpl_tim3)
         inst_roll <= inst_rdata_id;
-	else if (~ic_stall & ( stall_1shot | ~stall_dly & stall_ld ))
+	// MMU (2026-11-22) : an I stall ending (ISAF : the D stall was over) in the
+	// cycle a new D stall starts ("not occured" without the MMU : short ITLB /
+	// micro-DTLB stalls) : inst_roll holds the stalled ID instruction that
+	// ic_fin_after_dc delivers, keep it for the new D stall (it was replaced by
+	// the next fetch and lost : rnd seed 44)
+	else if (~ic_stall & ( stall_1shot | ~stall_dly & stall_ld ) & ~(ic_fin_after_dc & stall))
         inst_roll <= inst_rdata_id;
 end
 
@@ -539,9 +558,7 @@ assign inst_id = ((ic_after_dc == 3'b011) & ic_stall_fin2) ? use_collision ? ins
                  inst_rdata_id; // other condisitons
 */
 wire dc_fin_after_ic;
-wire ic_fin_after_dc;
 wire syn_fin;
-reg jump_under_ic_stall;
 wire inst_masked_in_icdc_sync_start;
 //reg inst_mask_condition_with_jmp_lat;
 
@@ -549,6 +566,8 @@ assign inst_id =
                  // ID-stage jump prediction: the fall-through instruction
                  // after a predicted jump is replaced by NOP
                  pred_kill_id ? 32'h0000_0013 :
+                 // MMU (2026-11-22) : no replay inside the I$ miss (see iswd_dfin_replay)
+                 iswd_dfin_replay ? 32'h0000_0013 :
                  //(inst_masked_in_icdc_sync_start | inst_mask_condition_with_jmp_lat) ? 32'h0000_0013 :
                  (inst_masked_in_icdc_sync_start) ? 32'h0000_0013 :
                  // FPGA (2026-07-17): close a remaining hole in the 2026-07-16
@@ -649,7 +668,7 @@ assign post_jump_cmd_cond = jump_only_c1 | jump_only_c2;
 `define IDST_SYAD 4'b1101
 
 // Request channel manager state machine
-reg [3:0] cache_miss_current;
+//reg [3:0] cache_miss_current;  (declared at the top)
 
 function [3:0] cache_miss_decode;
 input [3:0] cache_miss_current;
@@ -757,9 +776,16 @@ endfunction
 
 wire [3:0] cache_miss_next = cache_miss_decode( cache_miss_current, ic_stall, stall );
 
+assign iswd_dfin_replay = (cache_miss_current == `IDST_ISWD) & ~ic_stall_fin2 & dc_stall_fin2 &
+                          use_collision & ~jump_under_ic_stall;
+
 always @ (posedge clk or negedge rst_n) begin
     if (~rst_n)
         cache_miss_current <= `IDST_IDLE;
+	// MMU (2026-11-22) : the D stall ended inside the I$ miss (iswd_dfin_replay) :
+	// "D stall over, I stall goes on" (ISAF), inst_roll is delivered at its end
+	else if (iswd_dfin_replay)
+        cache_miss_current <= `IDST_ISAF;
     else
         cache_miss_current <= cache_miss_next;
 end
@@ -775,7 +801,14 @@ assign inst_roll_smpl_tim3 = (cache_miss_next == `IDST_SYAD)&(cache_miss_current
 
 assign inst_collision_smpl1 = (cache_miss_next == `IDST_ISWD)&(cache_miss_current == `IDST_ISAF);
 
-assign inst_masked_in_icdc_sync_start = (cache_miss_current == `IDST_SYWB);
+// MMU (2026-11-22) : an I stall and a D stall that start in the same cycle
+// (SYWB) can also END in the same cycle now (ITLB hit : ITL1 -> ICRP -> ICW3
+// -> LDRD and micro-DTLB miss / DTLB hit : TLBL -> RPCK -> DCW3 -> LDRD, both 5
+// cycles; "not occured" without the MMU).  The load/store replay
+// (use_collision) delivers the load-use stalled instruction in that last
+// cycle : it must not be masked (the "addi" of Linux preempt_disable after
+// "lw a5, 4(tp)" was lost : preempt_count went negative).
+assign inst_masked_in_icdc_sync_start = (cache_miss_current == `IDST_SYWB) & (ic_stall | stall);
 
 
 //wire inst_mask_condition_with_jmp = ((cache_miss_current == `IDST_SYWB)|(cache_miss_current == `IDST_DSWI)) & jmp_condition_ex;

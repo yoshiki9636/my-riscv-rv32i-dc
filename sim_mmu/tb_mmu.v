@@ -23,6 +23,9 @@
  *
  * plusargs:
  *   +PROGRESS=<n>    print pc_id / priv / satp.MODE every n cycles
+ *   +WATCHPA=<hex>   log the stores / loads of that physical word (pc, data)
+ *   +DUPCHK          report an instruction that writes its register twice in a row
+ *                    (+DUPSTOP : stop there)
  *   +IWIN0=<c> +IWIN1=<c>  I-side state (ilu FSM, micro-ITLB, PCs) every cycle in [c0, c1]
  *   +HEX=<file>      program image (objcopy -O verilog, 32bit words), default test.hex
  *   TB_LINEBITS      memory size : 2^n 16-byte lines (default 16 = 1MB, MIG stub only)
@@ -620,6 +623,88 @@ always @ (posedge clk) begin
     end
 end
 
+`ifndef TB_ORIG   // (MMU signals : not in the reference RTL)
+// ================= memory word watch (+WATCHPA=<hex physical address>) =================
+// every store (and load) of the MA stage to that word, when it leaves MA
+reg [31:0] watch_pa;
+reg watch_on;
+reg [31:2] watch_ld_pc;
+reg watch_ld_pend;
+initial begin
+    watch_on = $value$plusargs("WATCHPA=%h", watch_pa);
+    watch_ld_pend = 1'b0;
+end
+always @ (posedge clk) begin
+    if (rst_n & watch_on & ~dut.ma_stage.stall & (dut.ma_stage.pa_ma[31:2] == watch_pa[31:2])) begin
+        if (dut.ma_stage.cmd_st_ma)
+            $display("[%0d] WST pc=%08x data=%08x we=%b", cyc, {dut.ma_stage.pc_ma, 2'b00},
+                     dut.ma_stage.st_wdata, dut.ma_stage.st_we);
+        if (dut.ma_stage.cmd_ld_ma) begin
+            watch_ld_pc <= dut.ma_stage.pc_ma;
+            watch_ld_pend <= 1'b1;
+        end
+    end
+    if (rst_n & watch_ld_pend & dut.wbk_rd_reg_wb & (dut.pc_wb == watch_ld_pc)) begin
+        $display("[%0d] WLD pc=%08x data=%08x", cyc, {watch_ld_pc, 2'b00}, dut.wbk_data_wb);
+        watch_ld_pend <= 1'b0;
+    end
+end
+
+// ================= duplicate commit check (+DUPCHK) =================
+// The same PC writing a register twice in a row, with no other PC seen in WB
+// in between (a loop branch / a trap handler shows another pc_wb), the same
+// register with a different value : an instruction executed twice (if_stage
+// replay bugs; e.g. "addi sp, sp, 16" twice).  Not reported : the same value
+// again (idempotent), and mul / div whose final result is written with the
+// next instruction's PC (another register).  +DUPSTOP : $finish at
+// the first one.
+reg dupchk, dupstop;
+reg [31:2] last_wb_pc;
+reg [31:0] last_wb_data;
+reg [4:0] last_wb_rd;
+reg [31:2] md_next_pc;     // PC after the last mul / div in EX (its result is logged with it)
+reg [31:2] md_next_pc2;    // the one before (a mul right after a div)
+reg last_wb_vld;
+reg other_pc_seen;
+integer dup_count;
+initial begin
+    dupchk = $test$plusargs("DUPCHK");
+    dupstop = $test$plusargs("DUPSTOP");
+    last_wb_vld = 1'b0;
+    other_pc_seen = 1'b0;
+    md_next_pc = 30'd0;
+    md_next_pc2 = 30'd0;
+    dup_count = 0;
+end
+always @ (posedge clk) begin
+    if ((dut.inst_ex[6:0] == 7'b0110011) & (dut.inst_ex[31:25] == 7'b0000001))   // M extension
+        if (md_next_pc != dut.pc_ex + 30'd1) begin
+            md_next_pc2 <= md_next_pc;
+            md_next_pc <= dut.pc_ex + 30'd1;
+        end
+    if (rst_n & last_wb_vld & (dut.pc_wb != last_wb_pc))
+        other_pc_seen <= 1'b1;
+    if (rst_n & dut.wbk_rd_reg_wb & (dut.rd_adr_wb != 5'd0)) begin
+        other_pc_seen <= 1'b0;
+        if (dupchk & last_wb_vld & (last_wb_pc == dut.pc_wb) & ~other_pc_seen &
+            (last_wb_rd == dut.rd_adr_wb) & (last_wb_data != dut.wbk_data_wb) &
+            (dut.pc_wb != md_next_pc) & (dut.pc_wb != md_next_pc2)) begin
+            dup_count = dup_count + 1;
+            $display("[%0d] DUP pc=%08x x%0d=%08x", cyc, {dut.pc_wb, 2'b00}, dut.rd_adr_wb, dut.wbk_data_wb);
+            if (dupstop) begin
+                $display("RESULT: DUP");
+                #1 $finish;
+            end
+        end
+        last_wb_pc <= dut.pc_wb;
+        last_wb_data <= dut.wbk_data_wb;
+        last_wb_rd <= dut.rd_adr_wb;
+        last_wb_vld <= 1'b1;
+    end
+end
+
+`endif // TB_ORIG
+
 // ================= commit log =================
 always @ (posedge clk) begin
     if (commit & rst_n) begin
@@ -668,6 +753,11 @@ end
 always @ (posedge clk) begin
     if (trace & rst_n & ~stall_u & dut.g_exception)
         $display("[%0d] TRAP g_exception pc_ex=0x%08x pc_ma=0x%08x", cyc, {dut.pc_ex, 2'b00}, {dut.pc_ma, 2'b00});
+`ifndef TB_ORIG
+    if (trace & rst_n & (dut.interrupt_condition_ex | dut.timer_condition_ex))
+        $display("[%0d] INT pc_ex=0x%08x pc_ma=0x%08x last_wb=0x%08x", cyc, {dut.pc_ex, 2'b00},
+                 {dut.pc_ma, 2'b00}, {last_wb_pc, 2'b00});
+`endif
     if (trace & rst_n & dut.ecall_condition_ex)
         $display("[%0d] TRAP ecall/illegal pc_ex=0x%08x", cyc, {dut.pc_ex, 2'b00});
 end

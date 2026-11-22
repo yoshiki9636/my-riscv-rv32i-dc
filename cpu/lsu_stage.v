@@ -511,6 +511,7 @@ input pte_next;
 input m_hit_r;
 input iwalk_go;
 input walk_i;
+input ma_ldst;       // MA has a memory access (I walk end : replay it, else IDLE)
 begin
     case(dc_miss_current)
 		`DCMS_IDLE: begin
@@ -527,7 +528,7 @@ begin
     		endcase
 		end
 		`DCMS_TLBL: dc_miss_decode = m_hit_r ? `DCMS_RPCK : `DCMS_PTRD;  // DTLB hit : replay / miss : PTW
-		`DCMS_PTRD: dc_miss_decode = ptw_bad_adr ? (walk_i ? `DCMS_RPRD : `DCMS_FALT) : `DCMS_PTCK;
+		`DCMS_PTRD: dc_miss_decode = ptw_bad_adr ? (walk_i ? (ma_ldst ? `DCMS_RPRD : `DCMS_IDLE) : `DCMS_FALT) : `DCMS_PTCK;
 		`DCMS_PTCK: begin
     		casex({ptw_hit, dc_tag_empty_ma, dc_tag_miss_ma, dc_cache_dirty_ma})
 				4'b1xxx: dc_miss_decode = `DCMS_PTDT;
@@ -537,8 +538,11 @@ begin
 				default: dc_miss_decode = `DCMS_DEFO;
     		endcase
 		end
+		// I walk end : the fault goes to ilu; a memory access that came into MA
+		// during the walk (it stalled there) is replayed, else back to IDLE
 		`DCMS_PTDT: dc_miss_decode = pte_next ? `DCMS_PTRD :
-		                             (pte_fill | walk_i) ? `DCMS_RPRD : `DCMS_FALT;   // I walk : the fault goes to ilu
+		                             walk_i ? (ma_ldst ? `DCMS_RPRD : `DCMS_IDLE) :
+		                             pte_fill ? `DCMS_RPRD : `DCMS_FALT;
 		`DCMS_RPRD: dc_miss_decode = `DCMS_RPCK;
 		`DCMS_RPCK: begin
     		casex({mmu_fault, mmu_miss, dc_tag_empty_ma, dc_tag_miss_ma, dc_cache_dirty_ma})
@@ -589,7 +593,7 @@ endfunction
 
 wire [4:0] dc_miss_next = dc_miss_decode( dc_miss_current, dc_tag_empty_ma, dc_tag_miss_ma, dc_cache_dirty_ma, dcw_finish_wresp, rdat_m_valid, dcflush_start, dcflush_running,
                                           mmu_miss, mmu_fault, ptw_act, ptw_hit, ptw_bad_adr, pte_fill, pte_next, m_hit_r,
-                                          iwalk_go, walk_i );
+                                          iwalk_go, walk_i, cmd_ldst_raw );
 
 // timing (2026-11-22) : the same next state without fence.i's flush start, for
 // the outputs that drive the RAM / bus (ram_ren_all, dcr_start_rq).  fence.i
@@ -600,7 +604,7 @@ wire [4:0] dc_miss_next = dc_miss_decode( dc_miss_current, dc_tag_empty_ma, dc_t
 wire dcflush_start_nf = start_dcflush | (dcflush_pend & (dc_miss_current == `DCMS_IDLE));
 wire [4:0] dc_miss_next_nf = dc_miss_decode( dc_miss_current, dc_tag_empty_ma, dc_tag_miss_ma, dc_cache_dirty_ma, dcw_finish_wresp, rdat_m_valid, dcflush_start_nf, dcflush_running,
                                           mmu_miss, mmu_fault, ptw_act, ptw_hit, ptw_bad_adr, pte_fill, pte_next, m_hit_r,
-                                          iwalk_go, walk_i );
+                                          iwalk_go, walk_i, cmd_ldst_raw );
 
 // MMU (2026-11-22) : PTW registers / TLB fill
 wire st_ptrd = (dc_miss_current == `DCMS_PTRD);
@@ -690,11 +694,21 @@ assign dc_fill_way = 8'd1 << fill_way_r;
 // core stall singal
 // MMU (2026-11-22): PFX (page fault trap cycle) does not stall, a TLB miss /
 // fault of the MA access starts a stall in IDLE
-assign dc_stall = ((dc_miss_current != `DCMS_LDRD)&(dc_miss_current != `DCMS_IDLE)&(dc_miss_current != `DCMS_PFX))
+// I walk (2026-11-22) : no stall while the walk for the ITLB runs, unless a
+// memory access comes into MA (it waits there; replayed after the walk).  The
+// instructions ahead of the stalled fetch drain meanwhile.  if_stage then sees
+// the walk as an I$ miss only : a D stall from the walk inside the I stall
+// (possibly after / before a real D$ miss) broke its I/D stall sync (an
+// instruction was delivered twice : Linux, addi sp after a D$ miss + walk).
+assign dc_stall = ((dc_miss_current != `DCMS_LDRD)&(dc_miss_current != `DCMS_IDLE)&(dc_miss_current != `DCMS_PFX)
+                   & (~walk_i | cmd_ldst_raw))
                 | ((dc_tag_miss_ma | dc_tag_empty_ma | mmu_miss | mmu_fault)&(dc_miss_current == `DCMS_IDLE));
 
 assign dc_sel_tag = ((dc_miss_current != `DCMS_LDRD)&(dc_miss_current != `DCMS_IDLE)&(dc_miss_current != `DCMS_PFX)) ;
-assign dc_st_ok = ((dc_miss_current != `DCMS_MEMW)&(dc_miss_current != `DCMS_MEMR));
+// I walk (2026-11-22) : a store that came into MA during the walk waits there;
+// the tag RAM is read with the PTE address meanwhile, so its way hit is not
+// valid : no D$ write until the replay (RPRD -> RPCK) after the walk
+assign dc_st_ok = ((dc_miss_current != `DCMS_MEMW)&(dc_miss_current != `DCMS_MEMR)) & ~walk_i;
 
 // store data write timing
 assign dc_st_wt_ma = (dc_miss_current != `DCMS_DCWT);
