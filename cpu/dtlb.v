@@ -13,10 +13,9 @@
  * - an entry is filled only when the PTE is valid and A=1 (see lsu_stage PTW),
  *   so A is not stored.  D is stored : a store to a D=0 page is a page fault
  *   (Svade style, the OS sets D and executes sfence.vma)
- * - everything that sits on the dc_stall path is computed per entry in
- *   parallel and AND-ORed with the hit vector (no 16:1 mux in front of it):
- *     perm_ok : matched entry allows this access
- *     pa_io   : matched entry's PA[31:30] == 2'b11 (I/O region, precomputed)
+ * - looked up every cycle with the MA VA; lsu_stage registers the result and
+ *   refills its 1 entry micro-TLB from it (the DTLB is off the dc_stall path).
+ *   Permission / I/O checks are done on the micro-TLB.
  * - replacement : round robin
  */
 
@@ -30,14 +29,9 @@ module dtlb
 
 	// lookup (MA stage)
 	input [31:12] va,
-	input is_store,      // store / sc.w / AMO
-	input priv_u,        // effective privilege is U (else S)
-	input sum,           // mstatus.SUM
-	input mxr,           // mstatus.MXR
 	output hit,
-	output perm_ok,
-	output pa_io,
-	output [31:12] pa,
+	output [31:12] pa,      // PA of the page (megapage : PA[21:12] = VA[21:12])
+	output [4:0] flags,     // { D, U, X, W, R } of the matched entry
 
 	// fill (from PTW)
 	input fill,
@@ -55,12 +49,10 @@ reg [NENT-1:0] e_mega;
 reg [31:12] e_vpn [0:NENT-1];
 reg [31:12] e_ppn [0:NENT-1];
 reg [4:0] e_flags [0:NENT-1];
-reg [NENT-1:0] e_io;
 reg [NENT_W-1:0] rr_ptr;
 
 // lookup
 wire [NENT-1:0] hit_vec;
-wire [NENT-1:0] perm_vec;
 wire [31:12] pa_ent [0:NENT-1];
 
 genvar g;
@@ -71,21 +63,10 @@ for (g = 0; g < NENT; g = g + 1) begin : ent
 	assign hit_vec[g] = e_valid[g] & vpn1_eq & (e_mega[g] | vpn0_eq);
 	// megapage : PA[21:12] = VA[21:12]
 	assign pa_ent[g] = { e_ppn[g][31:22], e_mega[g] ? va[21:12] : e_ppn[g][21:12] };
-	// flags : [4] D, [3] U, [2] X, [1] W, [0] R
-	wire f_d = e_flags[g][4];
-	wire f_u = e_flags[g][3];
-	wire f_x = e_flags[g][2];
-	wire f_w = e_flags[g][1];
-	wire f_r = e_flags[g][0];
-	wire priv_ok = priv_u ? f_u : (~f_u | sum);
-	wire acc_ok = is_store ? (f_w & f_d) : (f_r | (mxr & f_x));
-	assign perm_vec[g] = priv_ok & acc_ok;
 end
 endgenerate
 
 assign hit = |hit_vec;
-assign perm_ok = |(hit_vec & perm_vec);
-assign pa_io = |(hit_vec & e_io);
 
 // PA : AND-OR mux (only one entry hits)
 function [31:12] pa_sel;
@@ -107,6 +88,26 @@ end
 endgenerate
 
 assign pa = pa_sel(hit_vec, pa_flat);
+
+function [4:0] flags_sel;
+input [NENT-1:0] hv;
+input [NENT*5-1:0] fl;
+integer k;
+begin
+	flags_sel = 5'd0;
+	for (k = 0; k < NENT; k = k + 1)
+		flags_sel = flags_sel | ({5{hv[k]}} & fl[k*5 +: 5]);
+end
+endfunction
+
+wire [NENT*5-1:0] flags_flat;
+generate
+for (g = 0; g < NENT; g = g + 1) begin : flf
+	assign flags_flat[g*5 +: 5] = e_flags[g];
+end
+endgenerate
+
+assign flags = flags_sel(hit_vec, flags_flat);
 
 // fill / flush
 integer n;
@@ -135,11 +136,9 @@ end
 always @ (posedge clk or negedge rst_n) begin
 	if (~rst_n) begin
 		e_mega <= { NENT{ 1'b0 }};
-		e_io <= { NENT{ 1'b0 }};
 	end
 	else if (fill) begin
 		e_mega[rr_ptr] <= fill_mega;
-		e_io[rr_ptr] <= (fill_ppn[31:30] == 2'b11);
 	end
 end
 

@@ -98,20 +98,20 @@ wire dcflush_start_raw = fencei_condition_ex | start_dcflush;
 // it when the FSM reaches IDLE (MEMW/MEMR states are unreachable here
 // because dc_stall blocks fence.i from executing during them).
 reg dcflush_pend;
-wire [3:0] dc_miss_current_w;
+wire [4:0] dc_miss_current_w;
 
-// 4'b0000 = DCMS_IDLE (macro is defined further down in this file)
+// 5'b00000 = DCMS_IDLE (macro is defined further down in this file)
 always @ (posedge clk or negedge rst_n) begin
     if (~rst_n)
         dcflush_pend <= 1'b0;
-    else if (dc_miss_current_w == 4'b0000)
+    else if (dc_miss_current_w == 5'b00000)
         dcflush_pend <= 1'b0;
     else if (dcflush_start_raw)
         dcflush_pend <= 1'b1;
 end
 
 wire dcflush_start = dcflush_start_raw |
-                     (dcflush_pend & (dc_miss_current_w == 4'b0000));
+                     (dcflush_pend & (dc_miss_current_w == 5'b00000));
 
 // { done, way, index } (way : WBITS bits, none when DWAYS = 1)
 reg [DWIDTH-2+((DWAYS >= 8) ? 3 : (DWAYS >= 4) ? 2 : (DWAYS >= 2) ? 1 : 0):0] dcflush_cntr;
@@ -137,36 +137,60 @@ reg [31:0] current_radr_keeper;
 reg ptw_act;
 reg ptw_lvl;
 reg [31:0] ptw_pa_r;
-wire [3:0] dc_miss_current_m; // = dc_miss_current (state macros are defined below)
+wire [4:0] dc_miss_current_m; // = dc_miss_current (state macros are defined below)
 
-wire st_idle_m = (dc_miss_current_m == 4'b0000); // DCMS_IDLE
-wire st_ldrd_m = (dc_miss_current_m == 4'b0110); // DCMS_LDRD
-wire st_ptck_m = (dc_miss_current_m == 4'b1010); // DCMS_PTCK
-wire st_rprd_m = (dc_miss_current_m == 4'b1100); // DCMS_RPRD
-wire st_pfx_m  = (dc_miss_current_m == 4'b1111); // DCMS_PFX
+wire st_idle_m = (dc_miss_current_m == 5'b00000); // DCMS_IDLE
+wire st_ldrd_m = (dc_miss_current_m == 5'b00110); // DCMS_LDRD
+wire st_ptck_m = (dc_miss_current_m == 5'b01010); // DCMS_PTCK
+wire st_rprd_m = (dc_miss_current_m == 5'b01100); // DCMS_RPRD
+wire st_pfx_m  = (dc_miss_current_m == 5'b01111); // DCMS_PFX
+wire st_tlbl_m = (dc_miss_current_m == 5'b10000); // DCMS_TLBL
+wire st_ptdt_m = (dc_miss_current_m == 5'b01011); // DCMS_PTDT
 
 wire cmd_ldst_raw = cmd_ld_ma | cmd_st_ma;
 wire is_store_ma = cmd_st_ma | cmd_amold_ma;
 wire mmu_need = trans_on & cmd_ldst_raw;
-wire tlb_hit;
-wire tlb_perm_ok;
-wire tlb_pa_io;
-wire [31:12] tlb_pa;
-wire tlb_fill;
 wire [31:0] pte = dc_rdata_raw;
+wire tlb_fill;
+
+// ---------------------------------------------------------------------------
+// micro-TLB (timing, 2026-11-22)
+//   1 entry in flip-flops : the last translation used (4KB page : a megapage
+//   is stored as the 4KB page that was accessed, so PA = u_ppn, no mux).
+//   Everything on the dc_stall path (D$ tag compare, permission, I/O) comes
+//   from these flip-flops; only the 20 bit VPN compare is added, in parallel
+//   with the tag RAM read.  The 16 entry DTLB is looked up every cycle and
+//   its result is registered (DTLB -> FF), so it is off the critical path :
+//   micro-TLB miss -> TLBL (1 stall cycle, registered DTLB result)
+//     DTLB hit  : refill the micro-TLB -> RPCK (replay)
+//     DTLB miss : PTW (PTRD ...), the PTE fills the DTLB and the micro-TLB
+// ---------------------------------------------------------------------------
+reg u_valid;
+reg [31:12] u_vpn;
+reg [31:12] u_ppn;
+reg [4:0] u_flags;                        // { D, U, X, W, R }
+reg u_io;                                 // u_ppn[31:30] == 2'b11
+
+wire u_hit = u_valid & (u_vpn == rd_data_ma[31:12]);
+wire u_priv_ok = mmu_priv_u ? u_flags[3] : (~u_flags[3] | mmu_sum);
+wire u_acc_ok = is_store_ma ? (u_flags[1] & u_flags[4]) : (u_flags[0] | (mmu_mxr & u_flags[2]));
+wire u_perm_ok = u_priv_ok & u_acc_ok;
+
+// 16 entry DTLB : looked up with the MA VA every cycle, result registered
+wire m_hit;
+wire [31:12] m_pa;
+wire [4:0] m_flags;
+reg m_hit_r;
+reg [31:12] m_pa_r;
+reg [4:0] m_flags_r;
 
 dtlb #(.DWIDTH(DWIDTH)) dtlb (
 	.clk(clk),
 	.rst_n(rst_n),
 	.va(rd_data_ma[31:12]),
-	.is_store(is_store_ma),
-	.priv_u(mmu_priv_u),
-	.sum(mmu_sum),
-	.mxr(mmu_mxr),
-	.hit(tlb_hit),
-	.perm_ok(tlb_perm_ok),
-	.pa_io(tlb_pa_io),
-	.pa(tlb_pa),
+	.hit(m_hit),
+	.pa(m_pa),
+	.flags(m_flags),
 	.fill(tlb_fill),
 	.fill_vpn(rd_data_ma[31:12]),
 	.fill_mega(ptw_lvl),
@@ -175,12 +199,58 @@ dtlb #(.DWIDTH(DWIDTH)) dtlb (
 	.flush(tlb_flush)
 	);
 
-wire mmu_ok = ~mmu_need | (tlb_hit & tlb_perm_ok);
-wire mmu_miss = mmu_need & ~tlb_hit;
-wire mmu_fault = mmu_need & tlb_hit & ~tlb_perm_ok;
+always @ (posedge clk or negedge rst_n) begin
+	if (~rst_n) begin
+		m_hit_r <= 1'b0;
+		m_pa_r <= 20'd0;
+		m_flags_r <= 5'd0;
+	end
+	else begin
+		m_hit_r <= m_hit & ~tlb_flush;
+		m_pa_r <= m_pa;
+		m_flags_r <= m_flags;
+	end
+end
+
+// micro-TLB refill : from the registered DTLB result (TLBL) or from the PTE (PTDT)
+wire u_fill_m = st_tlbl_m & m_hit_r;
+wire u_fill_p = st_ptdt_m & tlb_fill;
+wire [31:12] u_fill_ppn_p = { pte[29:20], ptw_lvl ? rd_data_ma[21:12] : pte[19:10] };
+
+always @ (posedge clk or negedge rst_n) begin
+	if (~rst_n) begin
+		u_valid <= 1'b0;
+		u_vpn <= 20'd0;
+		u_ppn <= 20'd0;
+		u_flags <= 5'd0;
+		u_io <= 1'b0;
+	end
+	else if (tlb_flush) begin
+		u_valid <= 1'b0;
+	end
+	else if (u_fill_m) begin
+		u_valid <= 1'b1;
+		u_vpn <= rd_data_ma[31:12];
+		u_ppn <= m_pa_r;
+		u_flags <= m_flags_r;
+		u_io <= (m_pa_r[31:30] == 2'b11);
+	end
+	else if (u_fill_p) begin
+		u_valid <= 1'b1;
+		u_vpn <= rd_data_ma[31:12];
+		u_ppn <= u_fill_ppn_p;
+		u_flags <= { pte[7], pte[4], pte[3], pte[2], pte[1] };
+		u_io <= (u_fill_ppn_p[31:30] == 2'b11);
+	end
+end
+
+wire mmu_ok = ~mmu_need | (u_hit & u_perm_ok);
+wire mmu_miss = mmu_need & ~u_hit;             // micro-TLB miss
+wire mmu_fault = mmu_need & u_hit & ~u_perm_ok;
+wire [31:12] tlb_pa = u_ppn;
 
 assign pa_ma = trans_on ? { tlb_pa, rd_data_ma[11:0] } : rd_data_ma;
-wire pa_is_io = trans_on ? tlb_pa_io : (rd_data_ma[31:30] == 2'b11);
+wire pa_is_io = trans_on ? u_io : (rd_data_ma[31:30] == 2'b11);
 assign mmu_ok_ma = mmu_ok;
 // I/O : issue only once (IDLE or LDRD) when the access went through the PTW
 assign io_ok_ma = ~trans_on | (mmu_ok & (st_idle_m | st_ldrd_m));
@@ -272,7 +342,7 @@ always @ (posedge clk or negedge rst_n) begin
     if (~rst_n)
         dc_index_adr_dly <= { (DWIDTH-2){ 1'b0 }};
 	// MMU (2026-11-22): PTE read / replay of the MA access
-	else if (dc_miss_current_m == 4'b1001) // DCMS_PTRD
+	else if (dc_miss_current_m == 5'b01001) // DCMS_PTRD
         dc_index_adr_dly <= ptw_pa_r[DWIDTH+1:4];
 	else if (st_rprd_m)
         dc_index_adr_dly <= rd_data_ma[DWIDTH+1:4];
@@ -291,20 +361,28 @@ wire cmd_ldst_ma = ptw_act ? ptw_pseudo :
 wire [27:DWIDTH+2] cmp_tag = ptw_act ? ptw_pa_r[27:DWIDTH+2] :
                              trans_on ? tlb_pa[27:DWIDTH+2] : rd_data_ma[27:DWIDTH+2];
 
-wire [DWIDTH+1:4] vidx = dcflush_running ? dcf_idx : dc_index_adr_dly;
+// timing (2026-11-22) : the valid bits of the MA access are always read with
+// dc_index_adr_dly (not with the flush counter).  During a flush every valid
+// bit is 0 (cleared by dcflush_start, no refill in FLSH), so the result is the
+// same, and dcflush_cntr -> valid mux -> hit -> dc_stall is cut.  The flush
+// reads its dirty bit separately (dcf_dirty).
+wire [DWIDTH+1:4] vidx = dc_index_adr_dly;
 wire [7:0] way_valid;
 wire [7:0] way_dirty;
 wire [7:0] way_eq;
+wire [7:0] dcf_dirty_w;
 generate
 for (gw = 0; gw < 8; gw = gw + 1) begin : wayv
 	if (gw < DWAYS) begin : used
 		assign way_valid[gw] = ent_valid[gw*NSET + vidx];
 		assign way_dirty[gw] = ent_dirty[gw*NSET + vidx];
+		assign dcf_dirty_w[gw] = ent_dirty[gw*NSET + dcf_idx];
 		assign way_eq[gw] = (cmp_tag == dc_tag_flat[gw*TW +: TW]);
 	end
 	else begin : unused
 		assign way_valid[gw] = 1'b1; // never chosen as an empty way
 		assign way_dirty[gw] = 1'b0;
+		assign dcf_dirty_w[gw] = 1'b0;
 		assign way_eq[gw] = 1'b0;
 	end
 end
@@ -334,7 +412,7 @@ assign dc_way_rd = way_hit;
 wire ptw_hit = dc_hit_any & ptw_pseudo;
 wire dc_tag_empty_ma = ~dc_hit_any & ~vict_valid & cmd_ldst_ma;
 wire dc_tag_miss_ma = ~dc_hit_any & vict_valid & cmd_ldst_ma;
-wire dc_cache_dirty_ma = dcflush_running ? way_dirty[dcf_way] : (vict_dirty & dc_tag_miss_ma);
+wire dc_cache_dirty_ma = dcflush_running ? dcf_dirty_w[dcf_way] : (vict_dirty & dc_tag_miss_ma);
 
 wire dcf_wb_issue; // flush : write back of (dcf_way, dcf_idx) is issued
 
@@ -374,31 +452,32 @@ end
 
 // dc state machine
 
-`define DCMS_IDLE 4'b0000
-`define DCMS_MEMW 4'b0001
-`define DCMS_MEMR 4'b0010
-`define DCMS_DCWT 4'b0011
-`define DCMS_DCW2 4'b0100
-`define DCMS_DCW3 4'b0101
-`define DCMS_LDRD 4'b0110
-`define DCMS_DEFO 4'b0111
-`define DCMS_FLSH 4'b1000
+`define DCMS_IDLE 5'b00000
+`define DCMS_MEMW 5'b00001
+`define DCMS_MEMR 5'b00010
+`define DCMS_DCWT 5'b00011
+`define DCMS_DCW2 5'b00100
+`define DCMS_DCW3 5'b00101
+`define DCMS_LDRD 5'b00110
+`define DCMS_DEFO 5'b00111
+`define DCMS_FLSH 5'b01000
 // MMU (2026-11-22)
-`define DCMS_PTRD 4'b1001 // PTW : tag RAM read with the PTE address
-`define DCMS_PTCK 4'b1010 // PTW : PTE line hit check / data RAM read (miss -> MEMW/MEMR -> DCWT -> PTRD)
-`define DCMS_PTDT 4'b1011 // PTW : PTE decode -> next level / TLB fill / fault
-`define DCMS_RPRD 4'b1100 // replay : tag RAM read with the MA address
-`define DCMS_RPCK 4'b1101 // replay : MA access check (hit -> DCW3 -> LDRD)
-`define DCMS_FALT 4'b1110 // page fault (last stall cycle)
-`define DCMS_PFX  4'b1111 // page fault : trap is taken (no stall)
+`define DCMS_PTRD 5'b01001 // PTW : tag RAM read with the PTE address
+`define DCMS_PTCK 5'b01010 // PTW : PTE line hit check / data RAM read (miss -> MEMW/MEMR -> DCWT -> PTRD)
+`define DCMS_PTDT 5'b01011 // PTW : PTE decode -> next level / TLB fill / fault
+`define DCMS_RPRD 5'b01100 // replay : tag RAM read with the MA address
+`define DCMS_RPCK 5'b01101 // replay : MA access check (hit -> DCW3 -> LDRD)
+`define DCMS_FALT 5'b01110 // page fault (last stall cycle)
+`define DCMS_PFX  5'b01111 // page fault : trap is taken (no stall)
+`define DCMS_TLBL 5'b10000 // micro-TLB miss : DTLB lookup (its result is registered) -> RPCK / PTRD
 
 // Request channel manager state machine
 wire dcflush_nohit_ent;
-reg [3:0] dc_miss_current;
+reg [4:0] dc_miss_current;
 assign dc_miss_current_m = dc_miss_current;
 
-function [3:0] dc_miss_decode;
-input [3:0] dc_miss_current;
+function [4:0] dc_miss_decode;
+input [4:0] dc_miss_current;
 input dc_tag_empty_ma;
 input dc_tag_miss_ma;
 input dc_cache_dirty_ma;
@@ -413,13 +492,14 @@ input ptw_hit;
 input ptw_bad_adr;
 input pte_fill;
 input pte_next;
+input m_hit_r;
 begin
     case(dc_miss_current)
 		`DCMS_IDLE: begin
     		casex({dcflush_start, mmu_fault, mmu_miss, dc_tag_empty_ma, dc_tag_miss_ma, dc_cache_dirty_ma})
 				6'b1xxxxx: dc_miss_decode = `DCMS_FLSH; // for fencei D$ flush function
 				6'b01xxxx: dc_miss_decode = `DCMS_FALT;
-				6'b001xxx: dc_miss_decode = `DCMS_PTRD;
+				6'b001xxx: dc_miss_decode = `DCMS_TLBL;   // micro-TLB miss
 				6'b0001xx: dc_miss_decode = `DCMS_MEMR;
 				6'b00000x: dc_miss_decode = `DCMS_IDLE;
 				6'b000011: dc_miss_decode = `DCMS_MEMW;
@@ -427,6 +507,7 @@ begin
 				default: dc_miss_decode = `DCMS_DEFO;
     		endcase
 		end
+		`DCMS_TLBL: dc_miss_decode = m_hit_r ? `DCMS_RPCK : `DCMS_PTRD;  // DTLB hit : replay / miss : PTW
 		`DCMS_PTRD: dc_miss_decode = ptw_bad_adr ? `DCMS_FALT : `DCMS_PTCK;
 		`DCMS_PTCK: begin
     		casex({ptw_hit, dc_tag_empty_ma, dc_tag_miss_ma, dc_cache_dirty_ma})
@@ -443,7 +524,7 @@ begin
 		`DCMS_RPCK: begin
     		casex({mmu_fault, mmu_miss, dc_tag_empty_ma, dc_tag_miss_ma, dc_cache_dirty_ma})
 				5'b1xxxx: dc_miss_decode = `DCMS_FALT;
-				5'b01xxx: dc_miss_decode = `DCMS_PTRD;
+				5'b01xxx: dc_miss_decode = `DCMS_TLBL;
 				5'b001xx: dc_miss_decode = `DCMS_MEMR;
 				5'b00011: dc_miss_decode = `DCMS_MEMW;
 				5'b00010: dc_miss_decode = `DCMS_MEMR;
@@ -487,14 +568,23 @@ begin
 end
 endfunction
 
-wire [3:0] dc_miss_next = dc_miss_decode( dc_miss_current, dc_tag_empty_ma, dc_tag_miss_ma, dc_cache_dirty_ma, dcw_finish_wresp, rdat_m_valid, dcflush_start, dcflush_running,
-                                          mmu_miss, mmu_fault, ptw_act, ptw_hit, ptw_bad_adr, pte_fill, pte_next );
+wire [4:0] dc_miss_next = dc_miss_decode( dc_miss_current, dc_tag_empty_ma, dc_tag_miss_ma, dc_cache_dirty_ma, dcw_finish_wresp, rdat_m_valid, dcflush_start, dcflush_running,
+                                          mmu_miss, mmu_fault, ptw_act, ptw_hit, ptw_bad_adr, pte_fill, pte_next, m_hit_r );
+
+// timing (2026-11-22) : the same next state without fence.i's flush start, for
+// the outputs that drive the RAM / bus (ram_ren_all, dcr_start_rq).  fence.i
+// starts the flush only in a ~stall cycle, and a D$ miss in IDLE always
+// stalls, so the two never happen together : the result is the same, but the
+// path stall -> fencei_condition_ex -> dcflush_start -> ram_ren_all -> data
+// RAM address is cut.
+wire dcflush_start_nf = start_dcflush | (dcflush_pend & (dc_miss_current == `DCMS_IDLE));
+wire [4:0] dc_miss_next_nf = dc_miss_decode( dc_miss_current, dc_tag_empty_ma, dc_tag_miss_ma, dc_cache_dirty_ma, dcw_finish_wresp, rdat_m_valid, dcflush_start_nf, dcflush_running,
+                                          mmu_miss, mmu_fault, ptw_act, ptw_hit, ptw_bad_adr, pte_fill, pte_next, m_hit_r );
 
 // MMU (2026-11-22) : PTW registers / TLB fill
 wire st_ptrd = (dc_miss_current == `DCMS_PTRD);
 wire st_ptdt = (dc_miss_current == `DCMS_PTDT);
-wire ptw_start = (dc_miss_next == `DCMS_PTRD) &
-                 ((dc_miss_current == `DCMS_IDLE) | (dc_miss_current == `DCMS_RPCK));
+wire ptw_start = (dc_miss_next == `DCMS_PTRD) & (dc_miss_current == `DCMS_TLBL);
 
 always @ (posedge clk or negedge rst_n) begin
     if (~rst_n) begin
@@ -623,7 +713,7 @@ assign dcw_in_data = ram_rdata_all;
 // memory read bus i/f signals
 
 assign dcr_start_rq = ((dc_miss_current == `DCMS_MEMW)|(dc_miss_current == `DCMS_IDLE)|
-                        (dc_miss_current == `DCMS_PTCK)|(dc_miss_current == `DCMS_RPCK)) & (dc_miss_next == `DCMS_MEMR);
+                        (dc_miss_current == `DCMS_PTCK)|(dc_miss_current == `DCMS_RPCK)) & (dc_miss_next_nf == `DCMS_MEMR);
 assign dcr_rin_addr = acc_adr;
 assign rqfull_1 = 1'b0;
 
@@ -644,7 +734,7 @@ assign dcf_wb_issue = dcflush_running & ram_ren_all;
 assign ram_wadr_all = current_radr_keeper[DWIDTH+1:4];
 assign ram_wen_all = rdat_m_valid;
 assign ram_ren_all = (((dc_miss_current == `DCMS_IDLE) |(dc_miss_current == `DCMS_FLSH)|
-                       (dc_miss_current == `DCMS_PTCK) |(dc_miss_current == `DCMS_RPCK)) & (dc_miss_next == `DCMS_MEMW));
+                       (dc_miss_current == `DCMS_PTCK) |(dc_miss_current == `DCMS_RPCK)) & (dc_miss_next_nf == `DCMS_MEMW));
 
 //tag write address
 assign dc_tag_wadr = current_radr_keeper[27:DWIDTH+2];

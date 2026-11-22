@@ -48,6 +48,7 @@ CPU は M-mode だけで動いているので、ステップ1で変換される�
 | 項目 | 内容 |
 |---|---|
 | DTLB | `cpu/dtlb.v`。16エントリのフルアソシアティブ、ASIDなし、ラウンドロビン置き換え。4KiBページと4MiBメガページ |
+| micro-TLB | `cpu/lsu_stage.v`。1エントリ（FF）。直前に使った変換（4KB 単位、メガページはアクセスした 4KB 分に展開）。MA のタグ比較・権限・I/O 判定はここから行う |
 | PTW | `cpu/lsu_stage.v` の D$ ミス状態機械に組み込み。PTE は **D$ を通して**読む（設計メモのパターンA） |
 | D$ | **16KB 4ウェイ・セットアソシアティブ**（1ウェイ 4KB、ライン 16B）、VIPT。index は VA[11:4]（EXで発行、従来どおり）、MA で 4ウェイのタグを DTLB の PA と比較。ウェイ選択は空きウェイ優先、なければラウンドロビン |
 | PA | 32bit に切り詰め（PTE の PPN1[11:10] と satp.PPN[21:20] は無視） |
@@ -55,21 +56,23 @@ CPU は M-mode だけで動いているので、ステップ1で変換される�
 | sfence.vma | DTLB を全部フラッシュ（rs1 / rs2 は見ない） |
 | satp の書き込み | DTLB はフラッシュしない（仕様どおり、sfence.vma が必要） |
 
-### タイミングの工夫
+### タイミングの工夫（micro-TLB）
 
-dc_stall の経路に乗る判定は、エントリごとに並列に計算してから hit ベクタと AND-OR する（16:1 の MUX を通さない）。
+dc_stall → stall はもともとクリティカルパスなので、その経路に乗るものは FF から出すようにしている。
 
-- `tag_eq`：ヒットしたエントリの PA[27:12] が D$ タグ RAM の出力と一致するか
-- `perm_ok`：ヒットしたエントリがこのアクセスを許すか
-- `pa_io`：PA[31:30] = 11（I/O 領域）かどうか。TLB に登録するときに計算しておく（設計メモ5の is_io_entry）
+- MA のタグ比較に使う PA、権限判定、I/O 判定は、1エントリの **micro-TLB（FF）**から出す。追加されるのは VPN の 20 ビット比較だけで、タグ RAM の読み出しと並列に行われる
+- 16エントリの DTLB は毎サイクル MA の VA で検索し、結果を FF に取り込む（DTLB → FF の 1 サイクル）。micro-TLB がミスしたときは TLBL 状態で 1 サイクルストールし、その結果で micro-TLB を更新する
+- ページが変わるたびに 1 サイクルのストールが入る（同じページの連続アクセスでは入らない）
+- ライトバック開始の判定（`ram_ren_all`、`dcr_start_rq`）は fence.i の条件を見ない（D$ ミス中は必ずストールしていて、fence.i によるフラッシュ開始と重ならないため、結果は同じ）。stall → fence.i → データ RAM アドレスの経路を切っている
 
 ### D$ 状態機械に追加した状態（cpu/lsu_stage.v）
 
 | 状態 | 内容 |
 |---|---|
+| TLBL | micro-TLB ミス：FF に取り込んだ DTLB の結果を見る。ヒット → micro-TLB を更新して RPCK、ミス → PTRD（PTW） |
 | PTRD | PTE アドレスでタグ RAM を読む |
 | PTCK | PTE ラインのヒット判定、データ RAM 読み出し。ミスなら MEMW / MEMR → DCWT → PTRD |
-| PTDT | PTE をデコード：次のレベル（PTRD）/ TLB 登録（RPRD）/ フォルト（FALT） |
+| PTDT | PTE をデコード：次のレベル（PTRD）/ DTLB と micro-TLB に登録（RPRD）/ フォルト（FALT） |
 | RPRD | 元の MA アクセスのタグを読み直す |
 | RPCK | 元の MA アクセスを判定：ヒット → DCW3 → LDRD、ミス → MEMW / MEMR |
 | FALT | ページフォルト（最後のストールサイクル。dc_stall_fin を出す） |
@@ -127,6 +130,7 @@ VDEFS="-DTB_DWAYS=1" ./cmp.sh <test.S> [master] [maxcyc]  # MMU なしで master
 | t02_mmu_irq | 32ページで TLB を溢れさせ、PTE と データの D$ 競合、タイマ割り込み、ページフォルトを混ぜたストレス |
 | t04_mmu_disabled | `FT_DWIDTH` > 10 で MMU が無効になること（`VDEFS="-DTB_DWIDTH=12 -DTB_DWAYS=1"` で実行。MMU 有効の構成では FAIL code 2 になるのが正しい） |
 | t05_fencei_dmiss | D$ ミスの直後の fence.i（I$ が空の状態）。`ASFLAGS=-DNOFS=0..3` で I$ ライン内の位置を変える |
+| t06_utlb | micro-TLB ミス・DTLB ヒットの経路（8ページを交互にアクセス）、その経路での権限フォルトと I/O |
 | t03_dcache_4way | 同じセットに 12 ライン（dirty の追い出し）、byte / half ストア、fence.i で全ウェイをフラッシュして DRAM から読み直し、MMU 有効時に PTE とデータを同じセットに集中 |
 
 - `cmp_arch.sh <test.S> [master]`：サイクル番号を除いた命令レベルのトレース（レジスタ書き戻し・MMIO）を改造前 RTL と比べる。キャッシュ構成が違う場合に使う（タイマ割り込みのテストは、割り込みの入る位置が変わるので一致しないことがある）

@@ -220,6 +220,12 @@ wire [31:0] rs2_sel;
 //assign jmp_purge_ex = jmp_condition_ex | ecall_condition_ex | mret_condition_ex | interrupt_condition_ex | timer_condition_ex | fencei_cond;
 
 wire intexp_purge_ex = interrupt_condition_ex | timer_condition_ex | g_exception;
+// timing (2026-11-22) : intexp_purge_ex without the misaligned load/store
+// exception.  misal_ld_ex / misal_st_ex need cmd_ld_ex / cmd_st_ex, so they are
+// always 0 while an AMO / lr.w / sc.w is in EX : the AMO / LR / SC terms below
+// use this one (same result).  It cuts the path forwarded load data -> rs1_sel
+// -> misaligned check -> g_exception -> amo_cmds -> amo_stall -> ic_stall.
+wire intexp_purge_nomisal = interrupt_condition_ex | timer_condition_ex | illegal_ops_ex | pf_trap;
 
 // FPGA FIX (2026-07-19): fence.i executes as: EX(fence.i) -> full D$ flush
 // (dc_stall for its whole duration) -> fencei_dcflush_end -> 2 cycles ->
@@ -255,7 +261,7 @@ reg jmp_purge_ma2;
 
 `ifdef SUPPORT_A
 // lr.w cmd
-wire cmd_lrw_purge = cmd_lrw_ex  & ~intexp_purge_ex & ~jmp_purge_ma & ~jmp_purge_ma2; 
+wire cmd_lrw_purge = cmd_lrw_ex  & ~intexp_purge_nomisal & ~jmp_purge_ma & ~jmp_purge_ma2; 
 
 // lr.w / sc.w
 // FIX (2026-10-28): drop the reservation on every trap entry and on mret,
@@ -293,24 +299,24 @@ wire [31:0] rd_data_ex_pre;
 assign reset_flg_cond = (cmd_scw_ex | (cmd_st_ex & (resv_adr[29:2] == rd_data_ex_pre[29:2]))) & ~intexp_purge_ex & ~jmp_purge_ma & ~jmp_purge_ma2;
 
 // sc.w conditions
-wire success_scw = cmd_scw_ex & resv_flg & ~intexp_purge_ex & ~intexp_purge_ex & ~jmp_purge_ma & ~jmp_purge_ma2;
+wire success_scw = cmd_scw_ex & resv_flg & ~intexp_purge_nomisal & ~jmp_purge_ma & ~jmp_purge_ma2;
 //wire cmd_scw_hit = success_scw & (resv_adr[31:2] == rs1_sel[31:2]);
 wire cmd_scw_hit = success_scw & (resv_adr[29:2] == rd_data_ex_pre[29:2]);
 
 // sc.w write back to register
-wire cmd_scw_purge = cmd_scw_ex & ~intexp_purge_ex & ~jmp_purge_ma & ~jmp_purge_ma2; 
+wire cmd_scw_purge = cmd_scw_ex & ~intexp_purge_nomisal & ~jmp_purge_ma & ~jmp_purge_ma2; 
 
 // amo instructions
 
-wire cmd_amoswapw_pur = ~intexp_purge_ex & ~jmp_purge_ma & ~jmp_purge_ma2 & cmd_amoswapw_ex;
-wire cmd_amoaddw_pur = ~intexp_purge_ex & ~jmp_purge_ma & ~jmp_purge_ma2 & cmd_amoaddw_ex;
-wire cmd_amoxorw_pur = ~intexp_purge_ex & ~jmp_purge_ma & ~jmp_purge_ma2 & cmd_amoxorw_ex;
-wire cmd_amoandw_pur = ~intexp_purge_ex & ~jmp_purge_ma & ~jmp_purge_ma2 & cmd_amoandw_ex;
-wire cmd_amoorw_pur = ~intexp_purge_ex & ~jmp_purge_ma & ~jmp_purge_ma2 & cmd_amoorw_ex;
-wire cmd_amominw_pur = ~intexp_purge_ex & ~jmp_purge_ma & ~jmp_purge_ma2 & cmd_amominw_ex;
-wire cmd_amomaxw_pur = ~intexp_purge_ex & ~jmp_purge_ma & ~jmp_purge_ma2 & cmd_amomaxw_ex;
-wire cmd_amominuw_pur = ~intexp_purge_ex & ~jmp_purge_ma & ~jmp_purge_ma2 & cmd_amominuw_ex;
-wire cmd_amomaxuw_pur = ~intexp_purge_ex & ~jmp_purge_ma & ~jmp_purge_ma2 & cmd_amomaxuw_ex;
+wire cmd_amoswapw_pur = ~intexp_purge_nomisal & ~jmp_purge_ma & ~jmp_purge_ma2 & cmd_amoswapw_ex;
+wire cmd_amoaddw_pur = ~intexp_purge_nomisal & ~jmp_purge_ma & ~jmp_purge_ma2 & cmd_amoaddw_ex;
+wire cmd_amoxorw_pur = ~intexp_purge_nomisal & ~jmp_purge_ma & ~jmp_purge_ma2 & cmd_amoxorw_ex;
+wire cmd_amoandw_pur = ~intexp_purge_nomisal & ~jmp_purge_ma & ~jmp_purge_ma2 & cmd_amoandw_ex;
+wire cmd_amoorw_pur = ~intexp_purge_nomisal & ~jmp_purge_ma & ~jmp_purge_ma2 & cmd_amoorw_ex;
+wire cmd_amominw_pur = ~intexp_purge_nomisal & ~jmp_purge_ma & ~jmp_purge_ma2 & cmd_amominw_ex;
+wire cmd_amomaxw_pur = ~intexp_purge_nomisal & ~jmp_purge_ma & ~jmp_purge_ma2 & cmd_amomaxw_ex;
+wire cmd_amominuw_pur = ~intexp_purge_nomisal & ~jmp_purge_ma & ~jmp_purge_ma2 & cmd_amominuw_ex;
+wire cmd_amomaxuw_pur = ~intexp_purge_nomisal & ~jmp_purge_ma & ~jmp_purge_ma2 & cmd_amomaxuw_ex;
 
 wire amo_cmds = cmd_amoswapw_pur | cmd_amoaddw_pur | cmd_amoxorw_pur | cmd_amoandw_pur | cmd_amoorw_pur | cmd_amominw_pur | cmd_amomaxw_pur | cmd_amominuw_pur | cmd_amomaxuw_pur;
 
@@ -610,8 +616,22 @@ assign rs2_fwd = stall_dly ? rs2_fwd_keep : rs2_fwd_raw;
 // ALU selector
 assign rs1_sel = ~nohit_rs1_ex ? rs1_fwd : rs1_data_ex;
 
-assign rs2_sel = (cmd_ld_pur | cmd_alui_ex) ? ld_alui_ofs :
-					  cmd_st_pur ? st_ofs :
+// timing (2026-11-22) : the operand / ALU selection uses the decode WITHOUT
+// the purge terms (cmd_ld_sel / cmd_st_sel).  A purged instruction is
+// masked anyway (cmd_ld_ma / cmd_st_ma / wbk are cleared), so only its
+// discarded rd_data_ex changes.  It cuts the paths
+//   forwarded load data -> misaligned -> g_exception -> cmd_ld_pur -> rs2_sel
+//   dc_stall -> stall -> interrupt_condition_ex -> cmd_ld_pur -> rs2_sel
+// -> address adder -> D$ tag RAM address.
+`ifdef SUPPORT_A
+wire cmd_ld_sel = cmd_ld_ex | cmd_lrw_ex | amo_ld_cmd;
+wire cmd_st_sel = cmd_st_ex | amo_st_cmd;
+`else // SUPPORT_A
+wire cmd_ld_sel = cmd_ld_ex;
+wire cmd_st_sel = cmd_st_ex;
+`endif // SUPPORT_A
+assign rs2_sel = (cmd_ld_sel | cmd_alui_ex) ? ld_alui_ofs :
+					  cmd_st_sel ? st_ofs :
 					  //cmd_st_ex ? st_ofs :
 					  cmd_alui_shamt_ex ? shamt :
 					   ~nohit_rs2_ex ? rs2_fwd : rs2_data_ex;
@@ -814,7 +834,7 @@ exception exception (
 // ALU
 
 wire [2:0] alu_code = alu_code_ex & { 3{ ~(cmd_alu_ex & cmd_alui_ex & cmd_alui_shamt_ex) }};
-wire cmd_stld = cmd_st_pur | cmd_ld_pur;
+wire cmd_stld = cmd_st_sel | cmd_ld_sel;   // timing (2026-11-22) : see rs2_sel
 //wire cmd_stld = cmd_st_ex | cmd_ld_pur;
 
 function [31:0] alu_selector;

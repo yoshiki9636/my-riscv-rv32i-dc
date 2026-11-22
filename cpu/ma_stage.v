@@ -235,13 +235,31 @@ assign data_wdata_ma = st_wdata; // new
 wire [DWAYS*4-1:0] data_we_w;
 wire [DWAYS*32-1:0] data_rdata_w;
 wire [DWAYS*128-1:0] ram_rdata_all_w;
-reg [7:0] rd_way_wb;
+// timing (2026-11-22) : the load data is selected with one registered one-hot
+// vector of { way, word } (flat AND-OR of the raw RAM words) instead of
+// word select -> way select -> I/O / scratch select in series.
+//   ld_sel_wb  : { way, word } one hot (way 0 when no way hits, like the
+//                original direct mapped D$) : D$ data, PTE (dc_rdata_raw)
+//   ld_selm_wb : the same, masked when the load is an I/O / scratch read
+wire [3:0] word_oh = 4'd1 << data_radr_ma[3:2];   // data_radr_ma is [DWIDTH+1:2]
+wire [7:0] way_oh = (|dc_way_rd[DWAYS-1:0]) ? dc_way_rd : 8'd1;
+wire io_or_scr_ma;
+reg [DWAYS*4-1:0] ld_sel_wb;
+reg [DWAYS*4-1:0] ld_selm_wb;
+integer si, sk;
 
 always @ ( posedge clk or negedge rst_n) begin
-	if (~rst_n)
-		rd_way_wb <= 8'd0;
-	else
-		rd_way_wb <= dc_way_rd;
+	if (~rst_n) begin
+		ld_sel_wb <= { (DWAYS*4){ 1'b0 }};
+		ld_selm_wb <= { (DWAYS*4){ 1'b0 }};
+	end
+	else begin
+		for (si = 0; si < DWAYS; si = si + 1)
+			for (sk = 0; sk < 4; sk = sk + 1) begin
+				ld_sel_wb[si*4+sk] <= way_oh[si] & word_oh[sk];
+				ld_selm_wb[si*4+sk] <= way_oh[si] & word_oh[sk] & ~io_or_scr_ma;
+			end
+	end
 end
 
 genvar gw;
@@ -278,13 +296,13 @@ end
 endfunction
 
 function [31:0] sel_rdata;
-input [7:0] hit;
-input [DWAYS*32-1:0] d;
+input [DWAYS*4-1:0] sel;
+input [DWAYS*128-1:0] d;
 integer k;
 begin
-	sel_rdata = d[31:0];
-	for (k = DWAYS-1; k >= 1; k = k - 1)
-		if (hit[k]) sel_rdata = d[k*32 +: 32];
+	sel_rdata = 32'd0;
+	for (k = 0; k < DWAYS*4; k = k + 1)
+		sel_rdata = sel_rdata | ({ 32{ sel[k] }} & d[k*32 +: 32]);
 end
 endfunction
 
@@ -301,7 +319,8 @@ endfunction
 
 assign data_we_ma = or_we(data_we_w);
 assign dc_cache_wr_ma = |data_we_ma;
-assign data_rdata_wb_mem = sel_rdata(rd_way_wb, data_rdata_w);
+assign data_rdata_wb_mem = sel_rdata(ld_sel_wb, ram_rdata_all_w);
+wire [31:0] data_rdata_wb_dc = sel_rdata(ld_selm_wb, ram_rdata_all_w);
 assign ram_rdata_all = sel_rdall(dc_rdall_way, ram_rdata_all_w);
 
 //assign sel_data_rd_ma = cmd_ld_ma; 
@@ -357,8 +376,12 @@ always @ ( posedge clk or negedge rst_n) begin
 	end
 end
 
-assign data_rdata_wb = dma_io_ren_wb ? dma_io_rdata :
-                       scr_ren_wb ? scr_data_rdata_wb_mem : data_rdata_wb_mem;
+assign io_or_scr_ma = dma_io_ren_ma | scr_ren_ma;
+// (flat : at most one of the three is selected)
+wire [31:0] data_rdata_wb_flat = data_rdata_wb_dc |
+                                 ({ 32{ dma_io_ren_wb }} & dma_io_rdata) |
+                                 ({ 32{ scr_ren_wb }} & scr_data_rdata_wb_mem);
+assign data_rdata_wb = data_rdata_wb_flat;
 
 always @ ( posedge clk or negedge rst_n) begin
     if (~rst_n)
