@@ -2,7 +2,8 @@
 # MMU Linux (S-mode) for my-riscv-rv32i-dc + OpenSBI fw_payload
 #   KSRC   kernel source (default ~/linux/linux-mmu : a clean copy, NOT the nommu tree)
 #   KOUT   build directory (default ~/linux/build-mmu)
-#   CPIO   initramfs (default ~/linux/linux/initramfs.cpio : the static-pie busybox)
+#   CPIO   initramfs (default ~/linux/initramfs-mmu.cpio : busybox without CONFIG_NOMMU,
+#          made by mkinitramfs.sh; ~/linux/linux/initramfs.cpio : the nommu one)
 #   BASE   base .config (default ~/linux/linux/.config : the nommu config) + mmu.config
 #   ./build.sh            config (first time) + Image + dtb + fw_payload
 #   ./build.sh config     redo the config from BASE + mmu.config
@@ -13,7 +14,7 @@ cd "$(dirname "$0")"
 HERE=$PWD
 KSRC=${KSRC:-$HOME/linux/linux-mmu}
 KOUT=${KOUT:-$HOME/linux/build-mmu}
-CPIO=${CPIO:-$HOME/linux/linux/initramfs.cpio}
+CPIO=${CPIO:-$HOME/linux/initramfs-mmu.cpio}
 BASE=${BASE:-$HOME/linux/linux/.config}
 CROSS=${CROSS_COMPILE:-/opt/riscv32im.linux/bin/riscv32-unknown-linux-gnu-}
 MK="make -C $KSRC O=$KOUT ARCH=riscv CROSS_COMPILE=$CROSS"
