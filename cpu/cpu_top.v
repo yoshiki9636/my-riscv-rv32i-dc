@@ -196,6 +196,9 @@ wire cmd_st_ex;
 //wire cmd_st_ma;
 wire cmd_uret_ex;
 wire cmd_wfi_ex;
+wire cmd_csr_satp_ex;
+wire iwalk_pend;
+wire i_walk_busy;
 wire illegal_ops_ex;
 wire g_exception;
 wire hit_rs1_idex_ex;
@@ -614,6 +617,7 @@ id_stage #(.SMODE(SMODE)) id_stage (
 	.cmd_sret_ex(cmd_sret_ex),
 	.cmd_mret_ex(cmd_mret_ex),
 	.cmd_wfi_ex(cmd_wfi_ex),
+	.cmd_csr_satp_ex(cmd_csr_satp_ex),
 	.illegal_ops_ex(illegal_ops_ex),
 	.ipf_ex(ipf_ex),
 	.inst_ex(inst_ex),
@@ -720,6 +724,8 @@ ex_stage #(.MMU_EN(MMU_EN), .SMODE(SMODE)) ex_stage (
 	.cmd_sret_ex(cmd_sret_ex),
 	.cmd_mret_ex(cmd_mret_ex),
 	.cmd_wfi_ex(cmd_wfi_ex),
+	.iwalk_pend(iwalk_pend),
+	.cmd_csr_satp_ex(cmd_csr_satp_ex),
 	.illegal_ops_ex(illegal_ops_ex),
 	.ipf_ex(ipf_ex),
 	.rd_adr_ex(rd_adr_ex),
@@ -1088,6 +1094,7 @@ lsu_stage #(.DWIDTH(DWIDTH), .DWAYS(DWAYS)) lsu_stage (
 	.io_ok_ma(io_ok_ma),
 	.pf_exc(pf_exc),
 	.pf_store(pf_store),
+	.i_walk_busy(i_walk_busy),
 	.i_walk_req(i_walk_req),
 	.i_walk_va(i_walk_va),
 	.i_walk_done(i_walk_done),
@@ -1107,6 +1114,8 @@ ilu_stage #(.IWIDTH(IWIDTH), .IWAYS(IWAYS)) ilu_stage (
 	.i_priv_u(i_priv_u),
 	.tlb_flush(tlb_flush),
 	.ipf_clr(jmp_purge_ex),
+	.i_walk_busy(i_walk_busy),
+	.iwalk_pend(iwalk_pend),
 	.ipf_id(ipf_id),
 	.i_walk_req(i_walk_req),
 	.i_walk_va(i_walk_va),

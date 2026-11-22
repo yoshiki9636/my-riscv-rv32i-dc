@@ -81,6 +81,7 @@ module lsu_stage
 	// ITLB walk (2026-11-22) : the PTW is shared, D side first.  An I side walk
 	// starts only in IDLE while the MA instruction does not access memory.
 	input i_walk_req,
+	output i_walk_busy,           // the I-side walk is running (2026-11-22)
 	input [31:12] i_walk_va,
 	output i_walk_done,         // = ifill
 	output i_walk_fault,
@@ -162,6 +163,7 @@ wire st_ptdt_m = (dc_miss_current_m == 5'b01011); // DCMS_PTDT
 
 wire cmd_ldst_raw = cmd_ld_ma | cmd_st_ma;
 wire iwalk_go = i_walk_req & ~cmd_ldst_raw;
+assign i_walk_busy = walk_i;
 wire is_store_ma = cmd_st_ma | cmd_amold_ma;
 wire mmu_need = trans_on & cmd_ldst_raw;
 wire [31:0] pte = dc_rdata_raw;

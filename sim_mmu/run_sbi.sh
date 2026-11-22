@@ -28,4 +28,4 @@ VVP=$OUT/tb$TAG.vvp
 if [ ! -f $VVP ] || [ -n "$(find $RTL $ROOT/fpga/fpga_config.vh tb_mmu.v sdram_if_sim.v rtl_files.txt -newer $VVP)" ]; then
     iverilog -g2005 $VDEFS -I$ROOT/fpga -o $VVP -s tb_mmu tb_mmu.v sdram_if_sim.v $RTL
 fi
-vvp -n $VVP +HEX=$OUT/sbi_$NAME.hex "$@" | tee $OUT/sbi_$NAME.log | grep -v "^VCD" | tail -60
+stdbuf -oL vvp -n $VVP +HEX=$OUT/sbi_$NAME.hex "$@" | tee $OUT/sbi_$NAME.log | grep -v "^VCD" | tail -60

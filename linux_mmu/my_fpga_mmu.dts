@@ -1,0 +1,76 @@
+// SPDX-License-Identifier: GPL-2.0
+/*
+ * my_fpga_mmu.dts : my-riscv-rv32i-dc on Arty A7, MMU Linux (S-mode, OpenSBI)
+ *
+ *   0x0000_0000  OpenSBI (reserved, no-map)
+ *   0x0020_0000  this DTB (OpenSBI passes it in a1)
+ *   0x0040_0000  the kernel (fw_payload / fw_jump)
+ *   timer : SBI set_timer + the time CSR (io_frc counter, clk 50MHz)
+ *   UART RX interrupt : interrupter -> mip.SEIP (S external, hwirq 9)
+ */
+/dts-v1/;
+
+/ {
+	#address-cells = <1>;
+	#size-cells = <1>;
+	compatible = "myvendor,my-fpga-riscv";
+	model = "my-riscv-rv32i-dc (Arty A7)";
+
+	chosen {
+		bootargs = "earlycon=myuart,mmio32,0xc000fc00 console=ttyMY0 rdinit=/init loglevel=8";
+		stdout-path = "/soc/uart@c000fc00";
+	};
+
+	memory@0 {
+		device_type = "memory";
+		reg = <0x00000000 0x08000000>;	/* 128MB */
+	};
+
+	reserved-memory {
+		#address-cells = <1>;
+		#size-cells = <1>;
+		ranges;
+
+		opensbi@0 {
+			reg = <0x00000000 0x00200000>;
+			no-map;
+		};
+	};
+
+	cpus {
+		#address-cells = <1>;
+		#size-cells = <0>;
+		timebase-frequency = <50000000>;
+
+		cpu0: cpu@0 {
+			device_type = "cpu";
+			compatible = "riscv";
+			reg = <0>;
+			status = "okay";
+			riscv,isa = "rv32ima_zicsr_zifencei";
+			riscv,isa-base = "rv32i";
+			riscv,isa-extensions = "i", "m", "a", "zicsr", "zifencei";
+			mmu-type = "riscv,sv32";
+
+			cpu0_intc: interrupt-controller {
+				compatible = "riscv,cpu-intc";
+				interrupt-controller;
+				#interrupt-cells = <1>;
+			};
+		};
+	};
+
+	soc {
+		#address-cells = <1>;
+		#size-cells = <1>;
+		compatible = "simple-bus";
+		ranges;
+
+		uart0: uart@c000fc00 {
+			compatible = "myvendor,myuart";
+			/* io_uart_out, interrupter (RX interrupt enable / status) */
+			reg = <0xc000fc00 0x100>, <0xc000fa00 0x10>;
+			interrupts-extended = <&cpu0_intc 9>;
+		};
+	};
+};

@@ -61,6 +61,8 @@ module ex_stage
     input cmd_sret_ex,
     input cmd_mret_ex,
     input cmd_wfi_ex,
+    input cmd_csr_satp_ex,      // CSR instruction on satp (SMODE, 2026-11-22)
+    input iwalk_pend,           // ITLB miss in progress : hold interrupts (2026-11-22)
     input illegal_ops_ex,
     input ipf_ex,               // instruction page fault (2026-11-22)
 	input [4:0] rd_adr_ex,
@@ -834,6 +836,7 @@ csr_array #(.MMU_EN(MMU_EN), .SMODE(SMODE)) csr_array(
 	.sint_condition_ex(sint_condition_ex),
 	.csr_sint_pend(csr_sint_pend),
 	.csr_m_ie(csr_m_ie),
+	.iwalk_pend(iwalk_pend),
 	.csr_priv(csr_priv),
 	.frc_time(frc_time),
 	.csr_seie(csr_seie),
@@ -1090,8 +1093,13 @@ end
 // fall-through PC (pc_ex + 4).  The select only uses registered signals
 // (pred_ex & cmd_br_ex), so the branch compare stays off this path; when the
 // predicted branch IS taken, jmp_adr_ex is unused (no EX redirect).
+// A CSR instruction on satp and sfence.vma (S/U-mode, 2026-11-22) also redirect
+// to pc_ex + 4 : the instructions after them were fetched with the old
+// translation (Linux relocate_enable_mmu relies on the fetch right after the
+// satp write trapping to stvec when VA != PA; sfence.vma flushes the
+// micro-ITLB under the fetch slots behind it).
 assign jmp_adr_ex = fencei_cond ? fencei_ret_adr :
-                    (pred_ex & cmd_br_ex) ? pc_ex + 30'd1 :
+                    ((pred_ex & cmd_br_ex) | cmd_csr_satp_ex) ? pc_ex + 30'd1 :
                     jump_adr[31:2];
 
 wire br_taken_ex = cmd_br_ex &
@@ -1110,7 +1118,7 @@ wire jmp_ok_ex = ~intexp_purge_ex & ~jmp_purge_ma & ~jmp_purge_ma2 & ~fencei_con
 // predicted     : only a mispredicted branch (not taken) redirects
 // jalr is never predicted (always resolved here)
 wire jmp_condition_ex_pre = jmp_ok_ex & (
-                        cmd_jalr_ex |
+                        cmd_jalr_ex | cmd_csr_satp_ex |
                         ~pred_ex & (cmd_jal_ex | br_taken_ex) |
                          pred_ex & cmd_br_ex & ~br_taken_ex );
 
@@ -1196,6 +1204,7 @@ wire muldiv_busy = 1'b0;
 `endif // SUPPORT_M
 // MMU (2026-11-22): also hold in the page fault trap cycle (the page fault of
 // the older MA instruction wins, the interrupt is taken after it)
+// ITLB miss (2026-11-22) : interrupts are masked in csr_array (iwalk_pend)
 wire irq_hold = amo_busy | fencei_wb_purge | muldiv_busy | pf_exc | amo_pf_pend;
 reg g_int_amo_pend;
 reg frc_amo_pend;

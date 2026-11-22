@@ -81,6 +81,7 @@ module csr_array
 	input sint_condition_ex,  // S-level interrupt (SSIP/STIP/SEIP) is taken
 	output csr_sint_pend,     // an S-level interrupt is pending and enabled
 	output csr_m_ie,          // M-level interrupts are enabled (MIE | priv < M)
+	input iwalk_pend,         // ITLB miss in progress : no interrupt (2026-11-22)
 	output [1:0] csr_priv,    // current privilege level
 	// time CSR / SEIP (2026-11-22)
 	input [63:0] frc_time,    // io_frc free running counter (time / timeh)
@@ -296,7 +297,11 @@ wire rmie_value = pc_int_ecall_syn_end ? 1'b0 :
                   cmd_mret_ex ? csr_mpie :
                   m_interrupt ? 1'b0 : csr_rmie;
 // M-level interrupts are always enabled below M-mode
-assign csr_m_ie = csr_rmie | (priv != `M_MODE);
+// ITLB miss (2026-11-22) : interrupts wait while ilu_stage handles a
+// micro-ITLB miss (a redirect there would leave a walk for a dead fetch slot).
+// Masked here (registers only) instead of irq_hold (stall timing path);
+// io_frc / interrupter keep a masked 1shot pending (csr_rmie).
+assign csr_m_ie = (csr_rmie | (priv != `M_MODE)) & ~iwalk_pend;
 
 always @ ( posedge clk or negedge rst_n) begin 
 	if (~rst_n) begin
@@ -656,7 +661,7 @@ wire s_enable = (priv == `U_MODE) | ((priv == `S_MODE) & csr_sie);
 wire m_enable = (priv != `M_MODE) | csr_rmie;
 wire [2:0] pend_to_s = s_pend & csr_mideleg & { 3{ s_enable }};
 wire [2:0] pend_to_m = s_pend & ~csr_mideleg & { 3{ m_enable }};
-assign csr_sint_pend = smode_en & (|(pend_to_s | pend_to_m));
+assign csr_sint_pend = smode_en & (|(pend_to_s | pend_to_m)) & ~iwalk_pend;
 // priority : not delegated (M) first, then SEI > SSI > STI
 wire [2:0] pend_sel = (|pend_to_m) ? pend_to_m : pend_to_s;
 assign sint_code = pend_sel[2] ? 6'd9 : pend_sel[0] ? 6'd1 : 6'd5;

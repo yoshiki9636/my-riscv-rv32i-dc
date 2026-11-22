@@ -71,6 +71,8 @@ module ilu_stage
 	input i_priv_u,               // current privilege is U (else S)
 	input tlb_flush,              // sfence.vma
 	input ipf_clr,                // a redirect : forget a cached fetch fault
+	input i_walk_busy,            // lsu_stage : the I-side walk is running
+	output iwalk_pend,            // ITLB miss in progress (ex_stage : hold interrupts)
 	output ipf_id,                // the ID fetch takes an instruction page fault
 	output i_walk_req,            // PTW request to lsu_stage
 	output [31:12] i_walk_va,
@@ -294,7 +296,7 @@ always @ (posedge clk or negedge rst_n) begin
 	end
 end
 
-assign i_walk_req = st_iwlk;
+assign i_walk_req = st_iwlk & ~iw_kill;
 assign i_walk_va = va_id;
 
 // ---- tag compare ----
@@ -392,6 +394,7 @@ input imiss;
 input m_hit_r;
 input walk_end;
 input ic_hit_ok;     // ICRP : I$ hit or fetch fault (no refill)
+input ikill;         // ITL1 / IWLK : the slot was redirected away, no walk
 begin
     case(ic_miss_current)
 		`ICMS_IDLE: begin
@@ -414,8 +417,8 @@ begin
 		`ICMS_ICW2: ic_miss_decode = `ICMS_ICW3;
 		`ICMS_ICW3: ic_miss_decode = `ICMS_LDRD;
 		`ICMS_LDRD: ic_miss_decode = `ICMS_IDLE;
-		`ICMS_ITL1: ic_miss_decode = m_hit_r ? `ICMS_ICRP : `ICMS_IWLK;
-		`ICMS_IWLK: ic_miss_decode = walk_end ? `ICMS_ICRP : `ICMS_IWLK;
+		`ICMS_ITL1: ic_miss_decode = ikill ? `ICMS_ICW3 : m_hit_r ? `ICMS_ICRP : `ICMS_IWLK;
+		`ICMS_IWLK: ic_miss_decode = ikill ? `ICMS_ICW3 : walk_end ? `ICMS_ICRP : `ICMS_IWLK;
 		`ICMS_ICRP: ic_miss_decode = ic_hit_ok ? `ICMS_ICW3 : `ICMS_MEMR;
 		`ICMS_DEFO: ic_miss_decode = `ICMS_DEFO;
 		default:     ic_miss_decode = `ICMS_DEFO;
@@ -423,10 +426,38 @@ begin
 end
 endfunction
 
+// Redirect during an ITLB miss (2026-11-22) : when a jump / trap redirects the
+// fetch in the cycle the micro-ITLB miss is found or in ITL1 / IWLK (before
+// the walk is accepted), the ID slot is dead : no walk, ITL1 / IWLK end
+// through ICW3 -> LDRD like an I$ miss under a jump (if_stage masks the slot
+// with jump_under_ic_stall).  A walk for a dead slot must not run : its D$
+// stall lasts until the LDRD cycle, so if_stage did not advance pc_id there
+// while the I$ already read at the redirect target (the target instruction
+// ran with the dead slot's PC; seen in Linux relocate_enable_mmu : sfence.vma,
+// ret, the slot after ret missed the micro-ITLB).
+//   - interrupts are held while the miss is handled (iwalk_pend -> irq_hold)
+//   - a jump / exception from EX can not come in the cycle the walk is
+//     accepted : ID is stalled (EX gets bubbles) and an EX instruction held by
+//     a D$ stall moves in the cycle the MA access ends (iwalk_go needs no MA
+//     access), one cycle before the walk can start
+reg iw_kill;
+always @ (posedge clk or negedge rst_n) begin
+    if (~rst_n)
+        iw_kill <= 1'b0;
+    else if (rst_pipe | (ic_miss_current == `ICMS_LDRD))
+        iw_kill <= 1'b0;
+    else if (ipf_clr & (((ic_miss_current == `ICMS_IDLE) & imiss) |
+                        (ic_miss_current == `ICMS_ITL1) | (ic_miss_current == `ICMS_IWLK)))
+        iw_kill <= 1'b1;
+end
+assign iwalk_pend = (ic_miss_current == `ICMS_ITL1) | (ic_miss_current == `ICMS_IWLK) |
+                    (ic_miss_current == `ICMS_ICRP);
+
 // ICRP : the fetch hits, faults, or is not needed any more -> end the stall
 wire icrp_ok = ~(ic_tag_empty_id | ic_tag_miss_id) | imiss;
 wire [3:0] ic_miss_next = ic_miss_decode( ic_miss_current, ic_tag_empty_id, ic_tag_miss_id, ic_rdat_m_valid,
-                                          imiss, m_hit_r, i_walk_done | i_walk_fault, icrp_ok );
+                                          imiss, m_hit_r, i_walk_done | i_walk_fault, icrp_ok,
+                                          iw_kill & ~i_walk_busy );
 
 always @ (posedge clk or negedge rst_n) begin
     if (~rst_n)

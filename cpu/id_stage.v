@@ -66,6 +66,7 @@ module id_stage
     output reg cmd_sret_ex,
     output reg cmd_mret_ex,
     output reg cmd_wfi_ex,
+    output reg cmd_csr_satp_ex,   // CSR instruction on satp / sfence.vma : refetch pc+4 (SMODE, 2026-11-22)
 	output reg [4:0] rd_adr_ex,
 	output reg wbk_rd_reg_ex,
     output reg illegal_ops_ex,
@@ -762,6 +763,7 @@ always @ (posedge clk or negedge rst_n) begin
         cmd_sret_ex <= 1'b0;
         cmd_mret_ex <= 1'b0;
         cmd_wfi_ex <= 1'b0;
+        cmd_csr_satp_ex <= 1'b0;
 		illegal_ops_ex <= 1'b0;
 		ipf_ex <= 1'b0;
 		rd_adr_ex <= 5'd0;
@@ -833,6 +835,7 @@ always @ (posedge clk or negedge rst_n) begin
         cmd_sret_ex <= 1'b0;
         cmd_mret_ex <= 1'b0;
         cmd_wfi_ex <= 1'b0;
+        cmd_csr_satp_ex <= 1'b0;
 		illegal_ops_ex <= 1'b0;
 		ipf_ex <= 1'b0;
 		rd_adr_ex <= 5'd0;
@@ -907,6 +910,11 @@ always @ (posedge clk or negedge rst_n) begin
         cmd_sret_ex <= cmd_sret_id & ~stall_ld;
         cmd_mret_ex <= cmd_mret_id & ~stall_ld;
         cmd_wfi_ex <= cmd_wfi_id & ~stall_ld;
+        // satp write / sfence.vma : the instructions after them are fetched
+        // again with the new translation (sfence.vma flushes the micro-ITLB :
+        // a fetch slot already in ID / an I$ refill would otherwise miss the
+        // micro-ITLB again after its refill, which if_stage can not replay)
+        cmd_csr_satp_ex <= (SMODE != 0) & ((cmd_csr_id & (csr_adr_id == 12'h180)) | cmd_sfence_id) & ~stall_ld;
 		illegal_ops_ex <= illegal_ops_id & ~stall_ld;
 		ipf_ex <= illegal_ops_id & cmd_ipf_id & ~stall_ld;
 		rd_adr_ex <= rd_adr_id;

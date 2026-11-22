@@ -22,6 +22,8 @@
  *                          g_interrupt_1shot (M edge) when MEIE & MIE
  *
  * plusargs:
+ *   +PROGRESS=<n>    print pc_id / priv / satp.MODE every n cycles
+ *   +IWIN0=<c> +IWIN1=<c>  I-side state (ilu FSM, micro-ITLB, PCs) every cycle in [c0, c1]
  *   +HEX=<file>      program image (objcopy -O verilog, 32bit words), default test.hex
  *   TB_LINEBITS      memory size : 2^n 16-byte lines (default 16 = 1MB, MIG stub only)
  *   +MAXCYC=<n>      timeout cycles (default 200000)
@@ -629,6 +631,38 @@ always @ (posedge clk) begin
             $display("C %0d DCW %08x=%032x", cyc, dcw_in_addr, dcw_in_data);
     end
 end
+
+// ================= progress (+PROGRESS=<cycles>) =================
+integer progress;
+initial if (!$value$plusargs("PROGRESS=%d", progress)) progress = 0;
+always @ (posedge clk) begin
+    if (rst_n & (progress != 0) & (cyc % progress == 0) & (cyc != 0))
+`ifdef TB_ORIG
+        $display("[%0d] PROGRESS pc_id=0x%08x", cyc, {dut.pc_id, 2'b00});
+`else
+        $display("[%0d] PROGRESS pc_id=0x%08x priv=%0d satp=%0d", cyc, {dut.pc_id, 2'b00}, dut.csr_priv, dut.csr_satp_mode);
+`endif
+end
+
+// ================= I-side window trace (+IWIN0=<cyc> +IWIN1=<cyc>) =================
+integer iwin0, iwin1;
+initial begin
+    if (!$value$plusargs("IWIN0=%d", iwin0)) iwin0 = -1;
+    if (!$value$plusargs("IWIN1=%d", iwin1)) iwin1 = -1;
+end
+`ifndef TB_ORIG
+always @ (posedge clk) begin
+    if (rst_n & (cyc >= iwin0) & (cyc <= iwin1))
+        $display("I %0d st=%0d icst=%b pcif=%08x pcid=%08x inst=%08x va_id=%05x iu=%b/%b %05x->%05x imiss=%b keep=%08x tr=%b stall=%b dcst=%b purge=%b iwk=%b jmask=%b ucol=%b/%b pcol=%08x idst=%0d",
+            cyc, dut.ilu_stage.ic_miss_current, dut.ic_stall, {dut.ilu_stage.pc_if,2'b0}, {dut.pc_id,2'b0}, dut.inst_id,
+            dut.ilu_stage.va_id, dut.ilu_stage.iu_valid, dut.ilu_stage.iu_fault,
+            dut.ilu_stage.iu_vpn, dut.ilu_stage.iu_ppn, dut.ilu_stage.imiss,
+            dut.ilu_stage.ic_curric_ent_radr_keeper, dut.itrans_on, stall_u, dut.dc_stall,
+            dut.jmp_purge_ex, dut.ilu_stage.iw_kill, dut.if_stage.jump_under_ic_stall,
+            dut.if_stage.use_collision, dut.if_stage.use_collision_clear_pending, {dut.if_stage.pc_collision,2'b0},
+            dut.if_stage.cache_miss_current);
+end
+`endif
 
 // ================= trace =================
 always @ (posedge clk) begin
