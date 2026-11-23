@@ -605,7 +605,11 @@ end
 // is the killed fall-through NOP, so mepc must be the target (post_pc_ex)
 // for an interrupt taken there, same as after a taken jump.
 // S/U-mode (2026-11-22) : cmd_sret_ex is ex_stage's sret_jump (qualified sret)
-wire jump_only = jmp_condition_ex | mret_condition_ex | cmd_sret_ex | fencei_cond | pred_hit_ex;
+// 2026-11-23 : trap redirects (interrupt / ecall / exception) are included :
+// after a trap to S an M interrupt can be taken in the next empty slot and
+// must save the trap vector (csr_array post_pc_ex) as mepc.
+wire jump_only = jmp_condition_ex | mret_condition_ex | cmd_sret_ex | fencei_cond | pred_hit_ex |
+                 intr_ecall_exception | ecall_condition_ex | exc_redirect;
 
 always @ (posedge clk or negedge rst_n) begin   
 	if (~rst_n) begin

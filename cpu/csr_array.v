@@ -873,6 +873,13 @@ reg [31:2] post_pc_ex;
 always @ ( posedge clk or negedge rst_n) begin   
 	if (~rst_n)
 		post_pc_ex <= 30'd0;
+	// 2026-11-23 : a trap is a redirect too (to mtvec / stvec).  A trap to S
+	// leaves M interrupts enabled (priv < M), so an M interrupt (timer) can be
+	// taken in the empty slot right after it : mepc must be the trap vector,
+	// not the stale pc_ex of the purged instruction (mret then returned to
+	// that U PC with priv = S : Linux Oops cause 12 / SPP = 1).
+	else if ( trap_any )
+		post_pc_ex <= csr_mtvec_ex;
 	else if ( jmp_condition_ex | mret_condition_ex | sret_condition_ex | fencei_condition_ex )
 		post_pc_ex <= jmp_adr_if;
 		//post_pc_ex <= jmp_condition_ex ? jmp_adr_ex : pc_ex;
